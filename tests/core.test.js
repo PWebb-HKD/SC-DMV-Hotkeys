@@ -39,3 +39,15 @@ test('PDF tabs never count as reusable portal tabs', () => {
   assert.equal(isPortal('https://www.scdmvonline.com/SCTRNS/Member/logon.aspx'), true);
   assert.equal(isPortal('https://www.scdmvonline.com.evil.test/'), false);
 });
+
+test('SCUTTIES extracts the family name without trailing given-name suffixes', () => {
+  for (const suffix of ['JR', 'SR', 'II', 'III', 'IV']) {
+    assert.deepEqual(driverIdentity(`Driver License No: 123456789 Name: DE LA CRUZ-SMITH, JOHN PAUL ${suffix} DOB: 01/02/2000`), {lastName: 'DE LA CRUZ-SMITH', dob: '01/02/2000'});
+  }
+});
+
+test('SCUTTIES drops suffixes attached to the surname while retaining compound surnames', () => {
+  for (const suffix of ['JR', 'SR', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'jr.', 'Sr.']) {
+    assert.deepEqual(driverIdentity(`Driver License No: 123456789 Name: DE LA CRUZ-SMITH ${suffix}, JOHN PAUL DOB: 01/02/2000`), {lastName: 'DE LA CRUZ-SMITH', dob: '01/02/2000'});
+  }
+});

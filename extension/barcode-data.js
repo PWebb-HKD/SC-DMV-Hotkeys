@@ -34,9 +34,17 @@ function requireFields(values, keys) {
 function names(value) {
   const comma = value.indexOf(',');
   if (comma < 1) throw new Error('The driver name could not be separated into family and given names.');
-  const family = clean(value.slice(0, comma)), given = clean(value.slice(comma + 1)).split(/\s+/);
-  if (!given[0]) throw new Error('The driver first name was not found.');
-  return {family, first: given[0], middle: given.slice(1).join(',') || 'NONE'};
+  let family = clean(value.slice(0, comma));
+  let given = clean(value.slice(comma + 1));
+  // Reports may place a generational suffix after the given names or surname.
+  const suffixPattern = /(?:\s+|,\s*)(JR|SR|II|III|IV|V|VI|VII|VIII|IX|X)\.?$/i;
+  const givenSuffix = given.match(suffixPattern), familySuffix = family.match(suffixPattern);
+  const suffix = (givenSuffix || familySuffix)?.[1].toUpperCase() || '';
+  if (givenSuffix) given = given.slice(0, givenSuffix.index).trim();
+  if (familySuffix) family = family.slice(0, familySuffix.index).trim();
+  const parts = given.split(/\s+/);
+  if (!family || !parts[0]) throw new Error('The driver first or family name was not found.');
+  return {family, first: parts[0], middle: parts.slice(1).join(',') || 'NONE', suffix};
 }
 function valueField(value, max) {
   if (!value) return 'unavl';
@@ -102,7 +110,7 @@ export function driverBarcode(raw) {
   const eye = clean(v['eye color']);
   const fields = [
     ['DCA', credentialClass], ...(type === 'DL' ? [['DCB', row?.[7]?.toUpperCase() === 'N' ? 'NONE' : 'unavl'], ['DCD', row?.[8]?.toUpperCase() === 'N' ? 'NONE' : 'unavl']] : []),
-    ['DBA', expires || 'unavl'], ['DCS', valueField(name.family, 40)], ['DAC', valueField(name.first, 40)], ['DAD', valueField(name.middle, 40)],
+    ['DBA', expires || 'unavl'], ['DCS', valueField(name.family, 40)], ['DAC', valueField(name.first, 40)], ['DAD', valueField(name.middle, 40)], ...(name.suffix ? [['DCU', name.suffix]] : []),
     ['DBD', issued || 'unavl'], ['DBB', dob], ['DBC', /^M$/i.test(v.sex) ? '1' : /^F$/i.test(v.sex) ? '2' : '9'],
     ['DAY', /^(BLK|BLU|BRO|GRY|GRN|HAZ|MAR|PNK|DIC|UNK)$/.test(eye) ? eye : eyes[eye] || 'unavl'], ['DAU', heightValue],
     ['DAG', valueField(v.address, 35)], ['DAI', valueField(v.city, 20)], ['DAJ', valueField(v.state, 2)], ['DAK', zip.padEnd(11, ' ')],
@@ -118,7 +126,7 @@ export function driverBarcode(raw) {
   if (type === 'DL' && (!row || row[7].toUpperCase() !== 'N' || row[8].toUpperCase() !== 'N')) warnings.push('Actual restriction/endorsement codes are unavailable; flagged fields are encoded as unavl.');
   warnings.push('Credential-only inventory and other metadata not present in the report remain blank; values from another barcode are never copied.');
   return {type: 'barcode', kind: 'driver', title: `${type === 'ID' ? 'ID' : 'Driver'} import barcode`, profile: 'AAMVA DL/ID v09 · SC', payload: frameAamva([{type, fields}]),
-    summary: `${name.family}, ${name.first} · ${licenseNumber || 'No license number'} · Class ${credentialClass}`, warnings};
+    summary: `${name.family}, ${name.first}${name.suffix ? ` ${name.suffix}` : ''} · ${licenseNumber || 'No license number'} · Class ${credentialClass}`, warnings};
 }
 /** Separate street/city/state/ZIP only when delimiters or one clear suffix permit it.
  * Inferred boundaries are flagged for user verification; ambiguous addresses fail. */

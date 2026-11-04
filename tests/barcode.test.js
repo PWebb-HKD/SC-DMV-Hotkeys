@@ -141,3 +141,20 @@ test('ordinary plates do not inherit plate expiry when the decal date is blank',
   assert.equal(registrationFields(result.payload).RBT, '');
   assert.match(result.warnings.join(' '), /Decal expiration is unavailable/);
 });
+
+test('driver suffixes have their own DCU field rather than becoming middle or family names', () => {
+  for (const suffix of ['JR', 'SR', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X']) {
+    for (const name of [`EXAMPLE-SAMPLE, JANE MARIE ${suffix}`, `EXAMPLE-SAMPLE, JANE MARIE, ${suffix}.`, `EXAMPLE-SAMPLE ${suffix}, JANE MARIE`]) {
+      const result = driverBarcode(driverReport.replace('EXAMPLE-SAMPLE, JANE MARIE', name));
+      const f = fields(result.payload);
+      assert.equal(f.DCS, 'EXAMPLE-SAMPLE'); assert.equal(f.DAC, 'JANE'); assert.equal(f.DAD, 'MARIE');
+      assert.equal(f.DCU, suffix); assert.ok(result.summary.includes(`JANE ${suffix}`));
+      const entry = result.payload.slice(21, 31);
+      assert.equal(+entry.slice(6), result.payload.length - 31);
+    }
+  }
+  const noMiddle = fields(driverBarcode(driverReport.replace('JANE MARIE', 'JANE jr.')).payload);
+  assert.equal(noMiddle.DAD, 'NONE'); assert.equal(noMiddle.DCU, 'JR');
+  const ordinary = fields(driverBarcode(driverReport).payload);
+  assert.equal(ordinary.DAD, 'MARIE'); assert.equal(ordinary.DCU, undefined);
+});

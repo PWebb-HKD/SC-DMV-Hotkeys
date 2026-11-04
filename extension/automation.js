@@ -40,12 +40,12 @@ async function ready(tabId, selector, ctx) {
   }, 'the search page controls', 60000, ctx);
 }
 async function navigate(tabId, url, ctx) {
-  await api(ctx).tabs.update(tabId, {url}); // Never activates the tab or restores a minimized window.
+  await api(ctx).tabs.update(tabId, {url}); // The workflow has already focused its portal tab.
   await until(async () => {
     const t = await api(ctx).tabs.get(tabId); return t.status === 'complete' && samePage(t.url, url);
   }, 'the page to load', 60000, ctx);
 }
-/** Activate the tab and restore/focus its window; used for login, results, and errors. */
+/** Activate the tab and restore/focus its window before automation and on results/errors. */
 export async function focusTab(tabId, ctx) {
   const tab = await api(ctx).tabs.get(tabId);
   await api(ctx).tabs.update(tabId, {active: true});
@@ -59,6 +59,8 @@ export async function portalTab(ctx) {
   const tabs = (await api(ctx).tabs.query({url: `${ROOT}/*`})).filter(t => isPortal(t.url));
   const target = tabs.find(t => t.id === portalId) || tabs.find(t => t.active) || tabs.sort((a,b) => (b.lastAccessed || 0) - (a.lastAccessed || 0))[0] || await api(ctx).tabs.create({url: LOGIN, active: false});
   await api(ctx).storage.session.set({portalId: target.id});
+  // A fresh session skips login, so focus cannot be left to the login path.
+  await focusTab(target.id, ctx);
   return target;
 }
 /** Use extension credentials exclusively, notify form handlers, and allow synchronization
@@ -181,17 +183,21 @@ export async function scutties(identity, ctx) {
   const previous = new Set((await api(ctx).tabs.query({})).map(t => t.id));
   await click(tab.id, 'a[href="/SCTRNS/Member/Transactions/SCUTTIES/SCUTTIES.aspx"]', ctx);
   ctx.status('Waiting for SCUTTIES sign-in and search form');
-  let destination;
+  let destination, focusedDestination = tab.id;
   await until(async () => {
     const tabs = await api(ctx).tabs.query({});
     const children = tabs.filter(t => !previous.has(t.id) && t.openerTabId === tab.id);
     const candidates = [...children, await api(ctx).tabs.get(tab.id)];
     for (const t of candidates) {
+      if (t.id === candidates[0].id && t.id !== focusedDestination) {
+        await focusTab(t.id, ctx); focusedDestination = t.id;
+      }
       if (t.status !== 'complete' || !/^https:\/\//i.test(t.url || '')) continue;
       ctx.tabId = t.id;
       const origin = `${new URL(t.url).origin}/*`;
       if (!await api(ctx).permissions.contains({origins: [origin]})) {
         await ctx.permission(origin); // Explicit user gesture in panel grants only this origin.
+        await focusTab(t.id, ctx); // The permission popup may have taken focus.
       }
       const s = await state(t.id, SC_NAME, ctx);
       if (s.errors.length) throw new Error(s.errors.join('\n'));
@@ -200,6 +206,7 @@ export async function scutties(identity, ctx) {
     return false;
   }, 'the SCUTTIES search inputs (complete any interactive login in the browser)', 180000, ctx);
   ctx.tabId = destination.id;
+  await focusTab(destination.id, ctx);
   await evaluate(destination.id, 'fill', {selector: SC_NAME, value: identity.lastName}, ctx);
   await evaluate(destination.id, 'fill', {selector: SC_DOB, value: identity.dob}, ctx);
   // Notify both controls after both values exist, so delegated handlers can

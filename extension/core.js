@@ -75,10 +75,10 @@ export function ownerNumbers(text) {
   if (!results.length) throw new Error('No Customer/Owner Numbers were detected on the open page.');
   return results;
 }
-/** Extract the first driver name and a real calendar DOB for SCUTTIES. */
+/** Extract the surname (without generational suffix) and a real calendar DOB for SCUTTIES. */
 export function driverIdentity(text) {
   if (!/Driver\s+License\s+No\s*:/i.test(text)) throw new Error('Open a driver record PDF. Both a last name and date of birth are required.');
-  const lastName = text.match(/\bName\s*:\s*([^,:]+),/i)?.[1].trim().replace(/\s+/g, ' ');
+  const lastName = text.match(/\bName\s*:\s*([^,:]+),/i)?.[1].trim().replace(/\s+/g, ' ').replace(/\s+(?:JR|SR|II|III|IV|V|VI|VII|VIII|IX|X)\.?$/i, '');
   const dob = text.match(/\bDOB\s*:\s*(\d{2}\/\d{2}\/\d{4})\b/i)?.[1];
   if (!lastName || !dob) throw new Error(`Both a last name and date of birth are required. Missing: ${!lastName && !dob ? 'last name and DOB' : !lastName ? 'last name' : 'DOB'}.`);
   const [m, d, y] = dob.split('/').map(Number), date = new Date(Date.UTC(y, m - 1, d));

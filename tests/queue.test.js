@@ -1,7 +1,7 @@
 // Worker integration harness: queue commits, cancellation, panels, history, and settings races.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {MEMBER, PDF_URL} from '../extension/core.js';
+import {MEMBER, PDF_URL, isPdf} from '../extension/core.js';
 import {driverReport} from './barcode-fixtures.js';
 const event=()=>({listeners:[],addListener(fn){this.listeners.push(fn);},removeListener(fn){this.listeners=this.listeners.filter(x=>x!==fn);}});
 const local={history:[{id:'old-persistent',kind:'plate',value:'OLD123',at:1}]}, session={history:[],lastQuery:Date.now(),portalId:1,pdfCreated:{2:100},'pdf:2':{text:'Owner Number: 00001234\nCustomer Number: 87654321\nOwner Number: 1234'}};
@@ -19,7 +19,7 @@ globalThis.chrome={
     query:async opts=>[...tabs.values()].filter(t=>!opts.active||t.active).map(t=>({...t})),
     get:async id=>({...tabs.get(id)}),
     create:async opts=>{const tab={id:nextId++,url:opts.url,status:'complete',windowId:1,active:!!opts.active};tabs.set(tab.id,tab);return {...tab};},
-    update:async(id,update)=>{const tab=tabs.get(id);Object.assign(tab,update);if(update.active){for(const t of tabs.values())if(t.id!==id)t.active=false;if(onResultFocus){const hook=onResultFocus;onResultFocus=null;queueMicrotask(hook);}}return {...tab};},
+    update:async(id,update)=>{const tab=tabs.get(id);Object.assign(tab,update);if(update.active){for(const t of tabs.values())if(t.id!==id)t.active=false;if(onResultFocus&&isPdf(tab.url)){const hook=onResultFocus;onResultFocus=null;queueMicrotask(hook);}}return {...tab};},
     remove:async()=>{},onCreated:event(),onUpdated:event(),onRemoved:event()
   },
   windows:{get:async()=>({id:1,state:'normal'}),update:async()=>{},onRemoved:event(),create:async data=>{const win={id:windows.length+10,...data};windows.push(win);if(pauseAlertWindow&&session[`panel:${new URL(data.url).searchParams.get('id')}`]?.type==='record-alert')await new Promise(resolve=>{alertWindowRelease=resolve;});return win;},remove:async id=>{removedWindows.push(id);}},
