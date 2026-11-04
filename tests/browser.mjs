@@ -20,7 +20,7 @@ const event=()=>({listeners:new Set(),addListener(fn){this.listeners.add(fn);},r
 try {
   const context = await browser.newContext();
   let nextId = 1, clock = 100, activated = [], windowsUpdated = [], submissions = [], loginClicks = 0, invalid = false, loginInvalid = false, plateRadio = false, credentialPrompts = 0, autofillMode = '', disclaimerClicks = 0, loginElapsed = 0, resultMode = 'new', loginDestination = DISCLAIMER;
-  let transactionRedirects=0, brokenTransactions=false, logoffClicks=0;
+  let transactionRedirects=0, brokenTransactions=false, logoffClicks=0, transactionRedirectTarget=`${MEMBER}Transactions/TransactionList.aspx`;
   const navigation = [], loginFills = [];
   let loginEvents = [], loginReapplied = [], loginWasFocused = false, loginSubmitted;
   const tabs = new Map(), local = {}, session = {}, permissions = new Set([`${ROOT}/*`]);
@@ -118,7 +118,7 @@ try {
       chrome.tabs.onUpdated.emit(id,{url:update.url,status:'loading'},{...record.tab});
       let destination=update.url;
       // Model the server redirect locally; never let fixtures follow a live HTTP redirect.
-      if(transactionRedirects>0&&destination.includes('/Page1.aspx')){transactionRedirects--;brokenTransactions=true;destination=`${MEMBER}Transactions/TransactionList.aspx`;}
+      if(transactionRedirects>0&&destination.includes('/Page1.aspx')){transactionRedirects--;destination=transactionRedirectTarget;brokenTransactions=destination===`${MEMBER}Transactions/TransactionList.aspx`;}
       await record.page.goto(destination); record.tab.url=record.page.url(); record.tab.status = 'complete';
       chrome.tabs.onUpdated.emit(id,{status:'complete'},{...record.tab});
     }
@@ -284,6 +284,15 @@ try {
     assert.equal(logoffClicks,before.logoff+1);assert.equal(loginClicks,before.login+1);
     assert.equal(submissions.length,before.submits+1);
     assert.equal(submissions.at(-1).ContentPlaceHolder1_txtPlateNbr,'REC123');
+    assert.equal(activated.at(-1),result.tabId);assert.ok(session.lastQuery>0);
+  });
+  await tests('unexpected first search page returns directly to login and retries without logoff',async()=>{
+    session.lastQuery=Date.now();transactionRedirects=1;transactionRedirectTarget=`${MEMBER}Unexpected.aspx`;
+    const before={login:loginClicks,logoff:logoffClicks,submits:submissions.length};
+    const result=await search('customer','11223344',ctx);
+    assert.equal(logoffClicks,before.logoff);assert.equal(loginClicks,before.login+1);
+    assert.equal(submissions.length,before.submits+1);
+    assert.equal(submissions.at(-1).ContentPlaceHolder1_idNumberTextBox,'11223344');
     assert.equal(activated.at(-1),result.tabId);assert.ok(session.lastQuery>0);
   });
   await context.close();

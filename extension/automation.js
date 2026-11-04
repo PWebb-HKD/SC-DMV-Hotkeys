@@ -125,7 +125,7 @@ async function ensureSession(tabId, ctx) {
   if (!reused) await login(tabId, ctx);
   return reused;
 }
-/** Inspect only the first requested search page after bypassing login. Never retry a
+/** Recover unexpected first-page navigation, with logoff for stale transaction menus. Never retry a
  * submitted transaction: the broken-session redirect happens before any form fill. */
 async function initialSearchPage(tabId, url, reusedSession, ctx) {
   const load = async () => {
@@ -136,19 +136,24 @@ async function initialSearchPage(tabId, url, reusedSession, ctx) {
     }, 'the search form', 60000, ctx);
   };
   let page = await load();
-  if (reusedSession && samePage(page.url, TRANSACTIONS)) {
-    ctx.status('Recovering DMV session: logging off and signing in');
+  const staleMenu = reusedSession && samePage(page.url, TRANSACTIONS);
+  const unexpected = !samePage(page.url, url) && !samePage(page.url, LOGIN) && !samePage(page.url, TRANSACTIONS);
+  if (staleMenu || unexpected) {
+    ctx.status(staleMenu ? 'Recovering DMV session: logging off and signing in' : 'Unexpected DMV page: returning to login');
     // A failed/cancelled recovery must not leave the old ten-minute hint valid.
     await api(ctx).storage.session.set({lastQuery: 0});
-    await focusTab(tabId, ctx);
-    await click(tabId, LOGOFF, ctx);
-    await until(async () => {
-      const tab = await api(ctx).tabs.get(tabId);
-      return tab.status === 'complete' && !samePage(tab.url, TRANSACTIONS);
-    }, 'DMV log off to finish', 30000, ctx);
+    if (staleMenu) {
+      await focusTab(tabId, ctx);
+      await click(tabId, LOGOFF, ctx);
+      await until(async () => {
+        const tab = await api(ctx).tabs.get(tabId);
+        return tab.status === 'complete' && !samePage(tab.url, TRANSACTIONS);
+      }, 'DMV log off to finish', 30000, ctx);
+    }
     await login(tabId, ctx);
     page = await load();
     if (samePage(page.url, TRANSACTIONS)) throw new Error('The DMV returned to the transaction list again after signing in. Please check the website and try again.');
+    if (!samePage(page.url, url)) throw new Error('The DMV returned to an unexpected page again after signing in. Please check the website and try again.');
   }
   return page;
 }

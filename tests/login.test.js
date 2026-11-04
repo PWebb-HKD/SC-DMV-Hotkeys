@@ -86,10 +86,10 @@ test('SCUTTIES activates a new destination window and refocuses it after the per
 
 const TRANSACTIONS = `${MEMBER}Transactions/TransactionList.aspx`;
 const LOGOFF = '#ContentPlaceHolder1_menuContainer > div > div:nth-child(1) > div:nth-child(1) > div.panel-body > ul > li:nth-child(1) > a';
-function recoveryFixture({redirects=1, fresh=false, loginLanding=DISCLAIMER, missingLogoff=false, laterRedirect=false, pendingInitial=false, onLogoff}={}) {
+function recoveryFixture({redirects=1, redirectUrl=TRANSACTIONS, fresh=false, loginLanding=DISCLAIMER, missingLogoff=false, laterRedirect=false, pendingInitial=false, onLogoff, onLoginNavigation}={}) {
   const portal={id:1,url:DISCLAIMER,status:'complete',windowId:1};
   const session={portalId:1,lastQuery:fresh?0:Date.now()};
-  const counts={logoffs:0,logins:0,loads:0,fills:[],requests:[],statuses:[]};
+  const counts={logoffs:0,logins:0,loads:0,fills:[],requests:[],statuses:[],operations:[]};
   let pdf;
   globalThis.chrome={
     storage:{session:{get:async()=>session,set:async x=>Object.assign(session,x)}},
@@ -103,12 +103,14 @@ function recoveryFixture({redirects=1, fresh=false, loginLanding=DISCLAIMER, mis
         Object.assign(tab,update);
         if(update.url){
           counts.requests.push(update.url);
-          if(update.url.includes('Page1.aspx')){counts.loads++;if(redirects-->0)tab.url=TRANSACTIONS;}
+          if(update.url===LOGIN)onLoginNavigation?.();
+          if(update.url.includes('Page1.aspx')){counts.loads++;if(redirects-->0)tab.url=redirectUrl;}
         }
         return {...tab};
       }},
     windows:{get:async()=>({id:1,state:'normal'}),update:async()=>{}},
     scripting:{executeScript:async({args:[op,args]})=>{
+      counts.operations.push({op,url:portal.url});
       if(op==='state'){
         if(laterRedirect&&portal.url===TRANSACTIONS)throw new Error('Later website failure');
         return [{result:{url:portal.url,present:true,presentSelectors:[true,true],errors:[]}}];
@@ -177,4 +179,30 @@ test('a pending first navigation is not mistaken for a completed transaction-lis
   await search('customer','12345678',ctx);
   assert.equal(counts.logoffs,0);assert.equal(counts.loads,1);assert.equal(counts.logins,0);
   assert.deepEqual(counts.fills,['12345678']);
+});
+
+test('unexpected first-page URLs go directly to login and retry without attempting logoff',async()=>{
+  for(const redirectUrl of [`${MEMBER}Unexpected.aspx`, 'https://unrelated.fixture.test/error', 'about:blank']){
+    for(const fresh of [false,true]){
+      const {counts,session,ctx}=recoveryFixture({redirectUrl,fresh});
+      await search('customer','12345678',ctx);
+      assert.equal(counts.logoffs,0);assert.equal(counts.logins,fresh?2:1);assert.equal(counts.loads,2);
+      const firstRequest=counts.requests.findIndex(url=>url.includes('Page1.aspx'));
+      assert.equal(counts.requests[firstRequest+1],LOGIN);
+      assert.deepEqual(counts.fills,['12345678']);assert.ok(session.lastQuery>0);
+      assert.equal(counts.operations.some(operation=>operation.url===redirectUrl),false,'Never operate on an unexpected page before navigating to login');
+    }
+  }
+});
+test('repeated unexpected pages fail after one retry without submitting the search',async()=>{
+  const {counts,session,ctx}=recoveryFixture({redirectUrl:`${MEMBER}Unexpected.aspx`,redirects:2});
+  await assert.rejects(search('customer','12345678',ctx),/unexpected page again/);
+  assert.equal(counts.loads,2);assert.equal(counts.logins,1);assert.equal(counts.logoffs,0);
+  assert.deepEqual(counts.fills,[]);assert.equal(session.lastQuery,0);
+});
+test('Stop during unexpected-page login navigation prevents login and retry',async()=>{
+  const run=new SearchRun();
+  const {counts,ctx}=recoveryFixture({redirectUrl:`${MEMBER}Unexpected.aspx`,onLoginNavigation:()=>run.cancel()});
+  await assert.rejects(search('customer','12345678',{...ctx,run}),error=>error.name==='AbortError');
+  assert.equal(counts.logins,0);assert.equal(counts.loads,1);assert.deepEqual(counts.fills,[]);
 });
