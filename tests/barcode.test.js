@@ -117,3 +117,27 @@ test('record detection rejects unrelated documents; non-ASCII input cannot corru
   assert.throws(() => reportBarcode('unrelated text'), /No driver or vehicle/);
   assert.throws(() => frameAamva([{type: 'DL', fields: [['DCS', '\u4e2d']]}]), /ASCII/);
 });
+
+for (const plateClass of ['T45V TEMPORARY PLATE-VEHICLE', 'E60V EVR TEMPORARY PLATE-VEHICLE']) {
+  test(`${plateClass}: blank decal dates inherit plate expiry and display years are excluded`, () => {
+    const temporary = vehicleReport.replace('ABC PRIVATE PASSENGER', plateClass)
+      .replace('TEST123', 'TEST1234 2026');
+    for (const blank of ['', '   ']) {
+      const result = vehicleBarcode(temporary.replace('06/20/2030', blank + '\nGVW: 0 Empty Weight: 1 Equip Number: Annual Fee: $0.00'));
+      const f = registrationFields(result.payload);
+      assert.equal(f.RAG, '20990101'); assert.equal(f.RBT, f.RAG);
+      assert.equal(f.RAM, 'TEST1234 ');
+      assert.doesNotMatch(result.warnings.join(' '), /Decal expiration is unavailable/);
+    }
+    assert.equal(registrationFields(vehicleBarcode(temporary).payload).RBT, '20300620');
+    const invalid = vehicleBarcode(temporary.replace('06/20/2030', '02/30/2030'));
+    assert.equal(registrationFields(invalid.payload).RBT, '');
+    assert.match(invalid.warnings.join(' '), /Decal expiration is unavailable/);
+    assert.throws(() => vehicleBarcode(temporary.replace('01/01/2099', '')), /plate expiration/);
+  });
+}
+test('ordinary plates do not inherit plate expiry when the decal date is blank', () => {
+  const result = vehicleBarcode(vehicleReport.replace('06/20/2030', ''));
+  assert.equal(registrationFields(result.payload).RBT, '');
+  assert.match(result.warnings.join(' '), /Decal expiration is unavailable/);
+});

@@ -49,6 +49,11 @@ export function unavailableAlert(recordType, message) {
   return alert(recordType, 'warning', [{title: 'STATUS UNAVAILABLE', lines: [message]}]);
 }
 
+/** Temporary vehicle plate classes observed in the 45-day and EVR 60-day reports. */
+export function isTemporaryPlate(plateClass) {
+  return /^(?:T45V|E60V)\b/i.test(flat(plateClass));
+}
+
 /** Combine enforcement and expiration findings; temporary tags use Plate Exp Date. */
 export function plateStatus(raw, now = new Date()) {
   const text = flat(raw), today = reportToday(now), sections = [];
@@ -61,7 +66,7 @@ export function plateStatus(raw, now = new Date()) {
   }
   const classTail = text.match(/\bPlate\s+Class\s*:\s*(.*)$/i)?.[1];
   const hasClass = !!classTail && !/^(?:Plate|Decal)\s+Exp\s+Date\s*:/i.test(classTail);
-  const temporary = hasClass && /^T45V\s+TEMPORARY\s+PLATE\s*[-–—]\s*VEHICLE\b/i.test(classTail);
+  const temporary = hasClass && isTemporaryPlate(classTail);
   const label = temporary ? 'Plate\\s+Exp\\s+Date' : 'Decal\\s+Exp\\s+Date';
   const expirationText = text.match(new RegExp(`\\b${label}\\s*:\\s*${DATE}`, 'i'))?.[1];
   const expiration = hasClass && parseReportDate(expirationText);
