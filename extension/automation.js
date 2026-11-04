@@ -19,6 +19,16 @@ export async function evaluate(tabId, op, args = {}, ctx) {
   if (!results.length) throw new Error('The page could not be accessed.');
   return results[0].result;
 }
+/** A visible DMV error on a requested search page is a completed failed attempt,
+ * distinct from login failures, cancellation, or inability to access the page. */
+export class PortalSearchError extends Error {
+  constructor(message) { super(message); this.name = 'PortalSearchError'; }
+}
+function checkPageErrors(page, searchPages = []) {
+  if (!page.errors.length) return;
+  const ErrorType = searchPages.some(url => samePage(page.url, url)) ? PortalSearchError : Error;
+  throw new ErrorType(page.errors.join('\n'));
+}
 async function state(tabId, selector, ctx) { return evaluate(tabId, 'state', {selector, errorSelector: ERROR_SELECTOR}, ctx); }
 async function click(tabId, selector, ctx) {
   try { await evaluate(tabId, 'click', {selector}, ctx); }
@@ -31,12 +41,12 @@ async function until(fn, description, ms = 60000, ctx) {
   throw new Error(`Timed out waiting for ${description}. The site may need your attention.`);
 }
 /** Wait for a completed page with controls, surfacing visible website errors. */
-async function ready(tabId, selector, ctx) {
+async function ready(tabId, selector, ctx, searchPage) {
   return until(async () => {
     const tab = await api(ctx).tabs.get(tabId);
     if (tab.status !== 'complete') return false;
     let s; try { s = await state(tabId, selector, ctx); } catch { ctx?.run?.check(); return false; }
-    if (s.errors.length) throw new Error(s.errors.join('\n'));
+    checkPageErrors(s, searchPage ? [searchPage] : []);
     if (samePage(s.url, LOGIN)) throw new Error('Your DMV session has expired. Run the command again to sign in.');
     return s.present && s;
   }, 'the search page controls', 60000, ctx);
@@ -175,10 +185,10 @@ export async function search(kind, value, ctx) {
   if (samePage(firstPage.url, LOGIN)) {
     await login(tab.id, ctx); await navigate(tab.id, `${base}Page1.aspx${query}`, ctx);
   }
-  await ready(tab.id, selector, ctx);
+  await ready(tab.id, selector, ctx, `${base}Page1.aspx`);
   if (kind === 'plate') {
     await click(tab.id, '#ContentPlaceHolder1_rblReportType_0', ctx);
-    await delay(500, ctx); await ready(tab.id, selector, ctx);
+    await delay(500, ctx); await ready(tab.id, selector, ctx, `${base}Page1.aspx`);
   }
   await evaluate(tab.id, 'fill', {selector, value}, ctx);
   await click(tab.id, '#btnFooterNavNext', ctx);
@@ -186,11 +196,11 @@ export async function search(kind, value, ctx) {
     const t = await api(ctx).tabs.get(tab.id);
     if (t.status !== 'complete') return false;
     const s = await state(tab.id, undefined, ctx);
-    if (s.errors.length) throw new Error(s.errors.join('\n'));
+    checkPageErrors(s, [`${base}Page1.aspx`, `${base}Page2.aspx`]);
     if (samePage(t.url, LOGIN)) throw new Error('The DMV session expired during the search. Please run it again.');
     return samePage(t.url, `${base}Page2.aspx`);
   }, 'search results', 60000, ctx);
-  await ready(tab.id, '#downloadButton', ctx);
+  await ready(tab.id, '#downloadButton', ctx, `${base}Page2.aspx`);
   const watcher = await watchResults(tab.id, ctx);
   let result;
   try {

@@ -5,7 +5,7 @@
  * See DEVELOPMENT.md for the lifecycle and storage/message contracts.
  */
 import {COMMANDS, ROOT, PDF_URL, attachmentUrl, isPdf, isPortal, normalize, ownerNumbers, driverLicense, driverIdentity, historySearch} from './core.js';
-import {search, scutties, evaluate, focusTab} from './automation.js';
+import {search, scutties, evaluate, focusTab, PortalSearchError} from './automation.js';
 import {saveCredentials, unlockCredentials} from './vault.js';
 import {SearchRun, guardedApi, isCancelled} from './run.js';
 import {recordStatus, unavailableAlert} from './status-alerts.js';
@@ -189,15 +189,19 @@ function context(run) {
     }
   };
 }
-/** Submit a portal search and commit queue/history at result discovery, before focus.
+/** Submit a portal search; commit successful history before focusing results.
+ * Queued DMV errors consume the attempted position without successful history.
  * PDF extraction and optional status analysis continue without blocking the next command. */
 async function runSearch(kind, value, ctx, advance) {
   const api = guardedApi(chrome, ctx.run);
-  let captured;
+  let captured, advanced = false;
+  const advanceQueue = async () => {
+    if (advance && !advanced) { await advance(); advanced = true; }
+  };
   ctx.resultReady = async result => {
     // Commit queue progress before focusing results. An immediate Alt+N must
     // select the following person even while PDF.js is still extracting text.
-    if (advance) await advance();
+    await advanceQueue();
     await addHistory(kind, value, ctx.run);
     await track(async () => {
       const {pdfCreated = {}, pdfSources = {}} = await api.storage.session.get(['pdfCreated', 'pdfSources']);
@@ -213,7 +217,14 @@ async function runSearch(kind, value, ctx, advance) {
       return {ok: false, error: e.message};
     });
   };
-  const result = await search(kind, value, ctx);
+  let result;
+  try { result = await search(kind, value, ctx); }
+  catch (error) {
+    // Consume a portal-rejected queued attempt, but retain its error alert and
+    // keep failed searches out of successful history. Stop/technical errors retry.
+    if (error instanceof PortalSearchError && !ctx.run.signal.aborted) await advanceQueue();
+    throw error;
+  }
   if (['plate', 'license', 'customer'].includes(kind)) {
     showRecordStatus(kind, value, result.tabId, captured, ctx).catch(error => {
       if (!isCancelled(error) && !ctx.run.signal.aborted) ctx.status(`Status alert unavailable: ${error.message}`);
@@ -240,8 +251,8 @@ async function showRecordStatus(kind, value, tabId, captured, ctx) {
   if (data.alertsEnabled) await createPanel({...alert, subject: `${COMMANDS[kind].label}: ${value}`}, {}, ctx.run);
 }
 /** Create the queue from one report snapshot for both Collect and an empty Next.
- * index is the one-based position of the last displayed result (zero before any),
- * which is also the zero-based index to try next. Failed searches do not advance it. */
+ * index is the one-based position of the last completed attempt (zero before any),
+ * which is also the zero-based index to try next. Technical failures do not advance it. */
 async function collectQueue(source, run, skipResidenceFirst = false) {
   const origin = await pdfTab(source, run);
   const text = await pdfText(origin, run), values = ownerNumbers(text);
@@ -253,7 +264,7 @@ async function collectQueue(source, run, skipResidenceFirst = false) {
   await guardedApi(chrome, run).storage.session.set({queue});
   return queue;
 }
-/** Route a validated command. Queue progress commits only when its results are found. */
+/** Route a validated command. Queue progress commits on results or a visible DMV search error. */
 async function execute(command, value, source, options, run) {
   const ctx = context(run), api = guardedApi(chrome, run);
   try {

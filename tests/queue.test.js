@@ -7,7 +7,7 @@ const event=()=>({listeners:[],addListener(fn){this.listeners.push(fn);},removeL
 const local={history:[{id:'old-persistent',kind:'plate',value:'OLD123',at:1}]}, session={history:[],lastQuery:Date.now(),portalId:1,pdfCreated:{2:100},'pdf:2':{text:'Owner Number: 00001234\nCustomer Number: 87654321\nOwner Number: 1234'}};
 const tabs=new Map([[1,{id:1,url:`${MEMBER}Transactions/DrvRec/Page2.aspx`,status:'complete',windowId:1,active:false}],[2,{id:2,url:PDF_URL,status:'complete',windowId:1,active:true}]]);
 const windows=[], submissions=[];
-let nextId=3, invalid=false, blockSubmitted=false, captureBlocked=false, onResultFocus=null;
+let nextId=3, invalid=false, invalidAfterSubmit=false, technicalFailure=false, loginRejected=false, blockSubmitted=false, captureBlocked=false, onResultFocus=null;
 let reportText='Driver License No: 123456789 Name: TEST, PERSON\nDOB: 01/01/2000';
 let pauseAlertWindow=false,alertWindowRelease;
 const removedWindows=[];
@@ -25,8 +25,10 @@ globalThis.chrome={
   windows:{get:async()=>({id:1,state:'normal'}),update:async()=>{},onRemoved:event(),create:async data=>{const win={id:windows.length+10,...data};windows.push(win);if(pauseAlertWindow&&session[`panel:${new URL(data.url).searchParams.get('id')}`]?.type==='record-alert')await new Promise(resolve=>{alertWindowRelease=resolve;});return win;},remove:async id=>{removedWindows.push(id);}},
   scripting:{executeScript:async({target,args:[op,args]})=>{
     const tab=tabs.get(target.tabId); let result=true;
-    if(op==='state')result={url:tab.url,present:true,enabled:true,presentSelectors:args.selectors?.map(()=>true)||[],errors:invalid&&tab.url.includes('Page1.aspx')?['Invalid customer number']:[]};
-    if(op==='extensionLogin'&&args.submit)tab.url=`${MEMBER}Disclaimer.aspx`;
+    if(op==='fill'&&technicalFailure)throw new Error('Script connection lost');
+    if(op==='state')result={url:tab.url,present:true,enabled:true,presentSelectors:args.selectors?.map(()=>true)||[],errors:(invalid&&tab.url.includes('Page1.aspx'))||(invalidAfterSubmit&&tab.url.includes('Page2.aspx'))?['Invalid customer number']:[]};
+    if(op==='state'&&loginRejected&&tab.url.endsWith('/logon.aspx'))result.errors=['Invalid User ID Or Password'];
+    if(op==='extensionLogin'&&args.submit&&!loginRejected)tab.url=`${MEMBER}Disclaimer.aspx`;
     if(op==='fill')submissions.push(args.value);
     if(op==='click'&&args.selector==='#btnFooterNavNext') {if(!invalid&&!blockSubmitted)tab.url=tab.url.replace('Page1.aspx','Page2.aspx');}
     if(op==='fetchPdf'&&captureBlocked)return new Promise(()=>{});
@@ -46,21 +48,19 @@ test('startup removes persistent history without changing current session histor
   assert.equal(local.history,undefined);
 });
 
-test('queue starts with first unique number, preserves failed item, advances once and offers restart',async()=>{
+test('queue starts with first unique number, consumes portal-rejected last item, and offers restart',async()=>{
   await send({type:'run',command:'owners'});
   await wait(()=>session.queue?.index===1);
   assert.deepEqual(session.queue.values,['1234','87654321']);assert.equal(submissions[0],'1234');
-  // A page validation failure must not consume the next queue item.
+  // A visible DMV rejection consumes the attempted item but not successful history.
   invalid=true;await send({type:'run',command:'next'});
   await wait(()=>windows.some(w=>session[`panel:${new URL(w.url).searchParams.get('id')}`]?.type==='notice'));
-  assert.equal(session.queue.index,1);assert.equal(session.history.length,1);
-  invalid=false;await send({type:'run',command:'next'});await wait(()=>session.queue.index===2);
-  assert.equal(submissions.at(-1),'87654321');assert.equal(session.history.length,2);
-  await send({type:'run',command:'next'});
+  assert.equal(session.queue.index,2);assert.equal(session.history.length,1);
+  invalid=false;await send({type:'run',command:'next'});
   await wait(()=>windows.some(w=>session[`panel:${new URL(w.url).searchParams.get('id')}`]?.type==='restart'));
   const restart=windows.find(w=>session[`panel:${new URL(w.url).searchParams.get('id')}`]?.type==='restart');
   await send({type:'panel-submit',id:new URL(restart.url).searchParams.get('id'),value:true});
-  await wait(()=>session.queue.index===1&&session.history.length===3);
+  await wait(()=>session.queue.index===1&&session.history.length===2);
   assert.equal(submissions.at(-1),'1234');
   assert.equal(tabs.get(1).url.includes('Page2.aspx'),true);
 });
@@ -69,12 +69,13 @@ async function input(value,command='customer') {
   await send({type:'run',command}); await wait(()=>panel('input'));
   await send({type:'panel-submit',id:new URL(panel('input').url).searchParams.get('id'),value});
 }
-test('previous moves back through the saved queue; Next returns forward and failures preserve the cursor',async()=>{
+test('previous moves back through the saved queue; Next returns forward and DMV errors move to the attempted position',async()=>{
   session.queue={values:['101','202','303'],index:3};
   const before=submissions.length;await send({type:'run',command:'previous'});await wait(()=>session.queue.index===2);
   assert.equal(submissions.at(-1),'202');
   invalid=true;await send({type:'run',command:'previous'});await wait(()=>panel('notice'));
-  assert.equal(session.queue.index,2);invalid=false;
+  assert.equal(session.queue.index,1);invalid=false;
+  await send({type:'run',command:'next'});await wait(()=>session.queue.index===2);
   await send({type:'run',command:'previous'});await wait(()=>session.queue.index===1);assert.equal(submissions.at(-1),'101');
   const end=submissions.length;await send({type:'run',command:'previous'});await wait(()=>panel('notice'));assert.equal(submissions.length,end);
   await send({type:'run',command:'next'});await wait(()=>session.queue.index===2);assert.equal(submissions.at(-1),'202');
@@ -303,13 +304,13 @@ test('Collect on a same-residence report retains the first customer, starts at s
   await send({type:'run',command:'next'});await wait(()=>session.queue.index===2);
   assert.equal(submissions.at(-1),values[1]);
 });
-test('failed second-customer lookup on Collect retries that customer on Next',async()=>{
-  session['pdf:2']={text:'Customers at Same Residence\nCustomer Number: 52000001\nCustomer Number: 52000002'};
+test('DMV rejection of the second residence customer lets Next continue to the third',async()=>{
+  session['pdf:2']={text:'Customers at Same Residence\nCustomer Number: 52000001\nCustomer Number: 52000002\nCustomer Number: 52000003'};
   for(const tab of tabs.values())tab.active=tab.id===2;
   invalid=true;await send({type:'run',command:'owners'});await wait(()=>panel('notice'));
-  assert.equal(session.queue.index,1);assert.deepEqual(session.queue.values,['52000001','52000002']);
-  invalid=false;await send({type:'run',command:'next'});await wait(()=>session.queue.index===2);
-  assert.equal(submissions.at(-1),'52000002');
+  assert.equal(session.queue.index,2);assert.deepEqual(session.queue.values,['52000001','52000002','52000003']);
+  invalid=false;await send({type:'run',command:'next'});await wait(()=>session.queue.index===3);
+  assert.equal(submissions.at(-1),'52000003');
 });
 test('Collect starts at first for single-customer residences and other PDF report types',async()=>{
   for(const text of ['Customers at Same Residence\nCustomer Number: 53000001', 'Owner Number: 53000001\nOwner Number: 53000002', 'Other report\nCustomer Number: 53000001\nCustomer Number: 53000002']){
@@ -325,4 +326,45 @@ test('keyboard commands remain active even with a retired pause preference',asyn
   await wait(()=>panel('input'));
   await send({type:'stop'});
   delete session.shortcutsPaused;
+});
+
+test('Collect consumes a DMV-rejected first customer and Next continues without a false history entry',async()=>{
+  session['pdf:2']={text:'Owner Number: 61000001\nOwner Number: 61000002'};
+  for(const tab of tabs.values())tab.active=tab.id===2;
+  const historyBefore=session.history.length;invalid=true;
+  await send({type:'run',command:'owners'});await wait(()=>panel('notice'));
+  assert.equal(session.queue.index,1);assert.equal(session.history.length,historyBefore);
+  assert.equal(session.status,'Invalid customer number');
+  invalid=false;await send({type:'run',command:'next'});await wait(()=>session.queue.index===2);
+  assert.equal(submissions.at(-1),'61000002');
+});
+test('a DMV error after submission consumes a middle queued customer and keeps the error alert',async()=>{
+  session.queue={values:['62000001','62000002','62000003'],index:1};
+  const historyBefore=session.history.length;invalidAfterSubmit=true;
+  await send({type:'run',command:'next'});await wait(()=>panel('notice'));
+  assert.equal(session.queue.index,2);assert.equal(session.history.length,historyBefore);
+  assert.equal(session.status,'Invalid customer number');
+  invalidAfterSubmit=false;await send({type:'run',command:'next'});await wait(()=>session.queue.index===3);
+  assert.equal(submissions.at(-1),'62000003');
+});
+test('technical failures preserve the pending queued customer for retry',async()=>{
+  session.queue={values:['63000001','63000002'],index:0};technicalFailure=true;
+  await send({type:'run',command:'next'});await wait(()=>panel('notice'));
+  assert.equal(session.queue.index,0);assert.equal(session.status,'Script connection lost');
+  technicalFailure=false;await send({type:'run',command:'next'});await wait(()=>session.queue.index===1);
+  assert.equal(submissions.at(-1),'63000001');
+});
+
+test('login errors do not consume a queued customer',async()=>{
+  session.queue={values:['64000001','64000002'],index:0};
+  session.lastQuery=0;session.credentials={user:'fixture-user',password:'fixture-password'};
+  tabs.get(session.portalId).url=`${MEMBER}logon.aspx`;loginRejected=true;
+  await send({type:'run',command:'next'});await wait(()=>panel('notice'));
+  assert.equal(session.queue.index,0);assert.equal(session.status,'Invalid User ID Or Password');
+  loginRejected=false;session.lastQuery=Date.now();tabs.get(session.portalId).url=`${MEMBER}Disclaimer.aspx`;
+});
+test('a manually entered customer error leaves an existing queue untouched',async()=>{
+  session.queue={values:['65000001','65000002'],index:1};const saved=structuredClone(session.queue);
+  invalid=true;await input('65000099');await wait(()=>panel('notice'));
+  assert.deepEqual(session.queue,saved);invalid=false;
 });

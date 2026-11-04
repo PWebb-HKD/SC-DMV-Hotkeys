@@ -187,7 +187,7 @@ try {
   });
   await tests('validation errors stop the workflow before PDF results', async () => {
     invalid = true; const before = activated.length;
-    await assert.rejects(search('customer','12345678',ctx), /Invalid search number/);
+    await assert.rejects(search('customer','12345678',ctx), {name:'PortalSearchError',message:'Invalid search number'});
     assert.deepEqual(activated.slice(before),[session.portalId]); invalid = false;
   });
   await tests('expired query age forces login and displays site login errors', async () => {

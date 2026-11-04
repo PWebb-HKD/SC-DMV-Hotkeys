@@ -53,7 +53,7 @@ Local/session access is restricted to trusted extension contexts. The vault deri
 
 The worker validates extension sender identity/URL. UI requests receive {ok: true, value} or {ok: false, error}; returning true from the listener keeps its asynchronous response channel open. Reader replies additionally bind their job ID to the temporary reader tab. The offscreen player has its own target and playback reply contract.
 
-The queue contains {values, index, sourceTabId}. Values are canonical unique customer numbers in report order. index is zero before any success and otherwise the one-based displayed position; it is also the zero-based next candidate. Previous targets index - 2. Only successful result discovery commits a cursor change, so retrying a failed search does not skip a customer. Clearing or stopping does not erase history unless explicitly requested.
+The queue contains {values, index, sourceTabId}. Values are canonical unique customer numbers in report order. index is zero before any completed attempt and otherwise the one-based position of the last result or DMV-rejected attempt; it is also the zero-based next candidate. Previous targets index - 2. Successful result discovery or a PortalSearchError commits the attempted cursor position; login, cancellation, and technical failures do not. Clearing or stopping does not erase history unless explicitly requested.
 
 ## Report parsing invariants
 
@@ -103,4 +103,9 @@ History reads, writes, replay lookup, and clearing all use storage.session. Work
 
 ## Residence collection (1.5.1)
 
-collectQueue is shared by Collect and empty Next. Only Collect opts into starting at index 1 for a report headed Customers at Same Residence with at least two unique customers. All values remain stored; index 1 treats the source customer as the initial position until the second lookup commits index 2. A failed second lookup leaves index 1 so Next retries it. Ordinary report collection and empty Next retain index 0 initialization.
+collectQueue is shared by Collect and empty Next. Only Collect opts into starting at index 1 for a report headed Customers at Same Residence with at least two unique customers. All values remain stored; index 1 treats the source customer as the initial position until the second lookup commits index 2. A visible DMV error on the second lookup commits index 2 so Next proceeds to the third. Technical failures leave index 1 for retry. Ordinary report collection and empty Next retain index 0 initialization.
+
+
+## Queued portal errors (1.5.3)
+
+PortalSearchError identifies visible DMV validation errors only on the requested Page1/Page2 search URLs. Login/SCUTTIES errors and technical exceptions remain ordinary errors. runSearch consumes the queued attempt once on either result discovery or PortalSearchError, rethrows the error for the existing alert, and adds history only when results were discovered. The advance callback remains run-guarded so Stop or replacement cannot commit stale queue state.
