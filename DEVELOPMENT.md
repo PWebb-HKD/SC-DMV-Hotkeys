@@ -108,4 +108,4 @@ collectQueue is shared by Collect and empty Next. Only Collect opts into startin
 
 ## Queued portal errors (1.5.3)
 
-PortalSearchError identifies visible DMV validation errors only on the requested Page1/Page2 search URLs. Login/SCUTTIES errors and technical exceptions remain ordinary errors. runSearch consumes the queued attempt once on either result discovery or PortalSearchError, rethrows the error for the existing alert, and adds history only when results were discovered. The advance callback remains run-guarded so Stop or replacement cannot commit stale queue state.
+PortalSearchError identifies visible DMV validation errors only on the requested Page1/Page2 search URLs. Login/SCUTTIES errors and technical exceptions remain ordinary errors. runSearch consumes the queued attempt once on either result discovery or PortalSearchError, rethrows the error for the existing alert, and records either the result or an outcome: error history entry with errorMessage. Error entries retain the original query for replay; replay does not mutate the customer queue. The advance callback remains run-guarded so Stop or replacement cannot commit stale queue state.

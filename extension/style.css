@@ -6,3 +6,5 @@
 .alerts-setting>label:not(.alerts-toggle){display:block;margin:12px 0 5px}.alerts-setting select{display:block;width:100%;padding:7px;color:#f0f3f5;background:#181a1b;border:1px solid #526474;border-radius:4px}.alerts-setting>small{display:block;line-height:1.5;margin:8px 0 14px}.alerts-setting>.alerts-toggle+button{margin-top:12px}
 .stop-function{display:block;width:100%;margin:-6px 0 18px}.tabs button{flex:1}
 .repeat-speech{margin-top:14px}
+
+.history-error{display:block;color:#ffd166;font-size:12px;line-height:1.5;margin-top:3px;overflow-wrap:anywhere}

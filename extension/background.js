@@ -164,7 +164,7 @@ async function pdfText(source, run) {
   }
   return cached.text;
 }
-/** Keep at most twenty successful searches in this session; identity supports replay. */
+/** Keep at most twenty search attempts in this session; identity supports replay. */
 async function addHistory(kind, value, run, details = {}) {
   const api = guardedApi(chrome, run);
   const {history = []} = await api.storage.session.get('history');
@@ -190,7 +190,7 @@ function context(run) {
   };
 }
 /** Submit a portal search; commit successful history before focusing results.
- * Queued DMV errors consume the attempted position without successful history.
+ * DMV errors are recorded as failed attempts; queued errors consume their position.
  * PDF extraction and optional status analysis continue without blocking the next command. */
 async function runSearch(kind, value, ctx, advance) {
   const api = guardedApi(chrome, ctx.run);
@@ -220,9 +220,12 @@ async function runSearch(kind, value, ctx, advance) {
   let result;
   try { result = await search(kind, value, ctx); }
   catch (error) {
-    // Consume a portal-rejected queued attempt, but retain its error alert and
-    // keep failed searches out of successful history. Stop/technical errors retry.
-    if (error instanceof PortalSearchError && !ctx.run.signal.aborted) await advanceQueue();
+    // Record the rejected search with its outcome before displaying the error.
+    // Queue advancement and history remain guarded against Stop or replacement.
+    if (error instanceof PortalSearchError && !ctx.run.signal.aborted) {
+      await advanceQueue();
+      await addHistory(kind, value, ctx.run, {outcome: 'error', errorMessage: error.message});
+    }
     throw error;
   }
   if (['plate', 'license', 'customer'].includes(kind)) {

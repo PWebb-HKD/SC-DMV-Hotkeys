@@ -310,18 +310,18 @@ try {
     window.requests=[];
     window.panelClosed=false;window.close=()=>{window.panelClosed=true;};
     window.openedTabs=[];
-    window.sessionAlerts=false;
+    window.sessionAlerts=false;window.historyErrors=[];window.storageListeners=[];
     window.audioSettings={};
     window.commandShortcuts=[{name:'plate',shortcut:'Ctrl+Shift+7'},{name:'next',shortcut:'Alt+N'},{name:'_execute_action',shortcut:'Alt+Period'}];
     window.chrome = {
       runtime:{getURL:path=>`${location.origin}/${path}`,connect:()=>({postMessage:()=>{}}),sendMessage:async message=>{
         window.requests.push(message);
-        if(message.type==='state')return {ok:true,value:{history:[{kind:'plate',value:'ABC12345',at:Date.now()},{kind:'license',value:'123456789',at:Date.now()}],queue:{values:['123','456'],index:1},commands:window.commandShortcuts,alertsEnabled:window.sessionAlerts,...window.audioSettings,voices:[{voiceName:'Microsoft David Desktop',lang:'en-US'},{voiceName:'Microsoft Zira Desktop',lang:'en-US'}]}};
+        if(message.type==='state')return {ok:true,value:{history:[...window.historyErrors,{kind:'plate',value:'ABC12345',at:Date.now()},{kind:'license',value:'123456789',at:Date.now()}],queue:{values:['123','456'],index:1},commands:window.commandShortcuts,alertsEnabled:window.sessionAlerts,...window.audioSettings,voices:[{voiceName:'Microsoft David Desktop',lang:'en-US'},{voiceName:'Microsoft Zira Desktop',lang:'en-US'}]}};
         if(message.type==='audio-settings'){Object.assign(window.audioSettings,message);return {ok:true,value:true};}
         if(message.type==='alerts'){window.sessionAlerts=message.enabled;return {ok:true,value:message.enabled};}
         if(message.type==='panel-data')return {ok:true,value:window.location.search.includes('credentials')?{type:'credentials',hasVault:false}:{type:'input',command:'plate'}};
         return {ok:true,value:true};
-      }}, commands:{getAll:async()=>window.commandShortcuts},windows:{create:async options=>{window.openedTabs.push(options);}}, storage:{onChanged:{addListener:()=>{}}},tabs:{create:async options=>{window.openedTabs.push(options);}},permissions:{request:async()=>true}
+      }}, commands:{getAll:async()=>window.commandShortcuts},windows:{create:async options=>{window.openedTabs.push(options);}}, storage:{onChanged:{addListener:listener=>window.storageListeners.push(listener)}},tabs:{create:async options=>{window.openedTabs.push(options);}},permissions:{request:async()=>true}
     };
   });
   await tests('shortcut setup lists actual assignments and preferred keys, opens settings, refreshes and dismisses',async()=>{
@@ -433,6 +433,22 @@ try {
     await page.waitForFunction(()=>document.querySelector('[data-command="plate"] kbd').textContent==='Alt+Shift+P');
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
     await page.screenshot({path:join(screenshots,'about.png'),fullPage:true});
+  });
+  await tests('DMV error attempts appear live in history with safe text and remain available to rerun',async()=>{
+    const page=await ui.newPage();await page.goto(`${base}/popup.html`);await page.locator('#history tr').first().waitFor();
+    assert.equal(await page.locator('#history tr').count(),2);
+    await page.evaluate(()=>{
+      window.historyErrors=[{id:'failed-fixture',kind:'customer',value:'61000001',at:Date.now(),outcome:'error',errorMessage:'No record <img src=x>'}];
+      for(const listener of window.storageListeners)listener({history:{newValue:window.historyErrors}},'session');
+    });
+    await page.waitForFunction(()=>document.querySelectorAll('#history tr').length===3);
+    assert.equal(await page.locator('#history .history-error').textContent(),'DMV error: No record <img src=x>');
+    assert.equal(await page.locator('#history img').count(),0);
+    assert.equal(await page.locator('#history .history-rerun').first().textContent(),'61000001');
+    await page.locator('#history .history-rerun').first().click();
+    await page.waitForFunction(()=>window.requests.some(x=>x.type==='rerun'));
+    assert.equal(await page.evaluate(()=>window.requests.find(x=>x.type==='rerun').search.id),'failed-fixture');
+    await page.close();
   });
   await tests('recent search numbers rerun the stored search by click or keyboard without an input prompt',async()=>{
     for(const [row,kind,value] of [[0,'plate','ABC12345'],[1,'license','123456789']]){

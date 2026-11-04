@@ -78,6 +78,11 @@ async function refresh() {
       };
       value.append(rerun);
     } else value.textContent = item.value;
+    if (item.outcome === 'error') {
+      const error = document.createElement('small'); error.className = 'history-error';
+      error.textContent = `DMV error: ${item.errorMessage || 'Search could not be completed.'}`;
+      value.append(error);
+    }
     row.title = new Date(item.at).toLocaleString(); row.append(type, value); $('history').append(row);
   }
   $('empty').hidden = !!data.history?.length;
@@ -130,6 +135,7 @@ for (const [id, type] of [['clearHistory', 'clear-history'], ['clearQueue', 'cle
 }
 // Update session controls while this short-lived popup remains open.
 chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'session' && changes.history) refresh().catch(error => feedback(error.message));
   if (area === 'session' && changes.status) $('status').textContent = changes.status.newValue;
   if (area === 'session' && changes.alertsEnabled) $('alertsToggle').checked = changes.alertsEnabled.newValue === true;
   if (area === 'session' && changes.speechEnabled) $('speechToggle').checked = changes.speechEnabled.newValue === true;

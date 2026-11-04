@@ -52,15 +52,16 @@ test('queue starts with first unique number, consumes portal-rejected last item,
   await send({type:'run',command:'owners'});
   await wait(()=>session.queue?.index===1);
   assert.deepEqual(session.queue.values,['1234','87654321']);assert.equal(submissions[0],'1234');
-  // A visible DMV rejection consumes the attempted item but not successful history.
+  // A visible DMV rejection consumes the attempted item and is labeled as an error in history.
   invalid=true;await send({type:'run',command:'next'});
   await wait(()=>windows.some(w=>session[`panel:${new URL(w.url).searchParams.get('id')}`]?.type==='notice'));
-  assert.equal(session.queue.index,2);assert.equal(session.history.length,1);
+  assert.equal(session.queue.index,2);assert.equal(session.history.length,2);
+  assert.equal(session.history[0].outcome,'error');assert.equal(session.history[0].value,'87654321');
   invalid=false;await send({type:'run',command:'next'});
   await wait(()=>windows.some(w=>session[`panel:${new URL(w.url).searchParams.get('id')}`]?.type==='restart'));
   const restart=windows.find(w=>session[`panel:${new URL(w.url).searchParams.get('id')}`]?.type==='restart');
   await send({type:'panel-submit',id:new URL(restart.url).searchParams.get('id'),value:true});
-  await wait(()=>session.queue.index===1&&session.history.length===2);
+  await wait(()=>session.queue.index===1&&session.history.length===3);
   assert.equal(submissions.at(-1),'1234');
   assert.equal(tabs.get(1).url.includes('Page2.aspx'),true);
 });
@@ -328,21 +329,27 @@ test('keyboard commands remain active even with a retired pause preference',asyn
   delete session.shortcutsPaused;
 });
 
-test('Collect consumes a DMV-rejected first customer and Next continues without a false history entry',async()=>{
+test('Collect records a DMV-rejected first customer as an error and Next continues',async()=>{
   session['pdf:2']={text:'Owner Number: 61000001\nOwner Number: 61000002'};
   for(const tab of tabs.values())tab.active=tab.id===2;
   const historyBefore=session.history.length;invalid=true;
   await send({type:'run',command:'owners'});await wait(()=>panel('notice'));
-  assert.equal(session.queue.index,1);assert.equal(session.history.length,historyBefore);
+  assert.equal(session.queue.index,1);assert.equal(session.history.length,Math.min(20,historyBefore+1));
+  assert.equal(session.history[0].outcome,'error');assert.equal(session.history[0].errorMessage,'Invalid customer number');
   assert.equal(session.status,'Invalid customer number');
   invalid=false;await send({type:'run',command:'next'});await wait(()=>session.queue.index===2);
   assert.equal(submissions.at(-1),'61000002');
+  assert.equal(session.history[0].outcome,undefined);assert.equal(session.history[1].outcome,'error');
+  const saved=structuredClone(session.queue);const failed=session.history[1];
+  await send({type:'rerun',search:{id:failed.id}});await wait(()=>session.history[0].value==='61000001'&&session.history[0].id!==failed.id);
+  assert.deepEqual(session.queue,saved);assert.equal(session.history[0].outcome,undefined);
 });
 test('a DMV error after submission consumes a middle queued customer and keeps the error alert',async()=>{
   session.queue={values:['62000001','62000002','62000003'],index:1};
   const historyBefore=session.history.length;invalidAfterSubmit=true;
   await send({type:'run',command:'next'});await wait(()=>panel('notice'));
-  assert.equal(session.queue.index,2);assert.equal(session.history.length,historyBefore);
+  assert.equal(session.queue.index,2);assert.equal(session.history.length,Math.min(20,historyBefore+1));
+  assert.equal(session.history[0].outcome,'error');assert.equal(session.history[0].errorMessage,'Invalid customer number');
   assert.equal(session.status,'Invalid customer number');
   invalidAfterSubmit=false;await send({type:'run',command:'next'});await wait(()=>session.queue.index===3);
   assert.equal(submissions.at(-1),'62000003');

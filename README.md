@@ -242,4 +242,4 @@ If that first requested search page instead lands on an unrecognized URL, the ex
 
 ### Queued DMV errors (1.5.3)
 
-A visible DMV error on the requested customer search page consumes that queued attempt for Collect, Next, and Previous. The error alert is still shown; the next shortcut moves relative to the attempted customer instead of getting stuck on it. Failed attempts are not added to successful search history. Cancellation, login failures, connection problems, and other technical failures leave the queue position unchanged.
+A visible DMV error on the requested customer search page consumes that queued attempt for Collect, Next, and Previous. The error alert is still shown; the next shortcut moves relative to the attempted customer instead of getting stuck on it. Failed DMV attempts appear in Recent searches with a DMV error label and their error message, and can be clicked to retry. Cancellation, login failures, connection problems, and other technical failures leave the queue position unchanged.
