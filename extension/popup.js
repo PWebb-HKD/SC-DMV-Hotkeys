@@ -9,7 +9,7 @@ const DESCRIPTIONS = {
   plate: 'Enter a license plate number to search for its vehicle record.',
   license: "Enter a driver's license number to search for a driving record.",
   customer: 'Enter a customer number to search for a driving record.',
-  owners: 'Collect unique customer/owner numbers from the open results PDF and search the first.',
+  owners: 'Collect unique customer/owner numbers from the open results PDF and search the second on Customers at Same Residence reports (the first on other reports).',
   next: 'Search the next queued customer. If the queue is empty, collect numbers from the open results PDF.',
   previous: 'Search the previous saved customer number. Stops at the first customer without wrapping around.',
   address: "Read the driver's license number from a driving-record PDF and find customers at the same address.",
@@ -78,6 +78,11 @@ async function refresh() {
       };
       value.append(rerun);
     } else value.textContent = item.value;
+    if (item.outcome === 'error') {
+      const error = document.createElement('small'); error.className = 'history-error';
+      error.textContent = `DMV error: ${item.errorMessage || 'Search could not be completed.'}`;
+      value.append(error);
+    }
     row.title = new Date(item.at).toLocaleString(); row.append(type, value); $('history').append(row);
   }
   $('empty').hidden = !!data.history?.length;
@@ -130,6 +135,7 @@ for (const [id, type] of [['clearHistory', 'clear-history'], ['clearQueue', 'cle
 }
 // Update session controls while this short-lived popup remains open.
 chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'session' && changes.history) refresh().catch(error => feedback(error.message));
   if (area === 'session' && changes.status) $('status').textContent = changes.status.newValue;
   if (area === 'session' && changes.alertsEnabled) $('alertsToggle').checked = changes.alertsEnabled.newValue === true;
   if (area === 'session' && changes.speechEnabled) $('speechToggle').checked = changes.speechEnabled.newValue === true;

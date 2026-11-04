@@ -20,6 +20,7 @@ const event=()=>({listeners:new Set(),addListener(fn){this.listeners.add(fn);},r
 try {
   const context = await browser.newContext();
   let nextId = 1, clock = 100, activated = [], windowsUpdated = [], submissions = [], loginClicks = 0, invalid = false, loginInvalid = false, plateRadio = false, credentialPrompts = 0, autofillMode = '', disclaimerClicks = 0, loginElapsed = 0, resultMode = 'new', loginDestination = DISCLAIMER;
+  let transactionRedirects=0, brokenTransactions=false, logoffClicks=0, transactionRedirectTarget=`${MEMBER}Transactions/TransactionList.aspx`;
   const navigation = [], loginFills = [];
   let loginEvents = [], loginReapplied = [], loginWasFocused = false, loginSubmitted;
   const tabs = new Map(), local = {}, session = {}, permissions = new Set([`${ROOT}/*`]);
@@ -28,6 +29,7 @@ try {
     const u = new URL(url); let html = '';
     if (u.pathname.endsWith('/logon.aspx')) html = `<input id="ContentPlaceHolder1_userNameText"><input id="ContentPlaceHolder1_passwordText" type="password"><button id="ContentPlaceHolder1_loginButton">Log in</button>`;
     else if (u.pathname.endsWith('/Disclaimer.aspx')) html = '<button id="accept">I Agree</button>';
+    else if (u.pathname.endsWith('/TransactionList.aspx') && brokenTransactions) html = '<div id="ContentPlaceHolder1_menuContainer"><div><div><div><div class="panel-body"><ul><li><a id="logoff" href="#">Log off</a></li></ul></div></div></div></div></div>';
     else if (u.pathname.endsWith('/TransactionList.aspx')) html = '<a href="/SCTRNS/Member/Transactions/SCUTTIES/SCUTTIES.aspx">SCUTTIES</a>';
     else if (u.pathname.includes('/SCUTTIES/')) html = '<div id="home"><input id="last"><input id="dob"><button id="go">Search</button></div>';
     else if (u.pathname.endsWith('/Page1.aspx')) html = `<input id="ContentPlaceHolder1_rblReportType_0" type="radio"><input id="ContentPlaceHolder1_txtPlateNbr"><input id="ContentPlaceHolder1_dlNumberTextBox"><input id="ContentPlaceHolder1_idNumberTextBox"><input id="ContentPlaceHolder1_txtDLNumber"><button id="btnFooterNavNext">Next</button>`;
@@ -62,7 +64,8 @@ try {
       const radio = document.querySelector('#ContentPlaceHolder1_rblReportType_0'); if(radio)radio.onclick=()=>window.fixture('radio');
       const next = document.querySelector('#btnFooterNavNext'); if(next)next.onclick=()=>window.fixture('next',Object.fromEntries([...document.querySelectorAll('input')].map(x=>[x.id,x.value])));
       const download = document.querySelector('#downloadButton'); if(download)download.onclick=()=>window.fixture('download');
-      const link = document.querySelector('a'); if(link)link.onclick=e=>{e.preventDefault();window.fixture('scutties')};
+      const logoff=document.querySelector('#logoff');if(logoff)logoff.onclick=e=>{e.preventDefault();window.fixture('logoff');};
+      const link = document.querySelector('a'); if(link&&!logoff)link.onclick=e=>{e.preventDefault();window.fixture('scutties')};
     <\/script></body></html>`;
   };
   await context.route(`${ROOT}/**`, async route => {
@@ -75,7 +78,9 @@ try {
     const tab = {id, url, active, openerTabId, windowId: 1, status: 'loading', lastAccessed: clock++};
     tabs.set(id, {tab, page});
     await page.exposeFunction('fixture', async (action, payload) => {
-      if (action === 'login') {
+      if (action === 'logoff') {
+        logoffClicks++;assert.equal(session.lastQuery,0);brokenTransactions=false;await updateTab(id,{url:LOGIN});
+      } else if (action === 'login') {
         loginWasFocused=tab.active&&windowsUpdated.at(-1)?.focused===true;
         loginClicks++; loginElapsed=payload.elapsed; loginEvents=payload.events; loginReapplied=payload.reapplied;
         loginSubmitted={user:payload.user,password:payload.password};
@@ -111,7 +116,10 @@ try {
     if (update.url) {
       record.tab.status = 'loading'; record.tab.url = update.url;
       chrome.tabs.onUpdated.emit(id,{url:update.url,status:'loading'},{...record.tab});
-      await record.page.goto(update.url); record.tab.status = 'complete';
+      let destination=update.url;
+      // Model the server redirect locally; never let fixtures follow a live HTTP redirect.
+      if(transactionRedirects>0&&destination.includes('/Page1.aspx')){transactionRedirects--;destination=transactionRedirectTarget;brokenTransactions=destination===`${MEMBER}Transactions/TransactionList.aspx`;}
+      await record.page.goto(destination); record.tab.url=record.page.url(); record.tab.status = 'complete';
       chrome.tabs.onUpdated.emit(id,{status:'complete'},{...record.tab});
     }
     if (update.active) { activated.push(id); for (const r of tabs.values()) r.tab.active = r.tab.id === id; }
@@ -179,7 +187,7 @@ try {
   });
   await tests('validation errors stop the workflow before PDF results', async () => {
     invalid = true; const before = activated.length;
-    await assert.rejects(search('customer','12345678',ctx), /Invalid search number/);
+    await assert.rejects(search('customer','12345678',ctx), {name:'PortalSearchError',message:'Invalid search number'});
     assert.deepEqual(activated.slice(before),[session.portalId]); invalid = false;
   });
   await tests('expired query age forces login and displays site login errors', async () => {
@@ -269,6 +277,24 @@ try {
       resultMode='new';
     });
   }
+  await tests('warm plate search recovers from an empty transaction menu by logging off and retrying after login',async()=>{
+    await updateTab(session.portalId,{url:DISCLAIMER});session.lastQuery=Date.now();
+    const before={login:loginClicks,logoff:logoffClicks,submits:submissions.length};transactionRedirects=1;
+    const result=await search('plate','REC123',ctx);
+    assert.equal(logoffClicks,before.logoff+1);assert.equal(loginClicks,before.login+1);
+    assert.equal(submissions.length,before.submits+1);
+    assert.equal(submissions.at(-1).ContentPlaceHolder1_txtPlateNbr,'REC123');
+    assert.equal(activated.at(-1),result.tabId);assert.ok(session.lastQuery>0);
+  });
+  await tests('unexpected first search page returns directly to login and retries without logoff',async()=>{
+    session.lastQuery=Date.now();transactionRedirects=1;transactionRedirectTarget=`${MEMBER}Unexpected.aspx`;
+    const before={login:loginClicks,logoff:logoffClicks,submits:submissions.length};
+    const result=await search('customer','11223344',ctx);
+    assert.equal(logoffClicks,before.logoff);assert.equal(loginClicks,before.login+1);
+    assert.equal(submissions.length,before.submits+1);
+    assert.equal(submissions.at(-1).ContentPlaceHolder1_idNumberTextBox,'11223344');
+    assert.equal(activated.at(-1),result.tabId);assert.ok(session.lastQuery>0);
+  });
   await context.close();
 
   const mime = {'.html':'text/html','.js':'text/javascript','.css':'text/css','.png':'image/png','.mjs':'text/javascript','.mp3':'audio/mpeg'};
@@ -284,18 +310,18 @@ try {
     window.requests=[];
     window.panelClosed=false;window.close=()=>{window.panelClosed=true;};
     window.openedTabs=[];
-    window.sessionAlerts=false;
+    window.sessionAlerts=false;window.historyErrors=[];window.storageListeners=[];
     window.audioSettings={};
     window.commandShortcuts=[{name:'plate',shortcut:'Ctrl+Shift+7'},{name:'next',shortcut:'Alt+N'},{name:'_execute_action',shortcut:'Alt+Period'}];
     window.chrome = {
       runtime:{getURL:path=>`${location.origin}/${path}`,connect:()=>({postMessage:()=>{}}),sendMessage:async message=>{
         window.requests.push(message);
-        if(message.type==='state')return {ok:true,value:{history:[{kind:'plate',value:'ABC12345',at:Date.now()},{kind:'license',value:'123456789',at:Date.now()}],queue:{values:['123','456'],index:1},commands:window.commandShortcuts,alertsEnabled:window.sessionAlerts,...window.audioSettings,voices:[{voiceName:'Microsoft David Desktop',lang:'en-US'},{voiceName:'Microsoft Zira Desktop',lang:'en-US'}]}};
+        if(message.type==='state')return {ok:true,value:{history:[...window.historyErrors,{kind:'plate',value:'ABC12345',at:Date.now()},{kind:'license',value:'123456789',at:Date.now()}],queue:{values:['123','456'],index:1},commands:window.commandShortcuts,alertsEnabled:window.sessionAlerts,...window.audioSettings,voices:[{voiceName:'Microsoft David Desktop',lang:'en-US'},{voiceName:'Microsoft Zira Desktop',lang:'en-US'}]}};
         if(message.type==='audio-settings'){Object.assign(window.audioSettings,message);return {ok:true,value:true};}
         if(message.type==='alerts'){window.sessionAlerts=message.enabled;return {ok:true,value:message.enabled};}
         if(message.type==='panel-data')return {ok:true,value:window.location.search.includes('credentials')?{type:'credentials',hasVault:false}:{type:'input',command:'plate'}};
         return {ok:true,value:true};
-      }}, commands:{getAll:async()=>window.commandShortcuts},windows:{create:async options=>{window.openedTabs.push(options);}}, storage:{onChanged:{addListener:()=>{}}},tabs:{create:async options=>{window.openedTabs.push(options);}},permissions:{request:async()=>true}
+      }}, commands:{getAll:async()=>window.commandShortcuts},windows:{create:async options=>{window.openedTabs.push(options);}}, storage:{onChanged:{addListener:listener=>window.storageListeners.push(listener)}},tabs:{create:async options=>{window.openedTabs.push(options);}},permissions:{request:async()=>true}
     };
   });
   await tests('shortcut setup lists actual assignments and preferred keys, opens settings, refreshes and dismisses',async()=>{
@@ -407,6 +433,22 @@ try {
     await page.waitForFunction(()=>document.querySelector('[data-command="plate"] kbd').textContent==='Alt+Shift+P');
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
     await page.screenshot({path:join(screenshots,'about.png'),fullPage:true});
+  });
+  await tests('DMV error attempts appear live in history with safe text and remain available to rerun',async()=>{
+    const page=await ui.newPage();await page.goto(`${base}/popup.html`);await page.locator('#history tr').first().waitFor();
+    assert.equal(await page.locator('#history tr').count(),2);
+    await page.evaluate(()=>{
+      window.historyErrors=[{id:'failed-fixture',kind:'customer',value:'61000001',at:Date.now(),outcome:'error',errorMessage:'No record <img src=x>'}];
+      for(const listener of window.storageListeners)listener({history:{newValue:window.historyErrors}},'session');
+    });
+    await page.waitForFunction(()=>document.querySelectorAll('#history tr').length===3);
+    assert.equal(await page.locator('#history .history-error').textContent(),'DMV error: No record <img src=x>');
+    assert.equal(await page.locator('#history img').count(),0);
+    assert.equal(await page.locator('#history .history-rerun').first().textContent(),'61000001');
+    await page.locator('#history .history-rerun').first().click();
+    await page.waitForFunction(()=>window.requests.some(x=>x.type==='rerun'));
+    assert.equal(await page.evaluate(()=>window.requests.find(x=>x.type==='rerun').search.id),'failed-fixture');
+    await page.close();
   });
   await tests('recent search numbers rerun the stored search by click or keyboard without an input prompt',async()=>{
     for(const [row,kind,value] of [[0,'plate','ABC12345'],[1,'license','123456789']]){

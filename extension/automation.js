@@ -8,6 +8,8 @@ import {pageOperation} from './page.js';
 import {guardedApi} from './run.js';
 import {watchResults} from './results.js';
 
+const TRANSACTIONS = `${MEMBER}Transactions/TransactionList.aspx`;
+const LOGOFF = '#ContentPlaceHolder1_menuContainer > div > div:nth-child(1) > div:nth-child(1) > div.panel-body > ul > li:nth-child(1) > a';
 const USER = '#ContentPlaceHolder1_userNameText', PASS = '#ContentPlaceHolder1_passwordText';
 const api = ctx => guardedApi(chrome, ctx?.run);
 export const delay = (ms, ctx) => ctx?.run ? ctx.run.step(() => new Promise(resolve => setTimeout(resolve, ms))) : new Promise(resolve => setTimeout(resolve, ms));
@@ -16,6 +18,16 @@ export async function evaluate(tabId, op, args = {}, ctx) {
   const results = await api(ctx).scripting.executeScript({target: {tabId}, world: 'MAIN', func: pageOperation, args: [op, args]});
   if (!results.length) throw new Error('The page could not be accessed.');
   return results[0].result;
+}
+/** A visible DMV error on a requested search page is a completed failed attempt,
+ * distinct from login failures, cancellation, or inability to access the page. */
+export class PortalSearchError extends Error {
+  constructor(message) { super(message); this.name = 'PortalSearchError'; }
+}
+function checkPageErrors(page, searchPages = []) {
+  if (!page.errors.length) return;
+  const ErrorType = searchPages.some(url => samePage(page.url, url)) ? PortalSearchError : Error;
+  throw new ErrorType(page.errors.join('\n'));
 }
 async function state(tabId, selector, ctx) { return evaluate(tabId, 'state', {selector, errorSelector: ERROR_SELECTOR}, ctx); }
 async function click(tabId, selector, ctx) {
@@ -29,12 +41,12 @@ async function until(fn, description, ms = 60000, ctx) {
   throw new Error(`Timed out waiting for ${description}. The site may need your attention.`);
 }
 /** Wait for a completed page with controls, surfacing visible website errors. */
-async function ready(tabId, selector, ctx) {
+async function ready(tabId, selector, ctx, searchPage) {
   return until(async () => {
     const tab = await api(ctx).tabs.get(tabId);
     if (tab.status !== 'complete') return false;
     let s; try { s = await state(tabId, selector, ctx); } catch { ctx?.run?.check(); return false; }
-    if (s.errors.length) throw new Error(s.errors.join('\n'));
+    checkPageErrors(s, searchPage ? [searchPage] : []);
     if (samePage(s.url, LOGIN)) throw new Error('Your DMV session has expired. Run the command again to sign in.');
     return s.present && s;
   }, 'the search page controls', 60000, ctx);
@@ -119,7 +131,41 @@ async function login(tabId, ctx) {
 async function ensureSession(tabId, ctx) {
   const {lastQuery = 0} = await api(ctx).storage.session.get('lastQuery');
   const t = await api(ctx).tabs.get(tabId);
-  if (Date.now() - lastQuery >= 600000 || samePage(t.url, LOGIN)) await login(tabId, ctx);
+  const reused = Date.now() - lastQuery < 600000 && !samePage(t.url, LOGIN);
+  if (!reused) await login(tabId, ctx);
+  return reused;
+}
+/** Recover unexpected first-page navigation, with logoff for stale transaction menus. Never retry a
+ * submitted transaction: the broken-session redirect happens before any form fill. */
+async function initialSearchPage(tabId, url, reusedSession, ctx) {
+  const load = async () => {
+    await api(ctx).tabs.update(tabId, {url});
+    return until(async () => {
+      const tab = await api(ctx).tabs.get(tabId);
+      return tab.status === 'complete' && !tab.pendingUrl && tab;
+    }, 'the search form', 60000, ctx);
+  };
+  let page = await load();
+  const staleMenu = reusedSession && samePage(page.url, TRANSACTIONS);
+  const unexpected = !samePage(page.url, url) && !samePage(page.url, LOGIN) && !samePage(page.url, TRANSACTIONS);
+  if (staleMenu || unexpected) {
+    ctx.status(staleMenu ? 'Recovering DMV session: logging off and signing in' : 'Unexpected DMV page: returning to login');
+    // A failed/cancelled recovery must not leave the old ten-minute hint valid.
+    await api(ctx).storage.session.set({lastQuery: 0});
+    if (staleMenu) {
+      await focusTab(tabId, ctx);
+      await click(tabId, LOGOFF, ctx);
+      await until(async () => {
+        const tab = await api(ctx).tabs.get(tabId);
+        return tab.status === 'complete' && !samePage(tab.url, TRANSACTIONS);
+      }, 'DMV log off to finish', 30000, ctx);
+    }
+    await login(tabId, ctx);
+    page = await load();
+    if (samePage(page.url, TRANSACTIONS)) throw new Error('The DMV returned to the transaction list again after signing in. Please check the website and try again.');
+    if (!samePage(page.url, url)) throw new Error('The DMV returned to an unexpected page again after signing in. Please check the website and try again.');
+  }
+  return page;
 }
 const SEARCHES = {
   plate: ['VehRec', '', '#ContentPlaceHolder1_txtPlateNbr'],
@@ -130,20 +176,19 @@ const SEARCHES = {
 /** Run a plate/license/customer/address transaction using the shared Page1/Page2 flow. */
 export async function search(kind, value, ctx) {
   const tab = await portalTab(ctx); ctx.tabId = tab.id;
-  await ensureSession(tab.id, ctx);
+  const reusedSession = await ensureSession(tab.id, ctx);
   const [path, query, selector] = SEARCHES[kind];
   const base = `${MEMBER}Transactions/${path}/`;
   ctx.status(`Submitting ${kind} search`);
-  await api(ctx).tabs.update(tab.id, {url: `${base}Page1.aspx${query}`});
+  const firstPage = await initialSearchPage(tab.id, `${base}Page1.aspx${query}`, reusedSession, ctx);
   // Sessions can expire early; do not rely solely on the ten-minute clock.
-  await until(async () => (await api(ctx).tabs.get(tab.id)).status === 'complete', 'the search form', 60000, ctx);
-  if (samePage((await api(ctx).tabs.get(tab.id)).url, LOGIN)) {
+  if (samePage(firstPage.url, LOGIN)) {
     await login(tab.id, ctx); await navigate(tab.id, `${base}Page1.aspx${query}`, ctx);
   }
-  await ready(tab.id, selector, ctx);
+  await ready(tab.id, selector, ctx, `${base}Page1.aspx`);
   if (kind === 'plate') {
     await click(tab.id, '#ContentPlaceHolder1_rblReportType_0', ctx);
-    await delay(500, ctx); await ready(tab.id, selector, ctx);
+    await delay(500, ctx); await ready(tab.id, selector, ctx, `${base}Page1.aspx`);
   }
   await evaluate(tab.id, 'fill', {selector, value}, ctx);
   await click(tab.id, '#btnFooterNavNext', ctx);
@@ -151,11 +196,11 @@ export async function search(kind, value, ctx) {
     const t = await api(ctx).tabs.get(tab.id);
     if (t.status !== 'complete') return false;
     const s = await state(tab.id, undefined, ctx);
-    if (s.errors.length) throw new Error(s.errors.join('\n'));
+    checkPageErrors(s, [`${base}Page1.aspx`, `${base}Page2.aspx`]);
     if (samePage(t.url, LOGIN)) throw new Error('The DMV session expired during the search. Please run it again.');
     return samePage(t.url, `${base}Page2.aspx`);
   }, 'search results', 60000, ctx);
-  await ready(tab.id, '#downloadButton', ctx);
+  await ready(tab.id, '#downloadButton', ctx, `${base}Page2.aspx`);
   const watcher = await watchResults(tab.id, ctx);
   let result;
   try {

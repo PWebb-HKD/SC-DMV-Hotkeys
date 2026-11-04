@@ -5,7 +5,7 @@
  * See DEVELOPMENT.md for the lifecycle and storage/message contracts.
  */
 import {COMMANDS, ROOT, PDF_URL, attachmentUrl, isPdf, isPortal, normalize, ownerNumbers, driverLicense, driverIdentity, historySearch} from './core.js';
-import {search, scutties, evaluate, focusTab} from './automation.js';
+import {search, scutties, evaluate, focusTab, PortalSearchError} from './automation.js';
 import {saveCredentials, unlockCredentials} from './vault.js';
 import {SearchRun, guardedApi, isCancelled} from './run.js';
 import {recordStatus, unavailableAlert} from './status-alerts.js';
@@ -22,7 +22,9 @@ const boot = Promise.all([
   chrome.storage.session.setAccessLevel({accessLevel: 'TRUSTED_CONTEXTS'}),
   // Delete legacy disk history without importing it; preserve current session history.
   // Worker startup also covers unpacked-extension reloads.
-  chrome.storage.local.remove('history')
+  chrome.storage.local.remove('history'),
+  // Retire the removed shortcut-pause preference on update or worker startup.
+  chrome.storage.session.remove('shortcutsPaused')
 ]);
 /** Replace the active command and cancel its readers, audio, and panels. Callers await
  * run.cleanup before opening new UI; late-created windows also check this run. */
@@ -162,7 +164,7 @@ async function pdfText(source, run) {
   }
   return cached.text;
 }
-/** Keep at most twenty successful searches in this session; identity supports replay. */
+/** Keep at most twenty search attempts in this session; identity supports replay. */
 async function addHistory(kind, value, run, details = {}) {
   const api = guardedApi(chrome, run);
   const {history = []} = await api.storage.session.get('history');
@@ -187,15 +189,19 @@ function context(run) {
     }
   };
 }
-/** Submit a portal search and commit queue/history at result discovery, before focus.
+/** Submit a portal search; commit successful history before focusing results.
+ * DMV errors are recorded as failed attempts; queued errors consume their position.
  * PDF extraction and optional status analysis continue without blocking the next command. */
 async function runSearch(kind, value, ctx, advance) {
   const api = guardedApi(chrome, ctx.run);
-  let captured;
+  let captured, advanced = false;
+  const advanceQueue = async () => {
+    if (advance && !advanced) { await advance(); advanced = true; }
+  };
   ctx.resultReady = async result => {
     // Commit queue progress before focusing results. An immediate Alt+N must
     // select the following person even while PDF.js is still extracting text.
-    if (advance) await advance();
+    await advanceQueue();
     await addHistory(kind, value, ctx.run);
     await track(async () => {
       const {pdfCreated = {}, pdfSources = {}} = await api.storage.session.get(['pdfCreated', 'pdfSources']);
@@ -211,7 +217,17 @@ async function runSearch(kind, value, ctx, advance) {
       return {ok: false, error: e.message};
     });
   };
-  const result = await search(kind, value, ctx);
+  let result;
+  try { result = await search(kind, value, ctx); }
+  catch (error) {
+    // Record the rejected search with its outcome before displaying the error.
+    // Queue advancement and history remain guarded against Stop or replacement.
+    if (error instanceof PortalSearchError && !ctx.run.signal.aborted) {
+      await advanceQueue();
+      await addHistory(kind, value, ctx.run, {outcome: 'error', errorMessage: error.message});
+    }
+    throw error;
+  }
   if (['plate', 'license', 'customer'].includes(kind)) {
     showRecordStatus(kind, value, result.tabId, captured, ctx).catch(error => {
       if (!isCancelled(error) && !ctx.run.signal.aborted) ctx.status(`Status alert unavailable: ${error.message}`);
@@ -238,16 +254,20 @@ async function showRecordStatus(kind, value, tabId, captured, ctx) {
   if (data.alertsEnabled) await createPanel({...alert, subject: `${COMMANDS[kind].label}: ${value}`}, {}, ctx.run);
 }
 /** Create the queue from one report snapshot for both Collect and an empty Next.
- * index is the one-based position of the last displayed result (zero before any),
- * which is also the zero-based index to try next. Failed searches do not advance it. */
-async function collectQueue(source, run) {
+ * index is the one-based position of the last completed attempt (zero before any),
+ * which is also the zero-based index to try next. Technical failures do not advance it. */
+async function collectQueue(source, run, skipResidenceFirst = false) {
   const origin = await pdfTab(source, run);
-  const values = ownerNumbers(await pdfText(origin, run));
-  const queue = {values, index: 0, sourceTabId: origin.id};
+  const text = await pdfText(origin, run), values = ownerNumbers(text);
+  // Collect retains the source customer but starts with the next residence entry.
+  // An empty Next queue and other report types retain their first-entry behavior.
+  const residence = /^\s*Customers\s+at\s+Same\s+Residence\b/i.test(text);
+  const index = skipResidenceFirst && residence && values.length > 1 ? 1 : 0;
+  const queue = {values, index, sourceTabId: origin.id};
   await guardedApi(chrome, run).storage.session.set({queue});
   return queue;
 }
-/** Route a validated command. Queue progress commits only when its results are found. */
+/** Route a validated command. Queue progress commits on results or a visible DMV search error. */
 async function execute(command, value, source, options, run) {
   const ctx = context(run), api = guardedApi(chrome, run);
   try {
@@ -256,8 +276,8 @@ async function execute(command, value, source, options, run) {
       const normalized = normalize(command, value); if (!normalized) return;
       await runSearch(command, normalized, ctx);
     } else if (command === 'owners') {
-      const queue = await collectQueue(source, run);
-      await runSearch('customer', queue.values[0], ctx, () => api.storage.session.set({queue: {...queue, index: 1}}));
+      const queue = await collectQueue(source, run, true);
+      await runSearch('customer', queue.values[queue.index], ctx, () => api.storage.session.set({queue: {...queue, index: queue.index + 1}}));
     } else if (command === 'next') {
       let {queue} = await api.storage.session.get('queue');
       if (!queue?.values?.length) {
