@@ -50,6 +50,13 @@ try {
         }
         $('recordAlert').append(block);
       }
+      if (data.recordType === 'plate' && data.vehicle) {
+        const details = document.createElement('div'); details.className = 'record-vehicle-details';
+        for (const [field, label] of [['make', 'Make'], ['model', 'Model'], ['year', 'Year'], ['body', 'Body style']]) {
+          const value = document.createElement('p'); value.textContent = `${label}: ${data.vehicle[field] || 'Unavailable'}`; details.append(value);
+        }
+        $('recordAlert').append(details);
+      }
       $('cancel').hidden = true; $('submit').textContent = 'Close'; $('submit').focus();
       const deadline = Date.now() + (data.autoCloseMs || 90000);
       $('alertCountdown').hidden = false;

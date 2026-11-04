@@ -54,9 +54,20 @@ export function isTemporaryPlate(plateClass) {
   return /^(?:T45V|E60V)\b/i.test(flat(plateClass));
 }
 
+/** Read the vehicle heading only; VIN is a delimiter, never display data. */
+function vehicleDetails(text) {
+  const start = text.search(/\bVIN\s*:/i);
+  if (start < 0) return null;
+  const match = text.slice(start).match(/^VIN\s*:\s*[^:]*?\bYear\s*:\s*([^:]*?)\bMake\s*:\s*([^:]*?)\bModel\s*:\s*([^:]*?)\bBody\s*:\s*([^:]*?)(?=\bEmpty\s+Weight\s*:)/i);
+  if (!match) return null;
+  const [, year, make, model, body] = match;
+  return {make: flat(make), model: flat(model), year: /^\d{4}$/.test(flat(year)) ? flat(year) : '', body: flat(body)};
+}
+
 /** Combine enforcement and expiration findings; temporary tags use Plate Exp Date. */
 export function plateStatus(raw, now = new Date()) {
   const text = flat(raw), today = reportToday(now), sections = [];
+  const vehicle = vehicleDetails(text), details = vehicle ? {vehicle} : {};
   const enforcement = /\bEnforcement\s+Description\s*:\s*([\s\S]*?)\bEnforcement\s+Statute\s*:\s*/gi;
   for (const match of text.matchAll(enforcement)) {
     const description = flat(match[1]);
@@ -76,10 +87,10 @@ export function plateStatus(raw, now = new Date()) {
   }
   if (sections.length) {
     if (!expiration) sections.push({title: '', lines: ['Expiration status could not be determined from this report.']});
-    return alert('plate', 'danger', sections);
+    return alert('plate', 'danger', sections, details);
   }
-  if (!expiration) return unavailableAlert('plate', hasClass ? `A valid ${temporary ? 'Plate' : 'Decal'} Exp Date was not found.` : 'Plate Class was not found in the results PDF.');
-  return alert('plate', 'success', [{title: 'TAG VALID', lines: []}]);
+  if (!expiration) return {...unavailableAlert('plate', hasClass ? `A valid ${temporary ? 'Plate' : 'Decal'} Exp Date was not found.` : 'Plate Class was not found in the results PDF.'), ...details};
+  return alert('plate', 'success', [{title: 'TAG VALID', lines: []}], details);
 }
 
 function field(block, label, next) {

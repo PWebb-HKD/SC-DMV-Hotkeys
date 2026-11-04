@@ -164,3 +164,26 @@ for (const plateClass of ['T45V TEMPORARY PLATE-VEHICLE', 'E60V EVR TEMPORARY PL
     }
   });
 }
+
+test('plate popups include make/model/year/body from the vehicle heading for valid, expired and suspended tags',()=>{
+  const heading='VIN: SYNTHETIC-VIN Year: 2026 Make: MERCEDES BENZ Model: EXAMPLE MODEL Body: 4D\nEmpty Weight: 3000 Title Number: 999';
+  for(const [expiration,extra,tone] of [['11/01/2026','','success'],['10/27/2026','','danger'],['11/01/2026','Enforcement Description: Insurance suspension Enforcement Statute: 56-1-460','danger']]){
+    const result=plateStatus(heading+'\n'+vehicle(expiration,extra),NOW);
+    assert.equal(result.tone,tone);
+    assert.deepEqual(result.vehicle,{make:'MERCEDES BENZ',model:'EXAMPLE MODEL',year:'2026',body:'4D'});
+    assert.equal(JSON.stringify(result).includes('SYNTHETIC-VIN'),false);
+    assert.equal(JSON.stringify(result.vehicle).includes('3000'),false);
+  }
+});
+test('vehicle metadata respects heading boundaries and tolerates blank fields without guessing',()=>{
+  const result=plateStatus('VIN: SYNTHETIC Year: 2026 Make: TEST Model: Body: Empty Weight: 3000 '+vehicle('11/01/2026'),NOW);
+  assert.deepEqual(result.vehicle,{make:'TEST',model:'',year:'2026',body:''});
+  assert.equal(plateStatus(vehicle('11/01/2026'),NOW).vehicle,undefined);
+  assert.equal(plateStatus('VIN: SYNTHETIC Year: 2026 Make: TEST Model: EXAMPLE Body: 4S '+vehicle('11/01/2026'),NOW).vehicle,undefined);
+});
+
+test('vehicle summary never borrows fields from a later record when the first heading is incomplete',()=>{
+  const text='VIN: FIRST Year: 2026 Model: FIRST MODEL Body: 4S Empty Weight: 3000 '+
+    'VIN: SECOND Year: 2025 Make: SECOND MAKE Model: SECOND MODEL Body: 4D Empty Weight: 4000 '+vehicle('11/01/2026');
+  assert.equal(plateStatus(text,NOW).vehicle,undefined);
+});
