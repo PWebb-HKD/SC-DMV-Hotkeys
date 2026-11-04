@@ -18,8 +18,7 @@ export const COMMANDS = {
   previous: {label: 'Previous Customer Number', key: 'Alt+M'},
   address: {label: 'Customers at Same Address', key: 'Alt+I'},
   scutties: {label: 'SCUTTIES Driver Search', key: 'Alt+U'},
-  barcode: {label: 'Generate PDF417 Barcode', key: 'Alt+B'},
-  toggleShortcuts: {label: 'Pause/Resume Shortcut Actions', key: 'Alt+Minus'}
+  barcode: {label: 'Generate PDF417 Barcode', key: 'Alt+B'}
 };
 /** Unwrap recognized Chromium PDF viewer URLs with bounded recursion; reject other origins. */
 export function attachmentUrl(url = '', depth = 0) {

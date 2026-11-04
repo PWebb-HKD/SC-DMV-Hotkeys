@@ -284,14 +284,13 @@ try {
     window.requests=[];
     window.panelClosed=false;window.close=()=>{window.panelClosed=true;};
     window.openedTabs=[];
-    window.sessionAlerts=false;window.shortcutsPaused=false;
+    window.sessionAlerts=false;
     window.audioSettings={};
     window.commandShortcuts=[{name:'plate',shortcut:'Ctrl+Shift+7'},{name:'next',shortcut:'Alt+N'},{name:'_execute_action',shortcut:'Alt+Period'}];
     window.chrome = {
       runtime:{getURL:path=>`${location.origin}/${path}`,connect:()=>({postMessage:()=>{}}),sendMessage:async message=>{
         window.requests.push(message);
-        if(message.type==='state')return {ok:true,value:{shortcutsPaused:window.shortcutsPaused,history:[{kind:'plate',value:'ABC12345',at:Date.now()},{kind:'license',value:'123456789',at:Date.now()}],queue:{values:['123','456'],index:1},commands:window.commandShortcuts,alertsEnabled:window.sessionAlerts,...window.audioSettings,voices:[{voiceName:'Microsoft David Desktop',lang:'en-US'},{voiceName:'Microsoft Zira Desktop',lang:'en-US'}]}};
-        if(message.type==='toggle-shortcuts'){window.shortcutsPaused=!window.shortcutsPaused;return {ok:true,value:window.shortcutsPaused};}
+        if(message.type==='state')return {ok:true,value:{history:[{kind:'plate',value:'ABC12345',at:Date.now()},{kind:'license',value:'123456789',at:Date.now()}],queue:{values:['123','456'],index:1},commands:window.commandShortcuts,alertsEnabled:window.sessionAlerts,...window.audioSettings,voices:[{voiceName:'Microsoft David Desktop',lang:'en-US'},{voiceName:'Microsoft Zira Desktop',lang:'en-US'}]}};
         if(message.type==='audio-settings'){Object.assign(window.audioSettings,message);return {ok:true,value:true};}
         if(message.type==='alerts'){window.sessionAlerts=message.enabled;return {ok:true,value:message.enabled};}
         if(message.type==='panel-data')return {ok:true,value:window.location.search.includes('credentials')?{type:'credentials',hasVault:false}:{type:'input',command:'plate'}};
@@ -303,7 +302,7 @@ try {
     const page=await ui.newPage();await page.setViewportSize({width:900,height:820});
     await page.addInitScript(()=>{window.setupClosed=false;window.close=()=>{window.setupClosed=true;};});
     await page.goto(`${base}/shortcut-setup.html`);await page.locator('#assignments tr').first().waitFor();
-    assert.equal(await page.locator('#assignments tr').count(),10);
+    assert.equal(await page.locator('#assignments tr').count(),9);
     assert.match(await page.locator('main').textContent(),/In Chrome.*Global/s);
     assert.match(await page.locator('[data-command="plate"]').textContent(),/Alt\+P.*Ctrl\+Shift\+7/);
     assert.match(await page.locator('[data-command="barcode"]').textContent(),/Alt\+B.*Not assigned/);
@@ -329,20 +328,6 @@ try {
     await page.locator('#aboutTab').click();assert.equal(await page.locator('#alertsToggle').isVisible(),false);
     await page.locator('#historyTab').click();await page.getByRole('button',{name:'Previous customer',exact:true}).click();
     assert.equal(await page.evaluate(()=>window.requests.at(-1).command),'previous');await page.close();
-  });
-  await tests('shortcut pause button shows state and resumes without closing the toolbar',async()=>{
-    const page=await ui.newPage();await page.goto(`${base}/popup.html`);
-    await page.locator('#history tr').first().waitFor();
-    assert.equal(await page.locator('#shortcutState').textContent(),'Shortcut actions active');
-    await page.locator('#shortcutPause').click();
-    await page.waitForFunction(()=>document.querySelector('#shortcutPause').getAttribute('aria-pressed')==='true');
-    assert.equal(await page.locator('#shortcutState').textContent(),'Shortcut actions paused');
-    await page.locator('#settingsTab').click();
-    assert.match(await page.locator('#settingsView').textContent(),/Chromium may still reserve Global/);
-    await page.locator('#shortcutPause').click();
-    await page.waitForFunction(()=>document.querySelector('#shortcutPause').getAttribute('aria-pressed')==='false');
-    assert.equal(await page.locator('#shortcutState').textContent(),'Shortcut actions active');
-    await page.close();
   });
   await tests('audio controls start off and retain independent toggles and voice selection',async()=>{
     const page=await ui.newPage();await page.goto(`${base}/popup.html`);await page.locator('#history tr').first().waitFor();
@@ -404,7 +389,7 @@ try {
     await page.screenshot({path:join(screenshots,'history.png')});
     await page.locator('#aboutTab').click();
     assert.equal(await page.locator('#aboutTab').textContent(),'About');
-    assert.equal(await page.locator('.shortcut-entry').count(),11);
+    assert.equal(await page.locator('.shortcut-entry').count(),10);
     assert.equal(await page.locator('[data-command="selected"]').count(),0);
     assert.equal(await page.locator('[data-command="plate"] kbd').textContent(),'Ctrl+Shift+7');
     assert.equal(await page.locator('[data-command="license"] kbd').textContent(),'Not assigned');

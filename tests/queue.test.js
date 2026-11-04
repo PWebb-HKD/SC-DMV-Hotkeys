@@ -319,31 +319,10 @@ test('Collect starts at first for single-customer residences and other PDF repor
   }
 });
 
-test('pause blocks every keyboard action except its toggle while toolbar actions remain usable',async()=>{
-  const command=chrome.commands.onCommand.listeners[0];
-  assert.equal(await send({type:'toggle-shortcuts'}),true);
-  const before={windows:windows.length,submissions:submissions.length,queue:structuredClone(session.queue),history:structuredClone(session.history)};
-  for(const name of ['plate','license','customer','owners','next','previous','address','scutties','barcode'])await command(name);
-  assert.equal(windows.length,before.windows);assert.equal(submissions.length,before.submissions);
-  assert.deepEqual(session.queue,before.queue);assert.deepEqual(session.history,before.history);
-  assert.equal((await send({type:'state'})).shortcutsPaused,true);
-  await send({type:'run',command:'customer'});await wait(()=>panel('input'));
+test('keyboard commands remain active even with a retired pause preference',async()=>{
+  session.shortcutsPaused=true;
+  await chrome.commands.onCommand.listeners[0]('customer');
+  await wait(()=>panel('input'));
   await send({type:'stop'});
-  await command('toggleShortcuts');assert.equal(session.shortcutsPaused,false);
-  await command('customer');await wait(()=>panel('input'));
-  await send({type:'stop'});
-  await Promise.all([command('toggleShortcuts'),command('toggleShortcuts')]);
-  assert.equal(session.shortcutsPaused,false,'Two rapid toggles must restore the original state');
-});
-test('pausing shortcut actions does not cancel an in-progress search',async()=>{
-  session.queue={values:['54000001','54000002'],index:1};
-  blockSubmitted=true;const before=submissions.length;
-  await send({type:'run',command:'next'});await wait(()=>submissions.length>before);
-  await chrome.commands.onCommand.listeners[0]('toggleShortcuts');
-  assert.equal(session.shortcutsPaused,true);
-  const portal=tabs.get(session.portalId);portal.url=portal.url.replace('Page1.aspx','Page2.aspx');blockSubmitted=false;
-  await wait(()=>session.queue.index===2);
-  assert.equal(submissions.at(-1),'54000002');
-  await chrome.commands.onCommand.listeners[0]('toggleShortcuts');
-  assert.equal(session.shortcutsPaused,false);
+  delete session.shortcutsPaused;
 });

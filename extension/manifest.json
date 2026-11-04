@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "SC DMV Hotkeys",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "minimum_chrome_version": "120",
   "description": "Keyboard shortcut keys for automating searches through the SCDMV online portal.",
   "permissions": [
@@ -36,10 +36,6 @@
     "extension_pages": "script-src 'self'; object-src 'self'; worker-src 'self'"
   },
   "commands": {
-    "toggleShortcuts": {
-      "description": "Pause/resume shortcut actions (preferred Alt+Minus)",
-      "global": true
-    },
     "plate": {
       "description": "License plate search (preferred Alt+P)",
       "global": true

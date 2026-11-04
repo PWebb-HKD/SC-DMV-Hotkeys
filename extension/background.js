@@ -22,7 +22,9 @@ const boot = Promise.all([
   chrome.storage.session.setAccessLevel({accessLevel: 'TRUSTED_CONTEXTS'}),
   // Delete legacy disk history without importing it; preserve current session history.
   // Worker startup also covers unpacked-extension reloads.
-  chrome.storage.local.remove('history')
+  chrome.storage.local.remove('history'),
+  // Retire the removed shortcut-pause preference on update or worker startup.
+  chrome.storage.session.remove('shortcutsPaused')
 ]);
 /** Replace the active command and cancel its readers, audio, and panels. Callers await
  * run.cleanup before opening new UI; late-created windows also check this run. */
@@ -304,7 +306,6 @@ async function execute(command, value, source, options, run) {
  * always replaces the previous run, including one waiting for user input. */
 async function dispatch(command, options = {}) {
   if (!COMMANDS[command]) throw new Error('Unknown command.');
-  if (command === 'toggleShortcuts') return shortcutEvent(command);
   const run = beginRun();
   try {
     await run.step(() => boot); await run.step(() => run.cleanup);
@@ -318,23 +319,7 @@ async function dispatch(command, options = {}) {
     } else await execute(command, options.value || '', source, options, run);
   } catch (error) { await report(error, undefined, run); }
 }
-// Serialize keyboard events and UI toggles so rapid toggles cannot lose a change.
-// Only keyboard entry is gated: toolbar actions and an already running search remain usable.
-let shortcutEvents = Promise.resolve();
-function shortcutEvent(command) {
-  const task = shortcutEvents.then(async () => {
-    await boot;
-    const {shortcutsPaused = false} = await chrome.storage.session.get('shortcutsPaused');
-    if (command === 'toggleShortcuts') {
-      await chrome.storage.session.set({shortcutsPaused: !shortcutsPaused});
-      return !shortcutsPaused;
-    }
-    if (!shortcutsPaused) dispatch(command).catch(error => report(error));
-  });
-  shortcutEvents = task.catch(() => {});
-  return task;
-}
-chrome.commands.onCommand.addListener(command => shortcutEvent(command).catch(e => report(e)));
+chrome.commands.onCommand.addListener(command => dispatch(command).catch(e => report(e)));
 chrome.runtime.onConnect.addListener(port => {
   if (port.name !== 'panel') return;
   port.onMessage.addListener(() => {}); // Panel heartbeats keep pending interactive flows alive.
@@ -462,8 +447,7 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
         dispatch(query.kind, {...query, replay: true}).catch(error => report(error));
         return true;
       }
-      case 'state': return {...await chrome.storage.local.get(['vault']), ...await chrome.storage.session.get(['history', 'queue', 'status', 'shortcutsPaused', 'alertsEnabled', 'speechEnabled', 'repeatSpeech', 'suspendedClipEnabled', 'voiceSource', 'voiceGender', 'voiceName']), voices: await availableVoices().catch(() => []), commands: await chrome.commands.getAll(), extensionId: chrome.runtime.id};
-      case 'toggle-shortcuts': return shortcutEvent('toggleShortcuts');
+      case 'state': return {...await chrome.storage.local.get(['vault']), ...await chrome.storage.session.get(['history', 'queue', 'status', 'alertsEnabled', 'speechEnabled', 'repeatSpeech', 'suspendedClipEnabled', 'voiceSource', 'voiceGender', 'voiceName']), voices: await availableVoices().catch(() => []), commands: await chrome.commands.getAll(), extensionId: chrome.runtime.id};
       case 'stop-audio': audioAlerts.stop(); return true;
       case 'stop': {
         const run = beginRun();

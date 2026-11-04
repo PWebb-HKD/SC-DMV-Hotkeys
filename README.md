@@ -25,13 +25,10 @@ No build, npm installation, or external script download is required to run the p
 | Customers at same address | Alt+I |
 | Driver through SCUTTIES | Alt+U |
 | Generate PDF417 import barcode | Alt+B |
-| Pause/resume shortcut actions | Alt+Minus |
 
 Set each command manually in your browser's extension keyboard shortcut settings and select **Global**. Preferred Alt shortcuts are recommendations; the extension does not assign them. The browser must remain running. If a combination conflicts, choose another. Global availability depends on the browser and operating system.
 
 The extension uses desktop Chromium Manifest V3 APIs and targets Chromium 120 or newer. Chrome, Edge, Brave, Vivaldi, and Opera are intended targets; they have not all been tested live. In **About**, the extension displays actual browser assignments. **Settings** contains the shortcut editor link and setup guide. No separate Windows program or installer is needed.
-
-Pausing shortcut actions ignores every other extension keyboard command until the toggle is pressed again. The toolbar also offers Pause/Resume and shows the current state. A running function continues; use Stop to cancel it. Toolbar buttons and history remain usable. Pause lasts for the browser session, including service-worker restarts. Chromium still owns the registered shortcuts and may consume them while actions are paused; manually unassign a conflicting shortcut in browser settings if another program needs it.
 
 ## Search behavior
 
@@ -229,8 +226,8 @@ Removed the Windows companion, its installer/protocol harness, native-messaging 
 Recent searches and click-to-rerun now use session storage, retaining up to 20 searches while the extension remains loaded. History clears on browser restart or extension reload/update/disable. Old persistent history is deleted, not migrated. Barcode windows close automatically 90 seconds after rendering; changing scale does not restart the timeout. Esc, Close, and new-search dismissal still work. Other credential, security, audio, and alert behavior is unchanged.
 
 
-### Shortcut pause and residence queue (1.5.0)
-
-Assign the new Pause/Resume Shortcut Actions command manually (recommended Alt+Minus) and select Global as needed. Existing assignments are preserved. This pauses extension actions, not browser key registrations.
+### Residence queue (1.5.1)
 
 Collect (Alt+J) on a report headed Customers at Same Residence keeps all unique customer numbers in report order, including the first, and automatically searches the second. Next (Alt+N) then advances to the third; Previous (Alt+M) can return through the second to the first. Failed lookups do not skip the pending customer. Other report types, and Next with an empty queue, still begin at the first customer. A residence report with only one unique customer also starts with that customer.
+
+Pause/resume shortcut actions and the Alt+Minus command were removed in 1.5.1. All nine existing shortcuts remain active.

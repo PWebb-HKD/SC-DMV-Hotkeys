@@ -17,8 +17,6 @@
   <main>
     <div id="status" class="status" role="status">Ready</div>
     <button id="stopFunction" class="secondary stop-function">Stop current function</button>
-    <p id="shortcutState" role="status">Shortcut actions active</p>
-    <button id="shortcutPause" class="secondary" aria-pressed="false">Pause shortcut actions</button>
     <section id="historyView" role="tabpanel" aria-labelledby="historyTab">
       <div id="quick" class="quick"></div>
       <p class="binding-note">Select a search value to run it again.</p>
@@ -46,7 +44,6 @@
     </div>
       <div class="section">
         <h2>Set up your shortcuts</h2>
-        <p class="binding-note">Assign Alt+Minus to Pause/Resume Shortcut Actions. Pausing ignores other extension shortcuts; toolbar actions still work and a running search continues. Chromium may still reserve Global key combinations. To use a conflicting shortcut in another program, unassign it here in the browser shortcut settings.</p>
         <p class="about-instructions">Open the keyboard shortcut settings below and find <strong>SC DMV Hotkeys</strong>. Click the edit icon or shortcut box for each command, then press your preferred key combination using a modifier such as Alt or Ctrl. For each search shortcut, change the <strong>Scope</strong> setting from <strong>In Chrome</strong> to <strong>Global</strong> so it works while another application is focused or the browser is minimized. The browser must remain running.</p>
         <a id="browserShortcuts" href="chrome://extensions/shortcuts">Open browser keyboard shortcut settings</a>
         <p class="binding-note"><button id="shortcutSetup" class="secondary">Open shortcut setup guide</button></p>
