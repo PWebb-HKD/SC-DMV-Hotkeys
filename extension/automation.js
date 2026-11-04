@@ -8,6 +8,8 @@ import {pageOperation} from './page.js';
 import {guardedApi} from './run.js';
 import {watchResults} from './results.js';
 
+const TRANSACTIONS = `${MEMBER}Transactions/TransactionList.aspx`;
+const LOGOFF = '#ContentPlaceHolder1_menuContainer > div > div:nth-child(1) > div:nth-child(1) > div.panel-body > ul > li:nth-child(1) > a';
 const USER = '#ContentPlaceHolder1_userNameText', PASS = '#ContentPlaceHolder1_passwordText';
 const api = ctx => guardedApi(chrome, ctx?.run);
 export const delay = (ms, ctx) => ctx?.run ? ctx.run.step(() => new Promise(resolve => setTimeout(resolve, ms))) : new Promise(resolve => setTimeout(resolve, ms));
@@ -119,7 +121,36 @@ async function login(tabId, ctx) {
 async function ensureSession(tabId, ctx) {
   const {lastQuery = 0} = await api(ctx).storage.session.get('lastQuery');
   const t = await api(ctx).tabs.get(tabId);
-  if (Date.now() - lastQuery >= 600000 || samePage(t.url, LOGIN)) await login(tabId, ctx);
+  const reused = Date.now() - lastQuery < 600000 && !samePage(t.url, LOGIN);
+  if (!reused) await login(tabId, ctx);
+  return reused;
+}
+/** Inspect only the first requested search page after bypassing login. Never retry a
+ * submitted transaction: the broken-session redirect happens before any form fill. */
+async function initialSearchPage(tabId, url, reusedSession, ctx) {
+  const load = async () => {
+    await api(ctx).tabs.update(tabId, {url});
+    return until(async () => {
+      const tab = await api(ctx).tabs.get(tabId);
+      return tab.status === 'complete' && !tab.pendingUrl && tab;
+    }, 'the search form', 60000, ctx);
+  };
+  let page = await load();
+  if (reusedSession && samePage(page.url, TRANSACTIONS)) {
+    ctx.status('Recovering DMV session: logging off and signing in');
+    // A failed/cancelled recovery must not leave the old ten-minute hint valid.
+    await api(ctx).storage.session.set({lastQuery: 0});
+    await focusTab(tabId, ctx);
+    await click(tabId, LOGOFF, ctx);
+    await until(async () => {
+      const tab = await api(ctx).tabs.get(tabId);
+      return tab.status === 'complete' && !samePage(tab.url, TRANSACTIONS);
+    }, 'DMV log off to finish', 30000, ctx);
+    await login(tabId, ctx);
+    page = await load();
+    if (samePage(page.url, TRANSACTIONS)) throw new Error('The DMV returned to the transaction list again after signing in. Please check the website and try again.');
+  }
+  return page;
 }
 const SEARCHES = {
   plate: ['VehRec', '', '#ContentPlaceHolder1_txtPlateNbr'],
@@ -130,14 +161,13 @@ const SEARCHES = {
 /** Run a plate/license/customer/address transaction using the shared Page1/Page2 flow. */
 export async function search(kind, value, ctx) {
   const tab = await portalTab(ctx); ctx.tabId = tab.id;
-  await ensureSession(tab.id, ctx);
+  const reusedSession = await ensureSession(tab.id, ctx);
   const [path, query, selector] = SEARCHES[kind];
   const base = `${MEMBER}Transactions/${path}/`;
   ctx.status(`Submitting ${kind} search`);
-  await api(ctx).tabs.update(tab.id, {url: `${base}Page1.aspx${query}`});
+  const firstPage = await initialSearchPage(tab.id, `${base}Page1.aspx${query}`, reusedSession, ctx);
   // Sessions can expire early; do not rely solely on the ten-minute clock.
-  await until(async () => (await api(ctx).tabs.get(tab.id)).status === 'complete', 'the search form', 60000, ctx);
-  if (samePage((await api(ctx).tabs.get(tab.id)).url, LOGIN)) {
+  if (samePage(firstPage.url, LOGIN)) {
     await login(tab.id, ctx); await navigate(tab.id, `${base}Page1.aspx${query}`, ctx);
   }
   await ready(tab.id, selector, ctx);

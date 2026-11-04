@@ -231,3 +231,8 @@ Recent searches and click-to-rerun now use session storage, retaining up to 20 s
 Collect (Alt+J) on a report headed Customers at Same Residence keeps all unique customer numbers in report order, including the first, and automatically searches the second. Next (Alt+N) then advances to the third; Previous (Alt+M) can return through the second to the first. Failed lookups do not skip the pending customer. Other report types, and Next with an empty queue, still begin at the first customer. A residence report with only one unique customer also starts with that customer.
 
 Pause/resume shortcut actions and the Alt+Minus command were removed in 1.5.1. All nine existing shortcuts remain active.
+
+
+### Stale-session recovery (1.5.2)
+
+When a search reuses the ten-minute login window, the extension checks the first requested search page after it loads. If it unexpectedly lands on TransactionList.aspx, it clicks Log Off, invalidates the cached session time, signs in with the extension credentials, and retries the original search once. No recovery check runs while filling or submitting a transaction or reading its results, and normal fresh logins are unaffected. A repeat redirect reports an error rather than logging off repeatedly. SCUTTIES deliberately opens the transaction menu and does not trigger this URL-mismatch recovery.

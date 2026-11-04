@@ -20,6 +20,7 @@ const event=()=>({listeners:new Set(),addListener(fn){this.listeners.add(fn);},r
 try {
   const context = await browser.newContext();
   let nextId = 1, clock = 100, activated = [], windowsUpdated = [], submissions = [], loginClicks = 0, invalid = false, loginInvalid = false, plateRadio = false, credentialPrompts = 0, autofillMode = '', disclaimerClicks = 0, loginElapsed = 0, resultMode = 'new', loginDestination = DISCLAIMER;
+  let transactionRedirects=0, brokenTransactions=false, logoffClicks=0;
   const navigation = [], loginFills = [];
   let loginEvents = [], loginReapplied = [], loginWasFocused = false, loginSubmitted;
   const tabs = new Map(), local = {}, session = {}, permissions = new Set([`${ROOT}/*`]);
@@ -28,6 +29,7 @@ try {
     const u = new URL(url); let html = '';
     if (u.pathname.endsWith('/logon.aspx')) html = `<input id="ContentPlaceHolder1_userNameText"><input id="ContentPlaceHolder1_passwordText" type="password"><button id="ContentPlaceHolder1_loginButton">Log in</button>`;
     else if (u.pathname.endsWith('/Disclaimer.aspx')) html = '<button id="accept">I Agree</button>';
+    else if (u.pathname.endsWith('/TransactionList.aspx') && brokenTransactions) html = '<div id="ContentPlaceHolder1_menuContainer"><div><div><div><div class="panel-body"><ul><li><a id="logoff" href="#">Log off</a></li></ul></div></div></div></div></div>';
     else if (u.pathname.endsWith('/TransactionList.aspx')) html = '<a href="/SCTRNS/Member/Transactions/SCUTTIES/SCUTTIES.aspx">SCUTTIES</a>';
     else if (u.pathname.includes('/SCUTTIES/')) html = '<div id="home"><input id="last"><input id="dob"><button id="go">Search</button></div>';
     else if (u.pathname.endsWith('/Page1.aspx')) html = `<input id="ContentPlaceHolder1_rblReportType_0" type="radio"><input id="ContentPlaceHolder1_txtPlateNbr"><input id="ContentPlaceHolder1_dlNumberTextBox"><input id="ContentPlaceHolder1_idNumberTextBox"><input id="ContentPlaceHolder1_txtDLNumber"><button id="btnFooterNavNext">Next</button>`;
@@ -62,7 +64,8 @@ try {
       const radio = document.querySelector('#ContentPlaceHolder1_rblReportType_0'); if(radio)radio.onclick=()=>window.fixture('radio');
       const next = document.querySelector('#btnFooterNavNext'); if(next)next.onclick=()=>window.fixture('next',Object.fromEntries([...document.querySelectorAll('input')].map(x=>[x.id,x.value])));
       const download = document.querySelector('#downloadButton'); if(download)download.onclick=()=>window.fixture('download');
-      const link = document.querySelector('a'); if(link)link.onclick=e=>{e.preventDefault();window.fixture('scutties')};
+      const logoff=document.querySelector('#logoff');if(logoff)logoff.onclick=e=>{e.preventDefault();window.fixture('logoff');};
+      const link = document.querySelector('a'); if(link&&!logoff)link.onclick=e=>{e.preventDefault();window.fixture('scutties')};
     <\/script></body></html>`;
   };
   await context.route(`${ROOT}/**`, async route => {
@@ -75,7 +78,9 @@ try {
     const tab = {id, url, active, openerTabId, windowId: 1, status: 'loading', lastAccessed: clock++};
     tabs.set(id, {tab, page});
     await page.exposeFunction('fixture', async (action, payload) => {
-      if (action === 'login') {
+      if (action === 'logoff') {
+        logoffClicks++;assert.equal(session.lastQuery,0);brokenTransactions=false;await updateTab(id,{url:LOGIN});
+      } else if (action === 'login') {
         loginWasFocused=tab.active&&windowsUpdated.at(-1)?.focused===true;
         loginClicks++; loginElapsed=payload.elapsed; loginEvents=payload.events; loginReapplied=payload.reapplied;
         loginSubmitted={user:payload.user,password:payload.password};
@@ -111,7 +116,10 @@ try {
     if (update.url) {
       record.tab.status = 'loading'; record.tab.url = update.url;
       chrome.tabs.onUpdated.emit(id,{url:update.url,status:'loading'},{...record.tab});
-      await record.page.goto(update.url); record.tab.status = 'complete';
+      let destination=update.url;
+      // Model the server redirect locally; never let fixtures follow a live HTTP redirect.
+      if(transactionRedirects>0&&destination.includes('/Page1.aspx')){transactionRedirects--;brokenTransactions=true;destination=`${MEMBER}Transactions/TransactionList.aspx`;}
+      await record.page.goto(destination); record.tab.url=record.page.url(); record.tab.status = 'complete';
       chrome.tabs.onUpdated.emit(id,{status:'complete'},{...record.tab});
     }
     if (update.active) { activated.push(id); for (const r of tabs.values()) r.tab.active = r.tab.id === id; }
@@ -269,6 +277,15 @@ try {
       resultMode='new';
     });
   }
+  await tests('warm plate search recovers from an empty transaction menu by logging off and retrying after login',async()=>{
+    await updateTab(session.portalId,{url:DISCLAIMER});session.lastQuery=Date.now();
+    const before={login:loginClicks,logoff:logoffClicks,submits:submissions.length};transactionRedirects=1;
+    const result=await search('plate','REC123',ctx);
+    assert.equal(logoffClicks,before.logoff+1);assert.equal(loginClicks,before.login+1);
+    assert.equal(submissions.length,before.submits+1);
+    assert.equal(submissions.at(-1).ContentPlaceHolder1_txtPlateNbr,'REC123');
+    assert.equal(activated.at(-1),result.tabId);assert.ok(session.lastQuery>0);
+  });
   await context.close();
 
   const mime = {'.html':'text/html','.js':'text/javascript','.css':'text/css','.png':'image/png','.mjs':'text/javascript','.mp3':'audio/mpeg'};
