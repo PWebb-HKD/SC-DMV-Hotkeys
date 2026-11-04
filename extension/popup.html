@@ -54,9 +54,9 @@
           <label for="blacklistValue">Number</label>
           <input id="blacklistValue" type="text" autocomplete="off" spellcheck="false" aria-describedby="blacklistLimit">
           <small id="blacklistLimit">Up to 8 letters or digits. Spaces are ignored.</small>
-          <label for="blacklistPassphrase">Vault passphrase</label>
+          <div id="blacklistUnlockFields"><label for="blacklistPassphrase">Vault passphrase</label>
           <input id="blacklistPassphrase" type="password" autocomplete="off">
-          <small>Required to unlock or save each change. Your passphrase is never saved.</small>
+          <small>Unlock once per browser session to add and remove entries without re-entering your passphrase.</small></div>
           <div class="actions"><button id="blacklistSetup" class="secondary" type="button">Create encrypted vault</button><button id="blacklistUnlock" class="secondary" type="button">Unlock vault</button><button id="blacklistAdd" type="submit">Add to blacklist</button></div>
         </form>
         <p id="blacklistFeedback" role="status"></p>

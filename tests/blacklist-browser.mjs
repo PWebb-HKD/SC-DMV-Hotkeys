@@ -42,7 +42,7 @@ try {
   assert.equal(await setup.locator('#save').isChecked(), true);
   await setup.locator('#submit').click();
   await page.waitForFunction(() => !document.querySelector('#blacklistAdd').disabled);
-  await page.locator('#blacklistKind').selectOption('customer');await page.locator('#blacklistValue').fill('00001234');await page.locator('#blacklistPassphrase').fill(phrase);await page.locator('#blacklistAdd').click();
+  await page.locator('#blacklistKind').selectOption('customer');await page.locator('#blacklistValue').fill('00001234');await page.locator('#blacklistAdd').click();
   await page.waitForFunction(() => document.querySelectorAll('#blacklistEntries tr').length === 1);
   assert.match(await page.locator('#blacklistEntries').textContent(), /1234/);
   const encrypted = await page.evaluate(async () => JSON.stringify((await chrome.storage.local.get('vault')).vault));

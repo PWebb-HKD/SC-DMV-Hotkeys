@@ -63,6 +63,7 @@ function renderBlacklist(current = {}) {
   $('blacklistSetup').hidden = !!current.hasVault;
   $('blacklistAdd').disabled = !unlocked; $('blacklistUnlock').disabled = !current.hasVault || unlocked;
   $('blacklistPassphrase').disabled = !current.hasVault;
+  $('blacklistUnlockFields').hidden = !current.hasVault || unlocked;
   for (const entry of current.entries || []) {
     const row = document.createElement('tr'), category = document.createElement('td'), value = document.createElement('td'), action = document.createElement('td');
     category.textContent = BLACKLIST_TYPES[entry.kind]; value.textContent = entry.value;
@@ -74,7 +75,7 @@ function renderBlacklist(current = {}) {
       if (!window.confirm(`Remove ${category.toLowerCase()} ${entry.value} from the blacklist? You will no longer be stopped from running it in the future. Running your own or a family member's information could cause your SCDMV access privileges to be suspended or revoked.`)) return;
       remove.disabled = true;
       try {
-        renderBlacklist(await send({type: 'blacklist-remove', ...entry, passphrase: $('blacklistPassphrase').value, confirmed: true}));
+        renderBlacklist(await send({type: 'blacklist-remove', ...entry, confirmed: true}));
         $('blacklistFeedback').textContent = 'Entry removed. Future searches for this number will no longer be blocked.';
       } catch (error) { $('blacklistFeedback').textContent = error.message; remove.disabled = false; }
       finally { $('blacklistPassphrase').value = ''; }
@@ -91,7 +92,7 @@ $('blacklistForm').onsubmit = async event => {
   event.preventDefault(); $('blacklistAdd').disabled = true;
   try {
     const entry = blacklistEntry($('blacklistKind').value, $('blacklistValue').value);
-    renderBlacklist(await send({type: 'blacklist-add', ...entry, passphrase: $('blacklistPassphrase').value}));
+    renderBlacklist(await send({type: 'blacklist-add', ...entry}));
     $('blacklistValue').value = ''; $('blacklistFeedback').textContent = 'Number added to the blacklist.';
   } catch (error) { $('blacklistFeedback').textContent = error.message; $('blacklistAdd').disabled = false; }
   finally { $('blacklistPassphrase').value = ''; }

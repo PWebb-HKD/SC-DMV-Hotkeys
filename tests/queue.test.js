@@ -12,7 +12,7 @@ let nextId=3, invalid=false, invalidAfterSubmit=false, technicalFailure=false, l
 let reportText='Driver License No: 123456789 Name: TEST, PERSON\nDOB: 01/01/2000';
 let pauseAlertWindow=false,alertWindowRelease;
 const removedWindows=[];
-const store=data=>({get:async keys=>typeof keys==='string'?{[keys]:data[keys]}:Array.isArray(keys)?Object.fromEntries(keys.map(k=>[k,data[k]])):{...data},set:async values=>Object.assign(data,values),remove:async keys=>{for(const k of Array.isArray(keys)?keys:[keys])delete data[k];},setAccessLevel:async()=>{}});
+const store=data=>({clear:async()=>{for(const key of Object.keys(data))delete data[key];},get:async keys=>typeof keys==='string'?{[keys]:data[keys]}:Array.isArray(keys)?Object.fromEntries(keys.map(k=>[k,data[k]])):{...data},set:async values=>Object.assign(data,values),remove:async keys=>{for(const k of Array.isArray(keys)?keys:[keys])delete data[k];},setAccessLevel:async()=>{}});
 const runtime={id:'a'.repeat(32),getURL:path=>`chrome-extension://${'a'.repeat(32)}/${path}`,onMessage:event(),onConnect:event(),onStartup:event(),onInstalled:event()};
 globalThis.chrome={
   runtime,storage:{local:store(local),session:store(session)},
@@ -278,7 +278,7 @@ test('background passes the selected exclusive voice source and gender to record
 
 test('recent history stays session-only, remains capped at twenty, and clears independently',async()=>{
   const previousHistory=structuredClone(session.history), previousQueue=structuredClone(session.queue);
-  const savedVault={ciphertext:'test-vault'};local.vault=savedVault;session.unlockedVault=JSON.stringify([savedVault.salt,savedVault.iv,savedVault.ciphertext]);session.blacklist=[];
+  const savedVault={ciphertext:'test-vault'};local.vault=savedVault;session.unlockedVault=JSON.stringify([savedVault.salt,savedVault.iv,savedVault.ciphertext]);session.blacklist=[];session.vaultKey='fixture-key';
   session.history=Array.from({length:20},(_,i)=>({id:'session-'+i,kind:'customer',value:String(80000000+i),at:i}));
   await input('70000001');await wait(()=>session.history[0].value==='70000001');
   assert.equal(session.history.length,20);assert.equal(session.history.at(-1).id,'session-18');
@@ -287,7 +287,7 @@ test('recent history stays session-only, remains capped at twenty, and clears in
   await send({type:'clear-history'});assert.equal(session.history,undefined);
   assert.deepEqual(local.vault,savedVault);assert.deepEqual(session.queue,previousQueue);
   await assert.rejects(send({type:'rerun',search:{id:'session-0'}}),/no longer in recent history/);
-  session.history=previousHistory;delete local.vault;delete session.unlockedVault;delete session.blacklist;
+  session.history=previousHistory;delete local.vault;delete session.unlockedVault;delete session.blacklist;delete session.vaultKey;
 });
 
 test('Collect on a same-residence report retains the first customer, starts at second, and navigates both directions', async()=>{
@@ -416,22 +416,27 @@ test('blocked queued numbers are retained but consumed so Next and Previous rema
   await send({type:'run',command:'owners'});await wait(blockedPanel);assert.equal(session.queue.index,1);
 });
 test('locked vaults require the passphrase even when credentials are cached and a DMV session is fresh',async()=>{
-  delete session.unlockedVault;delete session.blacklist;session.lastQuery=Date.now();
+  delete session.unlockedVault;delete session.blacklist;delete session.vaultKey;session.lastQuery=Date.now();
   const before=navigations.length;
   await input('70000002');await wait(()=>panel('credentials'));
   const id=new URL(panel('credentials').url).searchParams.get('id');assert.equal(session[`panel:${id}`].unlockOnly,true);
   assert.equal(navigations.length,before);
-  await assert.rejects(send({type:'panel-submit',id,unlock:false,user:'different-user',password:'different-password'}),/Unlock the existing vault/);
+  await assert.rejects(send({type:'panel-submit',id,unlock:false,user:'different-user',password:'different-password'}),/Could not unlock/);
   await assert.rejects(send({type:'panel-submit',id,unlock:true,passphrase:'incorrect passphrase'}),/Could not unlock/);
   assert.equal(navigations.length,before);
-  await send({type:'panel-submit',id,unlock:true,passphrase:BLACKLIST_PHRASE});await wait(()=>submittedQueries.at(-1)==='70000002');
+  await send({type:'panel-submit',id,unlock:false,blacklistPassphrase:BLACKLIST_PHRASE,user:'different-fixture-user',password:'different-fixture-password',save:false});await wait(()=>submittedQueries.at(-1)==='70000002');
+  assert.deepEqual(session.credentials,{user:'different-fixture-user',password:'different-fixture-password'});
+  assert.ok(navigations.slice(before).some(url=>url.endsWith('/logon.aspx')),'Different credentials must force the login path');
+  delete session.credentials;await send({type:'blacklist-unlock',passphrase:BLACKLIST_PHRASE});
+  assert.deepEqual(session.credentials,{user:'different-fixture-user',password:'different-fixture-password'});
   assert.equal((await send({type:'state'})).blacklist.unlocked,true);
   await assert.rejects(send({type:'forget-credentials'}),/remove its blacklist entries/);
 });
-test('blacklist edits require a passphrase and confirmed removal before allowing the number again',async()=>{
+test('unlocked blacklist edits need only confirmation for removal, not another passphrase',async()=>{
   await assert.rejects(send({type:'blacklist-remove',kind:'plate',value:'BLOCK123',confirmed:false,passphrase:BLACKLIST_PHRASE}),/Confirm removal/);
   await assert.rejects(send({type:'blacklist-add',kind:'license',value:'ABC',passphrase:BLACKLIST_PHRASE}),/only numbers/);
-  await assert.rejects(send({type:'blacklist-remove',kind:'plate',value:'BLOCK123',confirmed:true,passphrase:'wrong phrase'}),/Could not unlock/);
+  const key=session.vaultKey;delete session.vaultKey;
+  await assert.rejects(send({type:'blacklist-remove',kind:'plate',value:'BLOCK123',confirmed:true}),/Unlock the vault/);session.vaultKey=key;
   const state=await send({type:'blacklist-remove',kind:'plate',value:'BLOCK123',confirmed:true,passphrase:BLACKLIST_PHRASE});
   assert.equal(state.entries.some(x=>x.kind==='plate'),false);
   await input('BLOCK123','plate');await wait(()=>submittedQueries.at(-1)==='BLOCK123');
@@ -456,4 +461,14 @@ test('SCUTTIES checks driver-report identifiers and stored replay identifiers be
   session.history.unshift({id:'legacy-scutties',kind:'scutties',identity});
   await send({type:'rerun',search:{id:'legacy-scutties'}});await wait(()=>panel('notice'));
   assert.match(session.status,/identifiers can be checked/);assert.equal(navigations.length,before);
+});
+
+test('confirmed login-popup reset deletes saved user info and cancels the pending login/search',async()=>{
+  delete session.unlockedVault;delete session.vaultKey;delete session.blacklist;
+  session.lastQuery=Date.now();session['pdf:reset-fixture']={text:'SYNTHETIC REPORT'};
+  await input('70000008');await wait(()=>panel('credentials'));const before=navigations.length;
+  await assert.rejects(send({type:'clear-saved-user-info',confirmed:false}),/Confirm deletion/);assert.ok(local.vault);
+  const win=panel('credentials');await send({type:'clear-saved-user-info',confirmed:true});
+  assert.equal(local.vault,undefined);assert.deepEqual(session,{});assert.ok(removedWindows.includes(win.id));
+  assert.equal(navigations.length,before);
 });

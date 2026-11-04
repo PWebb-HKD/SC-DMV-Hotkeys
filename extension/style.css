@@ -13,3 +13,5 @@
 @keyframes blacklist-flash{0%,100%{opacity:1}50%{opacity:.35}}
 .blacklist-panel .record-status-title{color:#ff5559;font-size:32px;animation:blacklist-flash 1.5s ease-in-out infinite}
 @media(prefers-reduced-motion:reduce){.blacklist-panel .record-status-title{animation:none}}
+
+.clear-saved-info{display:block;width:100%;margin-top:18px;color:#ff8a8d}

@@ -483,14 +483,15 @@ try {
     assert.match(await page.locator('#blacklistFeedback').textContent(),/only numbers/);
     assert.equal(await page.evaluate(()=>window.requests.filter(x=>x.type==='blacklist-add').length),0);
     await page.locator('#blacklistKind').selectOption('plate');assert.match(await page.locator('#blacklistLimit').textContent(),/Up to 8 letters or digits/);
-    await page.locator('#blacklistValue').fill('test123');await page.locator('#blacklistPassphrase').fill('fixture passphrase');await page.locator('#blacklistAdd').click();
+    await page.locator('#blacklistValue').fill('test123');await page.locator('#blacklistAdd').click();
     await page.waitForFunction(()=>document.querySelectorAll('#blacklistEntries tr').length===1);
     assert.match(await page.locator('#blacklistEntries').textContent(),/Plate number.*TEST123/s);
     assert.equal(await page.locator('#blacklistPassphrase').inputValue(),'');
+    assert.equal(await page.evaluate(()=>window.requests.find(x=>x.type==='blacklist-add').passphrase),undefined);
     page.once('dialog',async dialog=>{assert.match(dialog.message(),/no longer be stopped/);await dialog.dismiss();});
     await page.locator('.blacklist-remove').click();assert.equal(await page.locator('#blacklistEntries tr').count(),1);
     assert.equal(await page.evaluate(()=>window.requests.filter(x=>x.type==='blacklist-remove').length),0);
-    await page.locator('#blacklistPassphrase').fill('fixture passphrase');
+    assert.equal(await page.locator('#blacklistPassphrase').isVisible(),false);
     await page.screenshot({path:join(screenshots,'blacklist-settings.png'),fullPage:true});
     page.once('dialog',async dialog=>{assert.match(dialog.message(),/suspended or revoked/);await dialog.accept();});
     await page.locator('.blacklist-remove').click();await page.waitForFunction(()=>document.querySelectorAll('#blacklistEntries tr').length===0);
@@ -505,7 +506,7 @@ try {
     });
     await page.waitForFunction(()=>!document.querySelector('#blacklistAdd').disabled);
     await page.locator('#blacklistKind').selectOption('license');
-    await page.locator('#blacklistValue').fill('001 234 567');await page.locator('#blacklistPassphrase').fill('fixture passphrase');await page.locator('#blacklistAdd').click();
+    await page.locator('#blacklistValue').fill('001 234 567');await page.locator('#blacklistAdd').click();
     await page.waitForFunction(()=>document.querySelectorAll('#blacklistEntries tr').length===1);
     assert.equal(await page.evaluate(()=>window.requests.find(x=>x.type==='blacklist-add').value),'001234567');
     await page.locator('#blacklistValue').fill('1234567890');await page.locator('#blacklistAdd').click();
@@ -513,7 +514,7 @@ try {
     assert.equal(await page.evaluate(()=>window.requests.filter(x=>x.type==='blacklist-add').length),1);
     await page.close();
   });
-  await tests('vault setup requires encrypted storage and blacklist unlock panels offer no alternate-login bypass',async()=>{
+  await tests('vault setup requires encryption and different credentials retain the blacklist-unlock requirement',async()=>{
     for(const mode of ['setup','unlock']){
       const page=await ui.newPage();
       await page.addInitScript(mode=>{
@@ -526,14 +527,26 @@ try {
         assert.equal(await page.locator('#savePassArea').isVisible(),true);
         await page.locator('#user').fill('fixture-user');await page.locator('#password').fill('fixture-password');await page.locator('#savePass').fill('fixture passphrase');
       } else {
-        assert.equal(await page.locator('#useNew').isVisible(),false);assert.equal(await page.locator('#newCredentials').isVisible(),false);
+        assert.equal(await page.locator('#useNew').isVisible(),true);await page.locator('#useNew').click();
+        assert.equal(await page.locator('#newCredentials').isVisible(),true);assert.equal(await page.locator('#unlockPass').isVisible(),true);
+        assert.match(await page.locator('#message').textContent(),/replaces the saved login/);
         await page.locator('#unlockPass').fill('fixture passphrase');
+        await page.locator('#user').fill('different-user');await page.locator('#password').fill('different-password');
       }
       await page.locator('#submit').click();await page.waitForFunction(()=>window.requests.some(x=>x.type==='panel-submit'));
       const request=await page.evaluate(()=>window.requests.find(x=>x.type==='panel-submit'));
-      if(mode==='setup')assert.equal(request.save,true);else assert.equal(request.unlock,true);
+      if(mode==='setup')assert.equal(request.save,true);else {assert.equal(request.unlock,false);assert.equal(request.blacklistPassphrase,'fixture passphrase');assert.equal(request.user,'different-user');}
       await page.close();
     }
+  });
+  await tests('login popup confirms clearing saved user info and vaults before sending the delete request',async()=>{
+    const page=await ui.newPage();await page.goto(`${base}/panel.html?id=credentials`);await page.locator('#clearSavedInfo').waitFor();
+    page.once('dialog',async dialog=>{assert.match(dialog.message(),/saved credentials.*blacklisted numbers.*re-entered before blacklist protection is enabled again/s);await dialog.dismiss();});
+    await page.locator('#clearSavedInfo').click();assert.equal(await page.evaluate(()=>window.requests.some(x=>x.type==='clear-saved-user-info')),false);
+    page.once('dialog',async dialog=>{assert.match(dialog.message(),/cannot be undone/);await dialog.accept();});
+    await page.locator('#clearSavedInfo').click();await page.waitForFunction(()=>window.panelClosed);
+    assert.equal(await page.evaluate(()=>window.requests.find(x=>x.type==='clear-saved-user-info').confirmed),true);
+    await page.close();
   });
   await tests('blacklist warnings show large flashing red text and require no status-alert preference',async()=>{
     const page=await ui.newPage();await page.clock.install();
