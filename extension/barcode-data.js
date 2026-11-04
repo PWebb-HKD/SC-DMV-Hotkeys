@@ -3,7 +3,7 @@
  * profile. Preserve SC field choices documented below; generic registration mappings
  * differ. Unknown credential metadata stays blank/unavl, never copied from examples.
  */
-import {parseReportDate} from './status-alerts.js';
+import {parseReportDate, isTemporaryPlate} from './status-alerts.js';
 const flat = value => String(value || '').replace(/\s+/g, ' ').trim();
 const datePattern = '(\\d{2}\\s*/\\s*\\d{2}\\s*/\\s*\\d{4})';
 function clean(value) {
@@ -147,18 +147,21 @@ export function ownerAddress(raw) {
 export function vehicleBarcode(raw) {
   const text = flat(raw), start = text.search(/\bVIN\s*:/i);
   if (start < 0) throw new Error('A vehicle record heading was not found.');
-  const body = text.slice(start).split(/\bEnforcement\s+Description\s*:/i)[0];
-  const v = labeled(body, ['VIN', 'Year', 'Make', 'Model', 'Body', 'Empty Weight', 'Title Number', 'Status', 'Issue Date', 'Dup', 'Owner Number', 'Owner Name', 'Owner Address', 'Last Transaction', 'Plate Number', 'Plate Class', 'Vehicle Type', 'Date of Issue', 'Plate Exp Date', 'Decal Exp Date', 'Decal Number', 'Window Sticker Number']);
+  const body = text.slice(start).split(/\b(?:Enforcement\s+Description\s*:|Document\s+obtained\s+from\s+DMV\s+web\s+site\s*:)/i)[0];
+  const v = labeled(body, ['VIN', 'Year', 'Make', 'Model', 'Body', 'Empty Weight', 'Title Number', 'Status', 'Issue Date', 'Dup', 'Owner Number', 'Owner Name', 'Owner Address', 'Last Transaction', 'Plate Number', 'Plate Class', 'Vehicle Type', 'Date of Issue', 'Plate Exp Date', 'Decal Exp Date', 'Decal Number', 'Window Sticker Number', 'GVW', 'Equip Number', 'Annual Fee', 'County', 'Municipality', 'School District', 'Vehicle Housed Address', 'Insurance']);
   requireFields(v, ['vin', 'year', 'make', 'owner name', 'owner address', 'plate number', 'plate class']);
   const vin = clean(v.vin); if (!/^[A-HJ-NPR-Z0-9]{1,17}$/.test(vin)) throw new Error('The vehicle VIN is invalid.');
   if (!/^\d{4}$/.test(v.year)) throw new Error('The vehicle model year is invalid.');
   const address = ownerAddress(v['owner address']);
   if (!address) throw new Error('The owner street, city, state, and ZIP could not be separated reliably. Open a complete vehicle record.');
-  const expiration = date(v['plate exp date'], true), decalExpiration = date(v['decal exp date'], true);
+  const temporary = isTemporaryPlate(v['plate class']);
+  const expiration = date(v['plate exp date'], true);
+  // Only blank temporary decal dates inherit plate expiry; preserve populated dates.
+  const decalExpiration = date(temporary && !flat(v['decal exp date']) ? v['plate exp date'] : v['decal exp date'], true);
   if (!expiration) throw new Error('The plate expiration date is missing or invalid.');
-  // T45V reports append the year after a space; it is not part of the tag.
+  // Temporary plate reports append the year after a space; it is not part of the tag.
   const displayedPlate = flat(v['plate number']);
-  const plateValue = /^T45V\b/i.test(v['plate class']) ? displayedPlate.replace(/^(\S+)\s+\d{4}$/, '$1') : displayedPlate;
+  const plateValue = temporary ? displayedPlate.replace(/^(\S+)\s+\d{4}$/, '$1') : displayedPlate;
   const plate = valueField(plateValue, 9), make = valueField(v.make, 4), comma = v['owner name'].indexOf(',');
   const ownerFields = comma > 0
     ? [['RBD', valueField(v['owner name'].slice(0, comma), 35)], ['RBE', valueField(v['owner name'].slice(comma + 1), 35)]]

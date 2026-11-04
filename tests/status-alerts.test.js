@@ -153,3 +153,14 @@ test('PDF whitespace changes are tolerated and residence/SCUTTIES result types d
   assert.equal(recordStatus('scutties', driver(), NOW), null);
   assert.deepEqual(titles(recordStatus('customer', driver(), NOW)), ['VALID LICENSE']);
 });
+
+for (const plateClass of ['T45V TEMPORARY PLATE-VEHICLE', 'E60V EVR TEMPORARY PLATE-VEHICLE']) {
+  test(`${plateClass}: status uses plate expiry with blank or conflicting decal dates`, () => {
+    for (const decal of ['', '01/01/2000', '01/01/2099']) {
+      const text = `Plate Class: ${plateClass} Vehicle Type: 4 Plate Exp Date: 10/28/2026 Decal Exp Date: ${decal}`;
+      assert.deepEqual(titles(plateStatus(text, NOW)), ['TAG VALID']);
+      assert.deepEqual(titles(plateStatus(text.replace('10/28/2026', '10/27/2026'), NOW)), ['EXPIRED']);
+      assert.deepEqual(titles(plateStatus(text.replace('10/28/2026', ''), NOW)), ['STATUS UNAVAILABLE']);
+    }
+  });
+}
