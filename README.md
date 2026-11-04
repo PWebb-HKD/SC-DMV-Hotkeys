@@ -19,21 +19,24 @@ No build, npm installation, or external script download is required to run the p
 | License plate search | Alt+P |
 | Driver's license search | Alt+L |
 | Customer number search | Alt+O |
-| Collect PDF customer/owner numbers and search first | Alt+J |
+| Collect PDF customer/owner numbers | Alt+J |
 | Search next queued customer | Alt+N |
 | Search previous queued customer | Alt+M |
 | Customers at same address | Alt+I |
 | Driver through SCUTTIES | Alt+U |
 | Generate PDF417 import barcode | Alt+B |
+| Pause/resume shortcut actions | Alt+Minus |
 
 Set each command manually in your browser's extension keyboard shortcut settings and select **Global**. Preferred Alt shortcuts are recommendations; the extension does not assign them. The browser must remain running. If a combination conflicts, choose another. Global availability depends on the browser and operating system.
 
 The extension uses desktop Chromium Manifest V3 APIs and targets Chromium 120 or newer. Chrome, Edge, Brave, Vivaldi, and Opera are intended targets; they have not all been tested live. In **About**, the extension displays actual browser assignments. **Settings** contains the shortcut editor link and setup guide. No separate Windows program or installer is needed.
 
+Pausing shortcut actions ignores every other extension keyboard command until the toggle is pressed again. The toolbar also offers Pause/Resume and shows the current state. A running function continues; use Stop to cancel it. Toolbar buttons and history remain usable. Pause lasts for the browser session, including service-worker restarts. Chromium still owns the registered shortcuts and may consume them while actions are paused; manually unassign a conflicting shortcut in browser settings if another program needs it.
+
 ## Search behavior
 
 - Input panels close on Escape, empty Enter, or after 90 seconds. Space characters are removed. Plates allow 8 characters; DL numbers allow 9. Customer numbers must be numeric and allow 8 digits after leading zeroes are removed.
-- The extension reuses a `https://www.scdmvonline.com/` tab and excludes `ViewAttachment.aspx` tabs. New portal tabs are initially inactive; login activates its tab and restores/focuses its browser window.
+- The extension reuses a `https://www.scdmvonline.com/` tab and excludes `ViewAttachment.aspx` tabs. The selected portal tab is activated and its browser window restored/focused before navigation, including when an existing session skips login.
 - After ten minutes without a successful query, it returns to login. Login always obtains credentials from extension session memory, the encrypted extension vault, or the extension login panel. It ignores browser-autofilled values and autofill indicators, overwrites both portal fields with the extension credentials, dispatches bubbling input/change events, and allows one second plus 100 ms for form synchronization. Immediately before clicking Login, it reasserts the extension values if another process changed them. After navigating to logon.aspx, a completed redirect to any other URL on the exact https://www.scdmvonline.com origin verifies success and immediately starts navigation to the requested search; visible login errors and password-update/extra-login pages are surfaced.
 - Missing credentials can be entered for the current browser session, or saved in an encrypted vault. Saved credentials require a separate vault passphrase of at least 12 characters, unlocked once per browser session. The passphrase is not saved. After a password change, choose **Use a different login** in the saved-login panel and enter the updated credentials; select encrypted storage again to replace the saved vault.
 - The disclaimer page has no special role in login verification. Any other HTTPS URL on the exact SCDMV origin is accepted after login; lookalike hosts and logon.aspx with a query string are not. The extension never clicks disclaimer acknowledgement controls.
@@ -224,3 +227,10 @@ Removed the Windows companion, its installer/protocol harness, native-messaging 
 ### Session history and barcode timeout (1.4.5)
 
 Recent searches and click-to-rerun now use session storage, retaining up to 20 searches while the extension remains loaded. History clears on browser restart or extension reload/update/disable. Old persistent history is deleted, not migrated. Barcode windows close automatically 90 seconds after rendering; changing scale does not restart the timeout. Esc, Close, and new-search dismissal still work. Other credential, security, audio, and alert behavior is unchanged.
+
+
+### Shortcut pause and residence queue (1.5.0)
+
+Assign the new Pause/Resume Shortcut Actions command manually (recommended Alt+Minus) and select Global as needed. Existing assignments are preserved. This pauses extension actions, not browser key registrations.
+
+Collect (Alt+J) on a report headed Customers at Same Residence keeps all unique customer numbers in report order, including the first, and automatically searches the second. Next (Alt+N) then advances to the third; Previous (Alt+M) can return through the second to the first. Failed lookups do not skip the pending customer. Other report types, and Next with an empty queue, still begin at the first customer. A residence report with only one unique customer also starts with that customer.

@@ -99,3 +99,10 @@ The Windows host, native protocol tests, retry alarms, nativeMessaging/alarms pe
 ## Scoped retention changes in 1.4.5
 
 History reads, writes, replay lookup, and clearing all use storage.session. Worker boot removes legacy storage.local history without migrating it, while leaving existing session history intact across service-worker suspension/restart. The browser clears session storage on extension reload/update/disable and browser restart. Barcode views start a single 90-second timer after rendering and cancel it on close; scale changes do not extend the deadline. No other reviewed security recommendations were implemented.
+
+
+## Shortcut gating and residence collection (1.5.0)
+
+Keyboard commands pass through a serialized event queue before dispatch. The session shortcutsPaused flag gates only keyboard entry; the toggle, toolbar actions, and history remain available. A pause does not begin a new SearchRun or cancel current work. Chromium exposes getAll/onCommand but no runtime unregister/update API, so this flag does not release Global keys to other programs.
+
+collectQueue is shared by Collect and empty Next. Only Collect opts into starting at index 1 for a report headed Customers at Same Residence with at least two unique customers. All values remain stored; index 1 treats the source customer as the initial position until the second lookup commits index 2. A failed second lookup leaves index 1 so Next retries it. Ordinary report collection and empty Next retain index 0 initialization.

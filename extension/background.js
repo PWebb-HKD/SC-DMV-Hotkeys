@@ -240,10 +240,14 @@ async function showRecordStatus(kind, value, tabId, captured, ctx) {
 /** Create the queue from one report snapshot for both Collect and an empty Next.
  * index is the one-based position of the last displayed result (zero before any),
  * which is also the zero-based index to try next. Failed searches do not advance it. */
-async function collectQueue(source, run) {
+async function collectQueue(source, run, skipResidenceFirst = false) {
   const origin = await pdfTab(source, run);
-  const values = ownerNumbers(await pdfText(origin, run));
-  const queue = {values, index: 0, sourceTabId: origin.id};
+  const text = await pdfText(origin, run), values = ownerNumbers(text);
+  // Collect retains the source customer but starts with the next residence entry.
+  // An empty Next queue and other report types retain their first-entry behavior.
+  const residence = /^\s*Customers\s+at\s+Same\s+Residence\b/i.test(text);
+  const index = skipResidenceFirst && residence && values.length > 1 ? 1 : 0;
+  const queue = {values, index, sourceTabId: origin.id};
   await guardedApi(chrome, run).storage.session.set({queue});
   return queue;
 }
@@ -256,8 +260,8 @@ async function execute(command, value, source, options, run) {
       const normalized = normalize(command, value); if (!normalized) return;
       await runSearch(command, normalized, ctx);
     } else if (command === 'owners') {
-      const queue = await collectQueue(source, run);
-      await runSearch('customer', queue.values[0], ctx, () => api.storage.session.set({queue: {...queue, index: 1}}));
+      const queue = await collectQueue(source, run, true);
+      await runSearch('customer', queue.values[queue.index], ctx, () => api.storage.session.set({queue: {...queue, index: queue.index + 1}}));
     } else if (command === 'next') {
       let {queue} = await api.storage.session.get('queue');
       if (!queue?.values?.length) {
@@ -300,6 +304,7 @@ async function execute(command, value, source, options, run) {
  * always replaces the previous run, including one waiting for user input. */
 async function dispatch(command, options = {}) {
   if (!COMMANDS[command]) throw new Error('Unknown command.');
+  if (command === 'toggleShortcuts') return shortcutEvent(command);
   const run = beginRun();
   try {
     await run.step(() => boot); await run.step(() => run.cleanup);
@@ -313,7 +318,23 @@ async function dispatch(command, options = {}) {
     } else await execute(command, options.value || '', source, options, run);
   } catch (error) { await report(error, undefined, run); }
 }
-chrome.commands.onCommand.addListener(command => dispatch(command).catch(e => report(e)));
+// Serialize keyboard events and UI toggles so rapid toggles cannot lose a change.
+// Only keyboard entry is gated: toolbar actions and an already running search remain usable.
+let shortcutEvents = Promise.resolve();
+function shortcutEvent(command) {
+  const task = shortcutEvents.then(async () => {
+    await boot;
+    const {shortcutsPaused = false} = await chrome.storage.session.get('shortcutsPaused');
+    if (command === 'toggleShortcuts') {
+      await chrome.storage.session.set({shortcutsPaused: !shortcutsPaused});
+      return !shortcutsPaused;
+    }
+    if (!shortcutsPaused) dispatch(command).catch(error => report(error));
+  });
+  shortcutEvents = task.catch(() => {});
+  return task;
+}
+chrome.commands.onCommand.addListener(command => shortcutEvent(command).catch(e => report(e)));
 chrome.runtime.onConnect.addListener(port => {
   if (port.name !== 'panel') return;
   port.onMessage.addListener(() => {}); // Panel heartbeats keep pending interactive flows alive.
@@ -441,7 +462,8 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
         dispatch(query.kind, {...query, replay: true}).catch(error => report(error));
         return true;
       }
-      case 'state': return {...await chrome.storage.local.get(['vault']), ...await chrome.storage.session.get(['history', 'queue', 'status', 'alertsEnabled', 'speechEnabled', 'repeatSpeech', 'suspendedClipEnabled', 'voiceSource', 'voiceGender', 'voiceName']), voices: await availableVoices().catch(() => []), commands: await chrome.commands.getAll(), extensionId: chrome.runtime.id};
+      case 'state': return {...await chrome.storage.local.get(['vault']), ...await chrome.storage.session.get(['history', 'queue', 'status', 'shortcutsPaused', 'alertsEnabled', 'speechEnabled', 'repeatSpeech', 'suspendedClipEnabled', 'voiceSource', 'voiceGender', 'voiceName']), voices: await availableVoices().catch(() => []), commands: await chrome.commands.getAll(), extensionId: chrome.runtime.id};
+      case 'toggle-shortcuts': return shortcutEvent('toggleShortcuts');
       case 'stop-audio': audioAlerts.stop(); return true;
       case 'stop': {
         const run = beginRun();

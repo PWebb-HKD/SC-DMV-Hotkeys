@@ -6,10 +6,11 @@ import {fileURLToPath} from 'node:url';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const manifest = JSON.parse(readFileSync(join(root, 'extension/manifest.json'), 'utf8'));
 const project = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
+const {COMMANDS} = await import('../extension/core.js');
 const {RECORDING_PATHS} = await import('../extension/voice-recordings.js');
 for (const path of RECORDING_PATHS) if (!existsSync(join(root, 'extension', path))) throw new Error(`Missing voice recording: ${path}`);
 if (project.version !== manifest.version) throw new Error('Package and extension versions differ.');
-if (manifest.manifest_version !== 3 || Object.keys(manifest.commands).length !== 9) throw new Error('Manifest commands are incomplete.');
+if (manifest.manifest_version !== 3 || JSON.stringify(Object.keys(manifest.commands).sort()) !== JSON.stringify(Object.keys(COMMANDS).sort())) throw new Error('Manifest commands are incomplete.');
 if (Object.values(manifest.commands).filter(v => v.suggested_key).length > 4) throw new Error('Chromium allows at most four suggested shortcuts.');
 for (const path of [manifest.background.service_worker, manifest.action.default_popup, ...Object.values(manifest.icons), 'vendor/pdf.mjs', 'vendor/pdf.worker.mjs', 'audio-player.html', 'audio-player.js', 'audio-alerts.js', 'audio/suspended.mp3', 'barcode.html', 'barcode.js', 'barcode-data.js', 'vendor/bwip-js-min.js']) {
   if (!existsSync(join(root, 'extension', path))) throw new Error(`Missing extension asset: ${path}`);

@@ -9,11 +9,12 @@ const DESCRIPTIONS = {
   plate: 'Enter a license plate number to search for its vehicle record.',
   license: "Enter a driver's license number to search for a driving record.",
   customer: 'Enter a customer number to search for a driving record.',
-  owners: 'Collect unique customer/owner numbers from the open results PDF and search the first.',
+  owners: 'Collect unique customer/owner numbers from the open results PDF and search the second on Customers at Same Residence reports (the first on other reports).',
   next: 'Search the next queued customer. If the queue is empty, collect numbers from the open results PDF.',
   previous: 'Search the previous saved customer number. Stops at the first customer without wrapping around.',
   address: "Read the driver's license number from a driving-record PDF and find customers at the same address.",
   scutties: "Read the driver's last name and date of birth from the open PDF and search SCUTTIES.",
+  toggleShortcuts: 'Pause or resume shortcut actions (preferred Alt+Minus). Browser Global key reservations remain in effect.',
   barcode: 'Generate a PDF417 data-entry barcode from the focused driver/vehicle report, or the newest report when none is focused.'
 };
 async function send(message) {
@@ -51,9 +52,16 @@ function renderShortcuts(commands = []) {
   });
   $('shortcutList').replaceChildren(...rows);
 }
+/** Keep shortcut state visible independently of search progress. */
+function shortcutState(paused) {
+  $('shortcutState').textContent = paused ? 'Shortcut actions paused' : 'Shortcut actions active';
+  $('shortcutPause').textContent = paused ? 'Resume shortcut actions' : 'Pause shortcut actions';
+  $('shortcutPause').setAttribute('aria-pressed', String(paused));
+}
 /** Render a fresh worker snapshot; history replay sends an ID, not arbitrary form values. */
 async function refresh() {
   const data = await send({type: 'state'});
+  shortcutState(data.shortcutsPaused === true);
   $('alertsToggle').checked = data.alertsEnabled === true;
   $('speechToggle').checked = data.speechEnabled === true;
   $('repeatSpeechToggle').checked = data.repeatSpeech === true;
@@ -87,6 +95,10 @@ async function refresh() {
   renderShortcuts(data.commands);
 }
 // UI events send worker requests; they never mutate the queue or submit website forms.
+$('shortcutPause').onclick = async () => {
+  try { shortcutState(await send({type: 'toggle-shortcuts'})); feedback(''); }
+  catch (error) { feedback(error.message); }
+};
 $('historyTab').onclick = () => tab('history');
 $('settingsTab').onclick = () => { tab('settings'); refresh().catch(error => feedback(error.message)); };
 $('stopFunction').onclick = async () => {
@@ -130,6 +142,7 @@ for (const [id, type] of [['clearHistory', 'clear-history'], ['clearQueue', 'cle
 }
 // Update session controls while this short-lived popup remains open.
 chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'session' && changes.shortcutsPaused) shortcutState(changes.shortcutsPaused.newValue === true);
   if (area === 'session' && changes.status) $('status').textContent = changes.status.newValue;
   if (area === 'session' && changes.alertsEnabled) $('alertsToggle').checked = changes.alertsEnabled.newValue === true;
   if (area === 'session' && changes.speechEnabled) $('speechToggle').checked = changes.speechEnabled.newValue === true;

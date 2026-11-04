@@ -129,7 +129,7 @@ test('new input commands dismiss a pending queue restart panel',async()=>{
 });
 test('Alt+N bootstraps an empty queue from a twelve-customer residence report and visits every unique number',async()=>{
   const values=Array.from({length:12},(_,i)=>String(41000001+i));
-  const report=values.map(value=>`Customer Number: ${value}\nBirthdate: 01/01/2000\nFICTIONAL PERSON`).join('\n');
+  const report='Customers at Same Residence\n'+values.map(value=>`Customer Number: ${value}\nBirthdate: 01/01/2000\nFICTIONAL PERSON`).join('\n');
   session['pdf:2']={text:report,capturedAt:Date.now()};delete session.queue;
   for(const tab of tabs.values())tab.active=tab.id===2;
   const before=submissions.length;
@@ -285,4 +285,65 @@ test('recent history stays session-only, remains capped at twenty, and clears in
   assert.deepEqual(local.vault,savedVault);assert.deepEqual(session.queue,previousQueue);
   await assert.rejects(send({type:'rerun',search:{id:'session-0'}}),/no longer in recent history/);
   session.history=previousHistory;delete local.vault;
+});
+
+test('Collect on a same-residence report retains the first customer, starts at second, and navigates both directions', async()=>{
+  const values=['51000001','51000002','51000003'];
+  session['pdf:2']={text:'Customers at Same Residence\n'+values.map(n=>`Customer Number: ${n}\nBirthdate: 01/01/2000\nFICTIONAL PERSON`).join('\n')};
+  for(const tab of tabs.values())tab.active=tab.id===2;
+  const before=submissions.length;
+  await send({type:'run',command:'owners'});await wait(()=>session.queue?.values[0]===values[0]&&session.queue.index===2);
+  assert.deepEqual(session.queue.values,values);assert.equal(session.queue.sourceTabId,2);
+  assert.deepEqual(submissions.slice(before),[values[1]]);
+  await send({type:'run',command:'next'});await wait(()=>session.queue.index===3);
+  assert.equal(submissions.at(-1),values[2]);
+  await send({type:'run',command:'previous'});await wait(()=>session.queue.index===2);
+  await send({type:'run',command:'previous'});await wait(()=>session.queue.index===1);
+  assert.equal(submissions.at(-1),values[0]);
+  await send({type:'run',command:'next'});await wait(()=>session.queue.index===2);
+  assert.equal(submissions.at(-1),values[1]);
+});
+test('failed second-customer lookup on Collect retries that customer on Next',async()=>{
+  session['pdf:2']={text:'Customers at Same Residence\nCustomer Number: 52000001\nCustomer Number: 52000002'};
+  for(const tab of tabs.values())tab.active=tab.id===2;
+  invalid=true;await send({type:'run',command:'owners'});await wait(()=>panel('notice'));
+  assert.equal(session.queue.index,1);assert.deepEqual(session.queue.values,['52000001','52000002']);
+  invalid=false;await send({type:'run',command:'next'});await wait(()=>session.queue.index===2);
+  assert.equal(submissions.at(-1),'52000002');
+});
+test('Collect starts at first for single-customer residences and other PDF report types',async()=>{
+  for(const text of ['Customers at Same Residence\nCustomer Number: 53000001', 'Owner Number: 53000001\nOwner Number: 53000002', 'Other report\nCustomer Number: 53000001\nCustomer Number: 53000002']){
+    session['pdf:2']={text};for(const tab of tabs.values())tab.active=tab.id===2;
+    const before=submissions.length;await send({type:'run',command:'owners'});await wait(()=>submissions.length>before&&session.queue.index===1);
+    assert.equal(submissions.at(-1),'53000001');
+  }
+});
+
+test('pause blocks every keyboard action except its toggle while toolbar actions remain usable',async()=>{
+  const command=chrome.commands.onCommand.listeners[0];
+  assert.equal(await send({type:'toggle-shortcuts'}),true);
+  const before={windows:windows.length,submissions:submissions.length,queue:structuredClone(session.queue),history:structuredClone(session.history)};
+  for(const name of ['plate','license','customer','owners','next','previous','address','scutties','barcode'])await command(name);
+  assert.equal(windows.length,before.windows);assert.equal(submissions.length,before.submissions);
+  assert.deepEqual(session.queue,before.queue);assert.deepEqual(session.history,before.history);
+  assert.equal((await send({type:'state'})).shortcutsPaused,true);
+  await send({type:'run',command:'customer'});await wait(()=>panel('input'));
+  await send({type:'stop'});
+  await command('toggleShortcuts');assert.equal(session.shortcutsPaused,false);
+  await command('customer');await wait(()=>panel('input'));
+  await send({type:'stop'});
+  await Promise.all([command('toggleShortcuts'),command('toggleShortcuts')]);
+  assert.equal(session.shortcutsPaused,false,'Two rapid toggles must restore the original state');
+});
+test('pausing shortcut actions does not cancel an in-progress search',async()=>{
+  session.queue={values:['54000001','54000002'],index:1};
+  blockSubmitted=true;const before=submissions.length;
+  await send({type:'run',command:'next'});await wait(()=>submissions.length>before);
+  await chrome.commands.onCommand.listeners[0]('toggleShortcuts');
+  assert.equal(session.shortcutsPaused,true);
+  const portal=tabs.get(session.portalId);portal.url=portal.url.replace('Page1.aspx','Page2.aspx');blockSubmitted=false;
+  await wait(()=>session.queue.index===2);
+  assert.equal(submissions.at(-1),'54000002');
+  await chrome.commands.onCommand.listeners[0]('toggleShortcuts');
+  assert.equal(session.shortcutsPaused,false);
 });
