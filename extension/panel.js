@@ -28,6 +28,7 @@ try {
       }, 1000);
     } else if (data.type === 'record-alert') {
       document.body.classList.add('status-panel', `status-${data.tone}`);
+      if (data.blacklist) document.body.classList.add('blacklist-panel');
       document.title = `${data.sections?.[0]?.title || 'Record status'} · SC DMV Hotkeys`;
       $('title').hidden = true; $('banner').textContent = data.subject || 'SCDMV RECORD STATUS';
       $('recordAlert').hidden = false;
@@ -49,7 +50,9 @@ try {
       const tick = () => { const remaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1000)); $('alertCountdown').textContent = `Closes in ${remaining} seconds. Press Esc to dismiss.`; if (!remaining) { clearInterval(timer); close(); } };
       const timer = setInterval(tick, 1000); tick();
     } else if (data.type === 'credentials') {
-      $('title').textContent = data.hasVault ? 'Unlock saved DMV login' : 'DMV login needed';
+      $('title').textContent = data.setupOnly ? 'Create login and blacklist vault' : data.unlockOnly ? 'Unlock login and blacklist' : data.hasVault ? 'Unlock saved DMV login' : 'DMV login needed';
+      $('useNew').hidden = data.unlockOnly === true;
+      if (data.encryptedRequired) { $('save').checked = true; $('save').disabled = true; $('savePassArea').hidden = false; }
       $('credentialsArea').hidden = false; $('submit').textContent = 'Continue';
       unlocking = data.hasVault; $('unlockArea').hidden = !unlocking; $('newCredentials').hidden = unlocking;
       (unlocking ? $('unlockPass') : $('user')).focus();

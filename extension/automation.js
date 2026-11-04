@@ -190,7 +190,9 @@ export async function search(kind, value, ctx) {
     await click(tab.id, '#ContentPlaceHolder1_rblReportType_0', ctx);
     await delay(500, ctx); await ready(tab.id, selector, ctx, `${base}Page1.aspx`);
   }
+  await ctx.beforeSubmit?.();
   await evaluate(tab.id, 'fill', {selector, value}, ctx);
+  await ctx.beforeSubmit?.();
   await click(tab.id, '#btnFooterNavNext', ctx);
   await until(async () => {
     const t = await api(ctx).tabs.get(tab.id);
@@ -252,6 +254,7 @@ export async function scutties(identity, ctx) {
   }, 'the SCUTTIES search inputs (complete any interactive login in the browser)', 180000, ctx);
   ctx.tabId = destination.id;
   await focusTab(destination.id, ctx);
+  await ctx.beforeSubmit?.();
   await evaluate(destination.id, 'fill', {selector: SC_NAME, value: identity.lastName}, ctx);
   await evaluate(destination.id, 'fill', {selector: SC_DOB, value: identity.dob}, ctx);
   // Notify both controls after both values exist, so delegated handlers can
@@ -263,6 +266,7 @@ export async function scutties(identity, ctx) {
     if (form.errors.length) throw new Error(form.errors.join('\n'));
     return form.present && form.enabled;
   }, 'SCUTTIES to enable its Search button', 10000, ctx);
+  await ctx.beforeSubmit?.();
   await click(destination.id, SC_SEARCH, ctx);
   await delay(900, ctx);
   // No SCUTTIES result selector was supplied; expose the response for user review.

@@ -44,12 +44,12 @@ The worker's panels/readers/captures Maps are live jobs, not durable job storage
 | Location | Keys / lifetime |
 | --- | --- |
 | local | vault (salt/IV/ciphertext) |
-| session | history (last 20 successful searches), credentials (unlocked values), portalId, lastQuery, queue, status |
+| session | history (last 20 attempts), credentials and blacklist (unlocked values), unlockedVault (ciphertext identity), portalId, lastQuery, queue, status |
 | session alert preferences | alertsEnabled, speechEnabled, suspendedClipEnabled, repeatSpeech; voiceSource/voiceGender/voiceName |
 | session report bookkeeping | tabCreated, pdfCreated, pdfSources, pdf:TAB_ID with text and capture timestamp |
 | session panels | panel:UUID, removed on submission/close/cancellation |
 
-Local/session access is restricted to trusted extension contexts. The vault derives an AES-GCM key from a user passphrase using PBKDF2. Neither the passphrase nor its derived key is persisted. Clear credentials removes both the vault and session plaintext.
+Local/session access is restricted to trusted extension contexts. The vault derives an AES-GCM key from a user passphrase using PBKDF2. Neither the passphrase nor its derived key is persisted. Vault version 2 encrypts credentials plus blacklist entries. Legacy credential-only vaults unlock with an empty blacklist and migrate on save. Vault writes serialize and decrypt the latest payload before merging edits. A saved vault must be unlocked before searches; clearing it is refused while locked or while blacklist entries remain. Neither the passphrase nor an encryption key is retained.
 
 The worker validates extension sender identity/URL. UI requests receive {ok: true, value} or {ok: false, error}; returning true from the listener keeps its asynchronous response channel open. Reader replies additionally bind their job ID to the temporary reader tab. The offscreen player has its own target and playback reply contract.
 
@@ -109,3 +109,15 @@ collectQueue is shared by Collect and empty Next. Only Collect opts into startin
 ## Queued portal errors (1.5.3)
 
 PortalSearchError identifies visible DMV validation errors only on the requested Page1/Page2 search URLs. Login/SCUTTIES errors and technical exceptions remain ordinary errors. runSearch consumes the queued attempt once on either result discovery or PortalSearchError, rethrows the error for the existing alert, and records either the result or an outcome: error history entry with errorMessage. Error entries retain the original query for replay; replay does not mutate the customer queue. The advance callback remains run-guarded so Stop or replacement cannot commit stale queue state.
+
+
+## Blacklist boundary (1.6.0)
+
+blacklist.js canonicalizes the three identifier categories and extracts driver identifiers. vault.js persists a version-2 {credentials, blacklist} payload using the existing AES-GCM/PBKDF2 parameters. Settings edits reauthenticate with the passphrase; the key is never cached. Session unlockedVault is a stable identity of the current salt, IV and ciphertext, so credential-only caches cannot bypass a locked or changed vault. Storage property order is irrelevant.
+
+runSearch authorizes each identifier before portal navigation and supplies beforeSubmit for a second check immediately before the form is submitted. Same-address uses the DL category. SCUTTIES checks report identifiers and stores them in replayable history; legacy identifier-free replay is refused when entries exist. BlacklistedSearchError is handled as a mandatory record-alert with blacklist: true, bypassing optional alert-consent gates and alert-disable cleanup. Its queue attempt advances without a portal request or history result. New searches and Stop still cancel the warning. UI removal requires confirmation; the worker separately requires confirmed: true and verifies the passphrase.
+
+Settings can create the encrypted vault through an encryptedRequired/setupOnly credential panel without navigating to DMV. Unlock-only search panels reject the alternate-login path at both UI and worker boundaries. Never discard existing blacklist entries when replacing saved credentials.
+
+
+Validation commands: `npm test` includes blacklist normalization, encrypted-vault migration/updates, and worker enforcement tests. `CHROME_PATH=/usr/bin/chromium node tests/browser.mjs` exercises settings, confirmation dialogs, formatted-number validation, and warning rendering with local fixtures. `CHROME_PATH=/usr/bin/chromium node tests/blacklist-browser.mjs` is an optional installed-extension smoke test using a temporary profile and blocked HTTP traffic; it requires a browser policy that permits unpacked extensions. The managed cloud Chromium policy blocks all user-installed extensions, so that installed-extension test could not complete here. Do not bypass the policy. The test is intended to verify real storage persistence across browser restarts on an allowed development machine.
