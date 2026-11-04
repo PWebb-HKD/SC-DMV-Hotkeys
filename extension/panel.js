@@ -13,7 +13,13 @@ async function close() { clearInterval(heartbeat); if (data?.type === 'record-al
 $('cancel').onclick = close;
 document.addEventListener('keydown', event => { if (event.key === 'Escape') { event.preventDefault(); close(); } });
 $('save').onchange = () => { $('savePassArea').hidden = !$('save').checked; };
-$('useNew').onclick = () => { unlocking = false; $('unlockArea').hidden = true; $('newCredentials').hidden = false; $('user').focus(); };
+$('clearSavedInfo').onclick = async () => {
+  if (!window.confirm('Delete the saved credentials and encrypted vault? All blacklisted numbers will also be deleted and must be re-entered before blacklist protection is enabled again. Session search history and cached reports will also be cleared. This cannot be undone.')) return;
+  $('clearSavedInfo').disabled = true;
+  try { await send({type: 'clear-saved-user-info', confirmed: true}); await close(); }
+  catch (error) { $('error').textContent = error.message; $('clearSavedInfo').disabled = false; }
+};
+$('useNew').onclick = () => { unlocking = false; $('unlockArea').hidden = !data.unlockOnly; $('useNew').hidden = true; $('newCredentials').hidden = false; if (data.hasVault) { $('save').checked = true; $('save').disabled = true; $('savePassArea').hidden = true; $('message').hidden = false; $('message').textContent = (data.unlockOnly ? 'Unlock the blacklist with the vault passphrase above. ' : '') + 'Using different credentials replaces the saved login in this vault. Your blacklist and vault passphrase are retained.'; } $('user').focus(); };
 try {
   data = await send({type: 'panel-data', id});
   if (!data) { window.close(); } else {
@@ -28,6 +34,7 @@ try {
       }, 1000);
     } else if (data.type === 'record-alert') {
       document.body.classList.add('status-panel', `status-${data.tone}`);
+      if (data.blacklist) document.body.classList.add('blacklist-panel');
       document.title = `${data.sections?.[0]?.title || 'Record status'} · SC DMV Hotkeys`;
       $('title').hidden = true; $('banner').textContent = data.subject || 'SCDMV RECORD STATUS';
       $('recordAlert').hidden = false;
@@ -49,7 +56,9 @@ try {
       const tick = () => { const remaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1000)); $('alertCountdown').textContent = `Closes in ${remaining} seconds. Press Esc to dismiss.`; if (!remaining) { clearInterval(timer); close(); } };
       const timer = setInterval(tick, 1000); tick();
     } else if (data.type === 'credentials') {
-      $('title').textContent = data.hasVault ? 'Unlock saved DMV login' : 'DMV login needed';
+      $('title').textContent = data.setupOnly ? 'Create login and blacklist vault' : data.unlockOnly ? 'Unlock login and blacklist' : data.hasVault ? 'Unlock saved DMV login' : 'DMV login needed';
+      $('useNew').hidden = false;
+      if (data.encryptedRequired) { $('save').checked = true; $('save').disabled = true; $('savePassArea').hidden = false; }
       $('credentialsArea').hidden = false; $('submit').textContent = 'Continue';
       unlocking = data.hasVault; $('unlockArea').hidden = !unlocking; $('newCredentials').hidden = unlocking;
       (unlocking ? $('unlockPass') : $('user')).focus();
@@ -70,6 +79,7 @@ $('form').onsubmit = async event => {
   try {
     if (data.type === 'input') { request.value = normalize(data.command, $('value').value); if (!request.value) { await close(); return; } }
     if (data.type === 'credentials') Object.assign(request, {unlock: unlocking, user: $('user').value, password: $('password').value, save: $('save').checked, passphrase: unlocking ? $('unlockPass').value : $('savePass').value});
+    if (data.type === 'credentials' && data.unlockOnly && !unlocking) request.blacklistPassphrase = $('unlockPass').value;
     if (data.type === 'permission') {
       const granted = await chrome.permissions.request({origins: [data.origin]});
       if (!granted) throw new Error('Site access was declined. Cancel to stop this search.');

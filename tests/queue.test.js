@@ -2,16 +2,17 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {MEMBER, PDF_URL, isPdf} from '../extension/core.js';
+import {addBlacklistEntry} from '../extension/vault.js';
 import {driverReport} from './barcode-fixtures.js';
 const event=()=>({listeners:[],addListener(fn){this.listeners.push(fn);},removeListener(fn){this.listeners=this.listeners.filter(x=>x!==fn);}});
 const local={history:[{id:'old-persistent',kind:'plate',value:'OLD123',at:1}]}, session={history:[],lastQuery:Date.now(),portalId:1,pdfCreated:{2:100},'pdf:2':{text:'Owner Number: 00001234\nCustomer Number: 87654321\nOwner Number: 1234'}};
 const tabs=new Map([[1,{id:1,url:`${MEMBER}Transactions/DrvRec/Page2.aspx`,status:'complete',windowId:1,active:false}],[2,{id:2,url:PDF_URL,status:'complete',windowId:1,active:true}]]);
-const windows=[], submissions=[];
+const windows=[], submissions=[], navigations=[], submittedQueries=[];
 let nextId=3, invalid=false, invalidAfterSubmit=false, technicalFailure=false, loginRejected=false, blockSubmitted=false, captureBlocked=false, onResultFocus=null;
 let reportText='Driver License No: 123456789 Name: TEST, PERSON\nDOB: 01/01/2000';
 let pauseAlertWindow=false,alertWindowRelease;
 const removedWindows=[];
-const store=data=>({get:async keys=>typeof keys==='string'?{[keys]:data[keys]}:Array.isArray(keys)?Object.fromEntries(keys.map(k=>[k,data[k]])):{...data},set:async values=>Object.assign(data,values),remove:async keys=>{for(const k of Array.isArray(keys)?keys:[keys])delete data[k];},setAccessLevel:async()=>{}});
+const store=data=>({clear:async()=>{for(const key of Object.keys(data))delete data[key];},get:async keys=>typeof keys==='string'?{[keys]:data[keys]}:Array.isArray(keys)?Object.fromEntries(keys.map(k=>[k,data[k]])):{...data},set:async values=>Object.assign(data,values),remove:async keys=>{for(const k of Array.isArray(keys)?keys:[keys])delete data[k];},setAccessLevel:async()=>{}});
 const runtime={id:'a'.repeat(32),getURL:path=>`chrome-extension://${'a'.repeat(32)}/${path}`,onMessage:event(),onConnect:event(),onStartup:event(),onInstalled:event()};
 globalThis.chrome={
   runtime,storage:{local:store(local),session:store(session)},
@@ -19,7 +20,7 @@ globalThis.chrome={
     query:async opts=>[...tabs.values()].filter(t=>!opts.active||t.active).map(t=>({...t})),
     get:async id=>({...tabs.get(id)}),
     create:async opts=>{const tab={id:nextId++,url:opts.url,status:'complete',windowId:1,active:!!opts.active};tabs.set(tab.id,tab);return {...tab};},
-    update:async(id,update)=>{const tab=tabs.get(id);Object.assign(tab,update);if(update.active){for(const t of tabs.values())if(t.id!==id)t.active=false;if(onResultFocus&&isPdf(tab.url)){const hook=onResultFocus;onResultFocus=null;queueMicrotask(hook);}}return {...tab};},
+    update:async(id,update)=>{if(update.url)navigations.push(update.url);const tab=tabs.get(id);Object.assign(tab,update);if(update.active){for(const t of tabs.values())if(t.id!==id)t.active=false;if(onResultFocus&&isPdf(tab.url)){const hook=onResultFocus;onResultFocus=null;queueMicrotask(hook);}}return {...tab};},
     remove:async()=>{},onCreated:event(),onUpdated:event(),onRemoved:event()
   },
   windows:{get:async()=>({id:1,state:'normal'}),update:async()=>{},onRemoved:event(),create:async data=>{const win={id:windows.length+10,...data};windows.push(win);if(pauseAlertWindow&&session[`panel:${new URL(data.url).searchParams.get('id')}`]?.type==='record-alert')await new Promise(resolve=>{alertWindowRelease=resolve;});return win;},remove:async id=>{removedWindows.push(id);}},
@@ -30,7 +31,7 @@ globalThis.chrome={
     if(op==='state'&&loginRejected&&tab.url.endsWith('/logon.aspx'))result.errors=['Invalid User ID Or Password'];
     if(op==='extensionLogin'&&args.submit&&!loginRejected)tab.url=`${MEMBER}Disclaimer.aspx`;
     if(op==='fill')submissions.push(args.value);
-    if(op==='click'&&args.selector==='#btnFooterNavNext') {if(!invalid&&!blockSubmitted)tab.url=tab.url.replace('Page1.aspx','Page2.aspx');}
+    if(op==='click'&&args.selector==='#btnFooterNavNext') {submittedQueries.push(submissions.at(-1));if(!invalid&&!blockSubmitted)tab.url=tab.url.replace('Page1.aspx','Page2.aspx');}
     if(op==='fetchPdf'&&captureBlocked)return new Promise(()=>{});
     if(op==='click'&&args.selector==='#downloadButton'){
       const pdf={id:nextId++,url:PDF_URL,status:'complete',windowId:1,openerTabId:tab.id,active:false};tabs.set(pdf.id,pdf);
@@ -277,7 +278,7 @@ test('background passes the selected exclusive voice source and gender to record
 
 test('recent history stays session-only, remains capped at twenty, and clears independently',async()=>{
   const previousHistory=structuredClone(session.history), previousQueue=structuredClone(session.queue);
-  const savedVault={ciphertext:'test-vault'};local.vault=savedVault;
+  const savedVault={ciphertext:'test-vault'};local.vault=savedVault;session.unlockedVault=JSON.stringify([savedVault.salt,savedVault.iv,savedVault.ciphertext]);session.blacklist=[];session.vaultKey='fixture-key';
   session.history=Array.from({length:20},(_,i)=>({id:'session-'+i,kind:'customer',value:String(80000000+i),at:i}));
   await input('70000001');await wait(()=>session.history[0].value==='70000001');
   assert.equal(session.history.length,20);assert.equal(session.history.at(-1).id,'session-18');
@@ -286,7 +287,7 @@ test('recent history stays session-only, remains capped at twenty, and clears in
   await send({type:'clear-history'});assert.equal(session.history,undefined);
   assert.deepEqual(local.vault,savedVault);assert.deepEqual(session.queue,previousQueue);
   await assert.rejects(send({type:'rerun',search:{id:'session-0'}}),/no longer in recent history/);
-  session.history=previousHistory;delete local.vault;
+  session.history=previousHistory;delete local.vault;delete session.unlockedVault;delete session.blacklist;delete session.vaultKey;
 });
 
 test('Collect on a same-residence report retains the first customer, starts at second, and navigates both directions', async()=>{
@@ -374,4 +375,100 @@ test('a manually entered customer error leaves an existing queue untouched',asyn
   session.queue={values:['65000001','65000002'],index:1};const saved=structuredClone(session.queue);
   invalid=true;await input('65000099');await wait(()=>panel('notice'));
   assert.deepEqual(session.queue,saved);invalid=false;
+});
+
+const BLACKLIST_PHRASE='blacklist fixture passphrase';
+const blockedPanel=()=>{
+  const win=panel('record-alert');return win&&session[`panel:${new URL(win.url).searchParams.get('id')}`]?.blacklist?win:null;
+};
+test('blacklist blocks plate, DL, customer, same-address and history searches before portal navigation',async()=>{
+  const setup=send({type:'blacklist-setup'});await wait(()=>panel('credentials'));
+  const id=new URL(panel('credentials').url).searchParams.get('id'),beforeSetup=navigations.length;
+  assert.equal(session[`panel:${id}`].setupOnly,true);
+  await assert.rejects(send({type:'panel-submit',id,user:'fixture-user',password:'fixture-password',save:false}),/Save the encrypted vault/);
+  await send({type:'panel-submit',id,user:'fixture-user',password:'fixture-password',save:true,passphrase:BLACKLIST_PHRASE});
+  assert.equal((await setup).unlocked,true);assert.equal(navigations.length,beforeSetup);
+  await assert.rejects(send({type:'blacklist-setup'}),/already exists/);
+  for(const [kind,value] of [['plate','BLOCK123'],['license','123456789'],['customer','12345678']])await addBlacklistEntry(kind,value,BLACKLIST_PHRASE);
+  session.alertsEnabled=false;
+  for(const [kind,value] of [['plate','block123'],['license','123456789'],['customer','00012345678']]){
+    const before=navigations.length,submitted=submittedQueries.length;
+    await input(value,kind);await wait(blockedPanel);
+    assert.equal(navigations.length,before);assert.equal(submittedQueries.length,submitted);
+    const data=session[`panel:${new URL(blockedPanel().url).searchParams.get('id')}`];
+    assert.equal(data.tone,'danger');assert.match(data.sections[0].title,/is blacklisted.*suspended or revoked/);
+    await send({type:'alerts',enabled:false});assert.ok(blockedPanel(),'Blacklist warnings cannot be disabled with optional status alerts');
+  }
+  session['pdf:2']={text:driverReport};for(const tab of tabs.values())tab.active=tab.id===2;
+  let before=navigations.length;await send({type:'run',command:'address'});await wait(blockedPanel);assert.equal(navigations.length,before);
+  const saved={id:'blocked-replay',kind:'customer',value:'12345678',at:Date.now()};session.history.unshift(saved);
+  before=navigations.length;await send({type:'rerun',search:{id:saved.id}});await wait(blockedPanel);assert.equal(navigations.length,before);
+});
+test('blocked queued numbers are retained but consumed so Next and Previous remain usable',async()=>{
+  session.queue={values:['12345678','70000001'],index:0};
+  let before=submittedQueries.length;
+  await send({type:'run',command:'next'});await wait(blockedPanel);
+  assert.equal(session.queue.index,1);assert.deepEqual(session.queue.values,['12345678','70000001']);assert.equal(submittedQueries.length,before);
+  await send({type:'run',command:'next'});await wait(()=>session.queue.index===2);assert.equal(submittedQueries.at(-1),'70000001');
+  before=submittedQueries.length;await send({type:'run',command:'previous'});await wait(blockedPanel);
+  assert.equal(session.queue.index,1);assert.equal(submittedQueries.length,before);
+  session['pdf:2']={text:'Owner Number: 12345678\nOwner Number: 70000001'};for(const tab of tabs.values())tab.active=tab.id===2;
+  await send({type:'run',command:'owners'});await wait(blockedPanel);assert.equal(session.queue.index,1);
+});
+test('locked vaults require the passphrase even when credentials are cached and a DMV session is fresh',async()=>{
+  delete session.unlockedVault;delete session.blacklist;delete session.vaultKey;session.lastQuery=Date.now();
+  const before=navigations.length;
+  await input('70000002');await wait(()=>panel('credentials'));
+  const id=new URL(panel('credentials').url).searchParams.get('id');assert.equal(session[`panel:${id}`].unlockOnly,true);
+  assert.equal(navigations.length,before);
+  await assert.rejects(send({type:'panel-submit',id,unlock:false,user:'different-user',password:'different-password'}),/Could not unlock/);
+  await assert.rejects(send({type:'panel-submit',id,unlock:true,passphrase:'incorrect passphrase'}),/Could not unlock/);
+  assert.equal(navigations.length,before);
+  await send({type:'panel-submit',id,unlock:false,blacklistPassphrase:BLACKLIST_PHRASE,user:'different-fixture-user',password:'different-fixture-password',save:false});await wait(()=>submittedQueries.at(-1)==='70000002');
+  assert.deepEqual(session.credentials,{user:'different-fixture-user',password:'different-fixture-password'});
+  assert.ok(navigations.slice(before).some(url=>url.endsWith('/logon.aspx')),'Different credentials must force the login path');
+  delete session.credentials;await send({type:'blacklist-unlock',passphrase:BLACKLIST_PHRASE});
+  assert.deepEqual(session.credentials,{user:'different-fixture-user',password:'different-fixture-password'});
+  assert.equal((await send({type:'state'})).blacklist.unlocked,true);
+  await assert.rejects(send({type:'forget-credentials'}),/remove its blacklist entries/);
+});
+test('unlocked blacklist edits need only confirmation for removal, not another passphrase',async()=>{
+  await assert.rejects(send({type:'blacklist-remove',kind:'plate',value:'BLOCK123',confirmed:false,passphrase:BLACKLIST_PHRASE}),/Confirm removal/);
+  await assert.rejects(send({type:'blacklist-add',kind:'license',value:'ABC',passphrase:BLACKLIST_PHRASE}),/only numbers/);
+  const key=session.vaultKey;delete session.vaultKey;
+  await assert.rejects(send({type:'blacklist-remove',kind:'plate',value:'BLOCK123',confirmed:true}),/Unlock the vault/);session.vaultKey=key;
+  const state=await send({type:'blacklist-remove',kind:'plate',value:'BLOCK123',confirmed:true,passphrase:BLACKLIST_PHRASE});
+  assert.equal(state.entries.some(x=>x.kind==='plate'),false);
+  await input('BLOCK123','plate');await wait(()=>submittedQueries.at(-1)==='BLOCK123');
+});
+test('adding a blacklist entry during navigation still prevents the final form submission',async()=>{
+  const value='70000003',original=chrome.scripting.executeScript,before=submittedQueries.length;
+  chrome.scripting.executeScript=async request=>{
+    if(request.args[0]==='fill'&&request.args[1].value===value)await addBlacklistEntry('customer',value,BLACKLIST_PHRASE);
+    return original(request);
+  };
+  try{
+    await input(value);await wait(blockedPanel);assert.equal(submittedQueries.length,before);
+  } finally {chrome.scripting.executeScript=original;}
+});
+test('SCUTTIES checks driver-report identifiers and stored replay identifiers before handoff',async()=>{
+  session['pdf:2']={text:driverReport};for(const tab of tabs.values())tab.active=tab.id===2;
+  const before=navigations.length;
+  await send({type:'run',command:'scutties'});await wait(blockedPanel);assert.equal(navigations.length,before);
+  const identity={lastName:'EXAMPLE',dob:'01/02/2000'};
+  session.history.unshift({id:'blocked-scutties',kind:'scutties',identity,identifiers:[{kind:'customer',value:'12345678'}]});
+  await send({type:'rerun',search:{id:'blocked-scutties'}});await wait(blockedPanel);assert.equal(navigations.length,before);
+  session.history.unshift({id:'legacy-scutties',kind:'scutties',identity});
+  await send({type:'rerun',search:{id:'legacy-scutties'}});await wait(()=>panel('notice'));
+  assert.match(session.status,/identifiers can be checked/);assert.equal(navigations.length,before);
+});
+
+test('confirmed login-popup reset deletes saved user info and cancels the pending login/search',async()=>{
+  delete session.unlockedVault;delete session.vaultKey;delete session.blacklist;
+  session.lastQuery=Date.now();session['pdf:reset-fixture']={text:'SYNTHETIC REPORT'};
+  await input('70000008');await wait(()=>panel('credentials'));const before=navigations.length;
+  await assert.rejects(send({type:'clear-saved-user-info',confirmed:false}),/Confirm deletion/);assert.ok(local.vault);
+  const win=panel('credentials');await send({type:'clear-saved-user-info',confirmed:true});
+  assert.equal(local.vault,undefined);assert.deepEqual(session,{});assert.ok(removedWindows.includes(win.id));
+  assert.equal(navigations.length,before);
 });

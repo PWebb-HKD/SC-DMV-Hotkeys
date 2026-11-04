@@ -6,7 +6,8 @@
  */
 import {COMMANDS, ROOT, PDF_URL, attachmentUrl, isPdf, isPortal, normalize, ownerNumbers, driverLicense, driverIdentity, historySearch} from './core.js';
 import {search, scutties, evaluate, focusTab, PortalSearchError} from './automation.js';
-import {saveCredentials, unlockCredentials} from './vault.js';
+import {saveCredentials, unlockCredentials, blacklistState, addBlacklistEntry, removeBlacklistEntry, forgetCredentials, replaceCredentials, clearSavedUserInfo} from './vault.js';
+import {checkBlacklist, driverIdentifiers, validateBlacklist, BlacklistedSearchError} from './blacklist.js';
 import {SearchRun, guardedApi, isCancelled} from './run.js';
 import {recordStatus, unavailableAlert} from './status-alerts.js';
 import {AudioAlerts, availableVoices} from './audio-alerts.js';
@@ -15,6 +16,7 @@ const audioAlerts = new AudioAlerts();
 
 // In-memory Maps hold live callbacks. Session storage holds view/report data, not
 // resumable jobs. openingPanel and tracking serialize two independent mutation streams.
+let resettingUserInfo = null;
 let activeRun = null, openingPanel = Promise.resolve(), tracking = Promise.resolve();
 const panels = new Map(), readers = new Map(), captures = new Map();
 const boot = Promise.all([
@@ -54,7 +56,7 @@ async function createPanel(data, callbacks = {}, run) {
   const entry = {windowId: null, data, run, ...callbacks};
   panels.set(id, entry);
   await chrome.storage.session.set({[`panel:${id}`]: data});
-  if (data.type === 'record-alert' && !(await chrome.storage.session.get('alertsEnabled')).alertsEnabled) entry.cancelled = true;
+  if (data.type === 'record-alert' && !data.blacklist && !(await chrome.storage.session.get('alertsEnabled')).alertsEnabled) entry.cancelled = true;
   if (entry.cancelled || run?.signal.aborted) {
     panels.delete(id); await chrome.storage.session.remove(`panel:${id}`); run?.check(); return null;
   }
@@ -189,11 +191,34 @@ function context(run) {
     }
   };
 }
+/** Never navigate to a search while a saved blacklist is still encrypted. */
+async function unlockedBlacklist(run) {
+  let current = await run.step(() => blacklistState());
+  if (current.hasVault && !current.unlocked) {
+    const unlocked = await ask({type: 'credentials', hasVault: true, unlockOnly: true}, run);
+    if (!unlocked) throw new Error('Unlock the vault to check the blacklist before searching.');
+    current = await run.step(() => blacklistState());
+    if (!current.unlocked) throw new Error('The vault must be unlocked before searching.');
+  }
+  return current.entries;
+}
+async function authorizeIdentifiers(identifiers, run, requireIdentifiers = false) {
+  const entries = await unlockedBlacklist(run);
+  if (entries.length && requireIdentifiers && !identifiers.length) throw new Error('Run SCUTTIES from the driver report so its identifiers can be checked against your blacklist.');
+  for (const entry of identifiers) checkBlacklist(entries, entry.kind, entry.value);
+}
+async function showBlacklistWarning(error, run) {
+  await guardedApi(chrome, run).storage.session.set({status: error.message});
+  await createPanel({type: 'record-alert', blacklist: true, tone: 'danger', autoCloseMs: 90000,
+    subject: 'SEARCH BLOCKED: BLACKLIST', sections: [{title: error.message, lines: []}]}, {}, run);
+}
 /** Submit a portal search; commit successful history before focusing results.
  * DMV errors are recorded as failed attempts; queued errors consume their position.
  * PDF extraction and optional status analysis continue without blocking the next command. */
 async function runSearch(kind, value, ctx, advance) {
   const api = guardedApi(chrome, ctx.run);
+  const identifier = {kind: kind === 'address' ? 'license' : kind, value};
+  ctx.beforeSubmit = () => authorizeIdentifiers([identifier], ctx.run);
   let captured, advanced = false;
   const advanceQueue = async () => {
     if (advance && !advanced) { await advance(); advanced = true; }
@@ -218,10 +243,11 @@ async function runSearch(kind, value, ctx, advance) {
     });
   };
   let result;
-  try { result = await search(kind, value, ctx); }
+  try { await ctx.beforeSubmit(); result = await search(kind, value, ctx); }
   catch (error) {
     // Record the rejected search with its outcome before displaying the error.
     // Queue advancement and history remain guarded against Stop or replacement.
+    if (error instanceof BlacklistedSearchError && !ctx.run.signal.aborted) await advanceQueue();
     if (error instanceof PortalSearchError && !ctx.run.signal.aborted) {
       await advanceQueue();
       await addHistory(kind, value, ctx.run, {outcome: 'error', errorMessage: error.message});
@@ -305,13 +331,18 @@ async function execute(command, value, source, options, run) {
       if (!dl) throw new Error("A driver's license number was not detected. A driver's license number is required to run customers at the same residence.");
       await runSearch('address', dl, ctx);
     } else if (command === 'scutties') {
-      const identity = options.identity || driverIdentity(await pdfText(source, run));
+      const text = options.identity ? null : await pdfText(source, run);
+      const identity = options.identity || driverIdentity(text);
+      const identifiers = options.identifiers ? validateBlacklist(options.identifiers) : text ? driverIdentifiers(text) : [];
+      ctx.beforeSubmit = () => authorizeIdentifiers(identifiers, run, true);
+      await ctx.beforeSubmit();
       await scutties(identity, ctx);
-      await addHistory('scutties', `${identity.lastName} · ${identity.dob}`, run, {identity});
+      await addHistory('scutties', `${identity.lastName} · ${identity.dob}`, run, {identity, identifiers});
       await api.storage.session.set({status: 'SCUTTIES search submitted; review the results'});
     }
   } catch (e) {
     if (isCancelled(e) || run.signal.aborted) return;
+    if (e instanceof BlacklistedSearchError) { await showBlacklistWarning(e, run); return; }
     if (/Invalid User ID Or Password|User ID is required|Password is required/i.test(e.message)) await api.storage.session.remove('credentials');
     await report(e, ctx.tabId, run);
   }
@@ -320,6 +351,7 @@ async function execute(command, value, source, options, run) {
  * always replaces the previous run, including one waiting for user input. */
 async function dispatch(command, options = {}) {
   if (!COMMANDS[command]) throw new Error('Unknown command.');
+  if (resettingUserInfo) await resettingUserInfo;
   const run = beginRun();
   try {
     await run.step(() => boot); await run.step(() => run.cleanup);
@@ -424,12 +456,17 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
         let result = message.value;
         if (data.type === 'input') result = normalize(data.command, message.value);
         if (data.type === 'credentials') {
+          if (data.encryptedRequired && (message.unlock || !message.save)) throw new Error('Save the encrypted vault to set up the blacklist.');
+          if (data.unlockOnly && !message.unlock) await unlockCredentials(message.blacklistPassphrase || '');
           if (message.unlock) result = await unlockCredentials(message.passphrase || '');
           else {
             result = {user: String(message.user || '').trim(), password: String(message.password || '')};
             if (!result.user || !result.password) throw new Error('User ID and password are required.');
-            if (message.save) await saveCredentials(result, message.passphrase || '');
+            if ((await blacklistState()).hasVault) await replaceCredentials(result);
+            else if (message.save) await saveCredentials(result, message.passphrase || '');
             else await chrome.storage.session.set({credentials: result});
+            // Different credentials must not reuse the previous login-time hint.
+            await chrome.storage.session.set({lastQuery: 0});
           }
         }
         if (data.type === 'permission') {
@@ -458,10 +495,25 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
           : item.kind === requested.kind && item.value === requested.value && item.at === requested.at);
         if (!entry) throw new Error('This search is no longer in recent history. Reopen the popup and try again.');
         const query = historySearch(entry);
-        dispatch(query.kind, {...query, replay: true}).catch(error => report(error));
+        dispatch(query.kind, {...query, ...(entry.identifiers ? {identifiers: validateBlacklist(entry.identifiers)} : {}), replay: true}).catch(error => report(error));
         return true;
       }
-      case 'state': return {...await chrome.storage.local.get(['vault']), ...await chrome.storage.session.get(['history', 'queue', 'status', 'alertsEnabled', 'speechEnabled', 'repeatSpeech', 'suspendedClipEnabled', 'voiceSource', 'voiceGender', 'voiceName']), voices: await availableVoices().catch(() => []), commands: await chrome.commands.getAll(), extensionId: chrome.runtime.id};
+      case 'state': return {blacklist: await blacklistState(), ...await chrome.storage.local.get(['vault']), ...await chrome.storage.session.get(['history', 'queue', 'status', 'alertsEnabled', 'speechEnabled', 'repeatSpeech', 'suspendedClipEnabled', 'voiceSource', 'voiceGender', 'voiceName']), voices: await availableVoices().catch(() => []), commands: await chrome.commands.getAll(), extensionId: chrome.runtime.id};
+      case 'clear-saved-user-info': {
+        if (message.confirmed !== true) throw new Error('Confirm deletion of saved user information and the vault.');
+        const reset = (async () => { const run = beginRun(); await run.cleanup; await tracking; await clearSavedUserInfo(true); })();
+        resettingUserInfo = reset;
+        try { await reset; return true; } finally { if (resettingUserInfo === reset) resettingUserInfo = null; }
+      }
+      case 'blacklist-setup': {
+        if ((await blacklistState()).hasVault) throw new Error('A vault already exists. Unlock it to manage your blacklist.');
+        const run = beginRun(); await run.step(() => run.cleanup);
+        await ask({type: 'credentials', hasVault: false, encryptedRequired: true, setupOnly: true}, run);
+        return blacklistState();
+      }
+      case 'blacklist-unlock': await unlockCredentials(message.passphrase || ''); return blacklistState();
+      case 'blacklist-add': return addBlacklistEntry(message.kind, message.value);
+      case 'blacklist-remove': return removeBlacklistEntry(message.kind, message.value, message.confirmed);
       case 'stop-audio': audioAlerts.stop(); return true;
       case 'stop': {
         const run = beginRun();
@@ -483,7 +535,7 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
         const enabled = message.enabled === true;
         await chrome.storage.session.set({alertsEnabled: enabled});
         if (!enabled) for (const [id, entry] of panels) {
-          if (entry.data.type !== 'record-alert') continue;
+          if (entry.data.type !== 'record-alert' || entry.data.blacklist) continue;
           entry.cancelled = true; panels.delete(id); clearTimeout(entry.timer);
           await chrome.storage.session.remove(`panel:${id}`);
           if (entry.windowId != null) await chrome.windows.remove(entry.windowId).catch(() => {});
@@ -492,7 +544,7 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
       }
       case 'clear-history': await chrome.storage.session.remove('history'); return true;
       case 'clear-queue': await chrome.storage.session.remove('queue'); return true;
-      case 'forget-credentials': await chrome.storage.local.remove('vault'); await chrome.storage.session.remove('credentials'); return true;
+      case 'forget-credentials': await forgetCredentials(); return true;
       default: throw new Error('Unknown extension request.');
     }
   })().then(value => reply({ok: true, value}), error => reply({ok: false, error: error.message}));

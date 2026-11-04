@@ -8,3 +8,10 @@
 .repeat-speech{margin-top:14px}
 
 .history-error{display:block;color:#ffd166;font-size:12px;line-height:1.5;margin-top:3px;overflow-wrap:anywhere}
+
+.blacklist-settings{margin-bottom:22px}.blacklist-settings label,.blacklist-settings small{display:block;margin-top:10px}.blacklist-settings select{width:100%;padding:8px;background:#20272d;color:#fff;border:1px solid #526474;border-radius:4px}.blacklist-remove{min-width:36px;font-size:18px;padding:4px 8px}#blacklistFeedback{color:#ffd166;overflow-wrap:anywhere}#blacklistEntries td{overflow-wrap:anywhere}
+@keyframes blacklist-flash{0%,100%{opacity:1}50%{opacity:.35}}
+.blacklist-panel .record-status-title{color:#ff5559;font-size:32px;animation:blacklist-flash 1.5s ease-in-out infinite}
+@media(prefers-reduced-motion:reduce){.blacklist-panel .record-status-title{animation:none}}
+
+.clear-saved-info{display:block;width:100%;margin-top:18px;color:#ff8a8d}

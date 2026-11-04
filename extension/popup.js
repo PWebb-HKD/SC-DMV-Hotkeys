@@ -4,6 +4,7 @@
  * Shortcut assignments and Global scope are managed by the browser.
  */
 import {COMMANDS} from './core.js';
+import {BLACKLIST_TYPES, blacklistEntry} from './blacklist.js';
 const $ = id => document.getElementById(id);
 const DESCRIPTIONS = {
   plate: 'Enter a license plate number to search for its vehicle record.',
@@ -51,9 +52,62 @@ function renderShortcuts(commands = []) {
   });
   $('shortcutList').replaceChildren(...rows);
 }
+function renderBlacklist(current = {}) {
+  const unlocked = current.unlocked === true;
+  $('blacklistState').textContent = !current.hasVault
+    ? 'Create an encrypted vault to save the blacklist alongside your DMV login. No DMV search is needed.'
+    : unlocked ? 'Vault unlocked. Blacklisted numbers are blocked before searches.' : 'Vault locked. Unlock it to view entries and enable searches.';
+  $('blacklistEntries').replaceChildren();
+  $('blacklistTable').hidden = !unlocked;
+  $('blacklistEmpty').hidden = !unlocked || !!current.entries?.length;
+  $('blacklistSetup').hidden = !!current.hasVault;
+  $('blacklistAdd').disabled = !unlocked; $('blacklistUnlock').disabled = !current.hasVault || unlocked;
+  $('blacklistPassphrase').disabled = !current.hasVault;
+  $('blacklistUnlockFields').hidden = !current.hasVault || unlocked;
+  for (const entry of current.entries || []) {
+    const row = document.createElement('tr'), category = document.createElement('td'), value = document.createElement('td'), action = document.createElement('td');
+    category.textContent = BLACKLIST_TYPES[entry.kind]; value.textContent = entry.value;
+    const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'secondary blacklist-remove'; remove.textContent = '🗑';
+    remove.setAttribute('aria-label', `Remove ${BLACKLIST_TYPES[entry.kind]} ${entry.value}`);
+    remove.title = 'Remove blacklisted number';
+    remove.onclick = async () => {
+      const category = BLACKLIST_TYPES[entry.kind];
+      if (!window.confirm(`Remove ${category.toLowerCase()} ${entry.value} from the blacklist? You will no longer be stopped from running it in the future. Running your own or a family member's information could cause your SCDMV access privileges to be suspended or revoked.`)) return;
+      remove.disabled = true;
+      try {
+        renderBlacklist(await send({type: 'blacklist-remove', ...entry, confirmed: true}));
+        $('blacklistFeedback').textContent = 'Entry removed. Future searches for this number will no longer be blocked.';
+      } catch (error) { $('blacklistFeedback').textContent = error.message; remove.disabled = false; }
+      finally { $('blacklistPassphrase').value = ''; }
+    };
+    action.append(remove); row.append(category, value, action); $('blacklistEntries').append(row);
+  }
+}
+$('blacklistKind').onchange = () => {
+  const kind = $('blacklistKind').value;
+  $('blacklistLimit').textContent = kind === 'license' ? 'Up to 9 digits. Spaces are ignored; leading zeroes are kept.' : kind === 'customer' ? 'Up to 8 digits after leading zeroes are removed. Spaces are ignored.' : 'Up to 8 letters or digits. Spaces are ignored.';
+  $('blacklistValue').inputMode = kind === 'plate' ? 'text' : 'numeric';
+};
+$('blacklistForm').onsubmit = async event => {
+  event.preventDefault(); $('blacklistAdd').disabled = true;
+  try {
+    const entry = blacklistEntry($('blacklistKind').value, $('blacklistValue').value);
+    renderBlacklist(await send({type: 'blacklist-add', ...entry}));
+    $('blacklistValue').value = ''; $('blacklistFeedback').textContent = 'Number added to the blacklist.';
+  } catch (error) { $('blacklistFeedback').textContent = error.message; $('blacklistAdd').disabled = false; }
+  finally { $('blacklistPassphrase').value = ''; }
+};
+$('blacklistSetup').onclick = () => send({type: 'blacklist-setup'}).then(renderBlacklist).catch(error => { $('blacklistFeedback').textContent = error.message; });
+$('blacklistUnlock').onclick = async () => {
+  $('blacklistUnlock').disabled = true;
+  try { renderBlacklist(await send({type: 'blacklist-unlock', passphrase: $('blacklistPassphrase').value})); $('blacklistFeedback').textContent = 'Login and blacklist unlocked for this session.'; }
+  catch (error) { $('blacklistFeedback').textContent = error.message; $('blacklistUnlock').disabled = false; }
+  finally { $('blacklistPassphrase').value = ''; }
+};
 /** Render a fresh worker snapshot; history replay sends an ID, not arbitrary form values. */
 async function refresh() {
   const data = await send({type: 'state'});
+  renderBlacklist(data.blacklist);
   $('alertsToggle').checked = data.alertsEnabled === true;
   $('speechToggle').checked = data.speechEnabled === true;
   $('repeatSpeechToggle').checked = data.repeatSpeech === true;
@@ -135,6 +189,7 @@ for (const [id, type] of [['clearHistory', 'clear-history'], ['clearQueue', 'cle
 }
 // Update session controls while this short-lived popup remains open.
 chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && changes.vault || area === 'session' && (changes.blacklist || changes.unlockedVault)) refresh().catch(error => feedback(error.message));
   if (area === 'session' && changes.history) refresh().catch(error => feedback(error.message));
   if (area === 'session' && changes.status) $('status').textContent = changes.status.newValue;
   if (area === 'session' && changes.alertsEnabled) $('alertsToggle').checked = changes.alertsEnabled.newValue === true;
