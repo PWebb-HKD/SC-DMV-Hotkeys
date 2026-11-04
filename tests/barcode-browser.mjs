@@ -22,7 +22,7 @@ const {chromium} = dependency('playwright');
 const browser = await chromium.launch({executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true});
 const out = join(root, 'tests/tmp/barcodes'); await mkdir(out, {recursive: true});
 try {
-  for (const [kind, source] of [['driver', driverReport.replace('Race: W', 'Race: WHITE')], ['vehicle', vehicleReport.replace('123 EXAMPLE ROAD, COLUMBIA SC 292010123', '123 EXAMPLE DR ROCK HILL SC, 297321234')], ['id', driverReport.replace('DL (R) D Modify', 'ID (R) Renewal').replace('Race: W', 'Race: HISP')], ['blank-number', driverReport.replace('Driver License No: 123456789', 'Driver License No:')]]) {
+  for (const [kind, source] of [['driver', driverReport.replace('Race: W', 'Race: WHITE')], ['suffix', driverReport.replace('JANE MARIE', 'JANE MARIE JR')], ['vehicle', vehicleReport.replace('123 EXAMPLE ROAD, COLUMBIA SC 292010123', '123 EXAMPLE DR ROCK HILL SC, 297321234')], ['id', driverReport.replace('DL (R) D Modify', 'ID (R) Renewal').replace('Race: W', 'Race: HISP')], ['blank-number', driverReport.replace('Driver License No: 123456789', 'Driver License No:')]]) {
     const data = reportBarcode(source), page = await browser.newPage({viewport: {width: 1020, height: 800}});
     await page.addInitScript(data => {
       window.closedByUser = false; window.close = () => {window.closedByUser = true;};
@@ -49,7 +49,7 @@ sys.path.insert(0,'tests/tmp/python')
 import zxingcpp
 from PIL import Image
 root=pathlib.Path('tests/tmp/barcodes')
-for kind in ['driver','vehicle','id','blank-number']:
+for kind in ['driver','suffix','vehicle','id','blank-number']:
  expected=(root/(kind+'.txt')).read_bytes()
  for scale in [2,3,4]:
   codes=zxingcpp.read_barcodes(Image.open(root/f'{kind}-{scale}.png'),formats=zxingcpp.BarcodeFormat.PDF417)

@@ -457,11 +457,15 @@ try {
       await page.goto(base+'/barcode.html?id=timeout-fixture');
       await page.waitForFunction(()=>document.querySelector('#barcode').width>100);
       assert.equal(await page.locator('#error').textContent(),'');
+      assert.equal(await page.locator('#countdown').textContent(),'Closes in 90 seconds. Press Esc to dismiss.');
       if(mode==='escape')await page.keyboard.press('Escape');
       else {
         await page.clock.fastForward(89000);assert.equal(await page.evaluate(()=>window.barcodeCloseCalls),0);
+        assert.equal(await page.locator('#countdown').textContent(),'Closes in 1 seconds. Press Esc to dismiss.');
         await page.locator('#scale').selectOption('4');
+        assert.equal(await page.locator('#countdown').textContent(),'Closes in 1 seconds. Press Esc to dismiss.');
         await page.clock.fastForward(1000);
+        assert.equal(await page.locator('#countdown').textContent(),'Closes in 0 seconds. Press Esc to dismiss.');
       }
       assert.equal(await page.evaluate(()=>window.barcodeCloseCalls),1);
       await page.clock.fastForward(90000);assert.equal(await page.evaluate(()=>window.barcodeCloseCalls),1);

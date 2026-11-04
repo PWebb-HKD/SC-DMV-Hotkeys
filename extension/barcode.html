@@ -4,6 +4,7 @@
 <body><header><div><h1 id="title">Import barcode</h1><p id="summary"></p></div></header>
 <main><p id="profile"></p><p>Scan into your reporting software and verify the imported fields against the source record.</p>
 <div class="barcode-controls"><label for="scale">Barcode size</label><select id="scale"><option value="2">Small</option><option value="3" selected>Medium</option><option value="4">Large</option></select><button id="close">Close · Esc</button></div>
+<small id="countdown">Closes in 90 seconds. Press Esc to dismiss.</small>
 <div id="scanArea"><canvas id="barcode" aria-label="PDF417 import barcode"></canvas></div>
 <p id="error" class="error" role="alert"></p><ul id="warnings"></ul><p class="muted">Generated from the open DMV report for data entry. This is not a replacement credential or proof of driving privileges.</p></main>
 <script src="vendor/bwip-js-min.js"></script><script type="module" src="barcode.js"></script></body></html>

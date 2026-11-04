@@ -7,9 +7,9 @@ const $ = id => document.getElementById(id);
 const id = new URL(location.href).searchParams.get('id');
 const port = chrome.runtime.connect({name: 'panel'});
 const heartbeat = setInterval(() => {try {port.postMessage({type: 'heartbeat'});} catch {}}, 15000);
-let data, expiryTimer;
+let data, expiryTimer, countdownTimer;
 // Re-rendering at another scale must not renew the barcode lifetime.
-function close() {clearInterval(heartbeat); clearTimeout(expiryTimer); window.close();}
+function close() {clearInterval(heartbeat); clearTimeout(expiryTimer); clearInterval(countdownTimer); window.close();}
 $('close').onclick = close;
 document.addEventListener('keydown', event => {if (event.key === 'Escape') {event.preventDefault(); close();}});
 function render() {
@@ -27,5 +27,11 @@ try {
   $('title').textContent = data.title; $('summary').textContent = data.summary; $('profile').textContent = data.profile;
   for (const warning of data.warnings || []) {const li = document.createElement('li'); li.textContent = warning; $('warnings').append(li);}
   render(); $('close').focus();
-  expiryTimer = setTimeout(close, 90000);
+  const deadline = Date.now() + 90000;
+  const tick = () => {
+    const seconds = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+    $('countdown').textContent = `Closes in ${seconds} seconds. Press Esc to dismiss.`;
+  };
+  countdownTimer = setInterval(tick, 1000); tick();
+  expiryTimer = setTimeout(() => {tick(); close();}, 90000);
 } catch (error) {$('error').textContent = error.message;}
