@@ -1,7 +1,7 @@
 // DOM operation tests for extension-managed credentials and form notification.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {search} from '../extension/automation.js';
+import {search, scutties} from '../extension/automation.js';
 import {MEMBER, LOGIN, DISCLAIMER, PDF_URL} from '../extension/core.js';
 test('a login post that unloads the frame is verified at a new SCDMV URL and keeps login focused',async()=>{
   const portal={id:1,url:LOGIN,status:'complete',windowId:1};let pdf,submits=0;
@@ -23,4 +23,62 @@ test('a login post that unloads the frame is verified at a new SCDMV URL and kee
   };
   const result=await search('customer','12345678',{status:()=>{},credentials:async()=>({user:'extension-user',password:'extension-password'})});
   assert.equal(result.tabId,2);assert.equal(submits,1);assert.equal(focused.at(-1),2);assert.ok(focused.includes(1));
+});
+
+test('warm-session searches focus the portal and restore its window before navigation or DOM access', async () => {
+  for (const [kind, path] of [['plate','VehRec'], ['license','DrvRec'], ['customer','DrvRec'], ['address','DrvSameRes']]) {
+    const portal = {id:1, url:DISCLAIMER, status:'complete', windowId:7, active:false};
+    const win = {id:7, state:'minimized', focused:false};
+    const session = {portalId:1, lastQuery:Date.now()};
+    let pdf, navigated = false;
+    const assertFocused = () => {assert.equal(portal.active,true); assert.equal(win.state,'normal'); assert.equal(win.focused,true);};
+    globalThis.chrome = {
+      storage:{session:{get:async()=>session,set:async value=>Object.assign(session,value)}},
+      tabs:{onCreated:{addListener(){},removeListener(){}},onUpdated:{addListener(){},removeListener(){}},
+        query:async()=>pdf?[{...portal},{...pdf}]:[{...portal}], get:async id=>({...id===1?portal:pdf}),
+        update:async(id,update)=>{
+          if(update.url){assertFocused();navigated=true;}
+          const tab=id===1?portal:pdf;Object.assign(tab,update);return {...tab};
+        }},
+      windows:{get:async id=>{assert.equal(id,7);return {...win};},update:async(id,update)=>{assert.equal(id,7);Object.assign(win,update);}},
+      scripting:{executeScript:async({target,args:[op,args]})=>{
+        assert.equal(target.tabId,1);assertFocused();
+        assert.notEqual(op,'extensionLogin','Fresh sessions must not need login to gain focus');
+        if(op==='state')return [{result:{url:portal.url,present:true,errors:[]}}];
+        if(op==='click'&&args.selector==='#btnFooterNavNext')portal.url=`${MEMBER}Transactions/${path}/Page2.aspx`;
+        if(op==='click'&&args.selector==='#downloadButton')pdf={id:2,url:PDF_URL,status:'complete',windowId:7,openerTabId:1};
+        return [{result:true}];
+      }}
+    };
+    const result=await search(kind,'12345678',{status(){},credentials(){assert.fail('Unexpected login');}});
+    assert.equal(navigated,true);assert.equal(result.tabId,2);assert.equal(pdf.active,true);
+  }
+});
+
+test('SCUTTIES activates a new destination window and refocuses it after the permission popup', async () => {
+  const portal={id:1,url:DISCLAIMER,status:'complete',windowId:7};
+  let child, activeId, focusedWindow, permissions=false, searched=false;
+  const session={portalId:1,lastQuery:Date.now()};
+  globalThis.chrome={
+    storage:{session:{get:async()=>session,set:async value=>Object.assign(session,value)}},
+    tabs:{query:async()=>child?[portal,child]:[portal],get:async id=>({...id===1?portal:child}),update:async(id,update)=>{
+      if(update.active)activeId=id;
+      Object.assign(id===1?portal:child,update);return {...id===1?portal:child};
+    }},
+    windows:{get:async id=>({id,state:'minimized'}),update:async(id,update)=>{if(update.focused)focusedWindow=id;}},
+    permissions:{contains:async()=>permissions},
+    scripting:{executeScript:async({target,args:[op,args]})=>{
+      const tab=target.tabId===1?portal:child;
+      assert.equal(activeId,tab.id);assert.equal(focusedWindow,tab.windowId);
+      if(op==='state')return [{result:{url:tab.url,present:true,enabled:true,errors:[]}}];
+      if(op==='click'&&target.tabId===1)child={id:2,url:'https://scutties.fixture.test/search',windowId:8,status:'complete',openerTabId:1};
+      if(op==='fill')assert.ok(['EXAMPLE','01/02/2000'].includes(args.value));
+      if(op==='click'&&target.tabId===2)searched=true;
+      return [{result:true}];
+    }}
+  };
+  await scutties({lastName:'EXAMPLE',dob:'01/02/2000'},{status(){},permission:async origin=>{
+    assert.equal(origin,'https://scutties.fixture.test/*');permissions=true;activeId=99;focusedWindow=99;
+  }});
+  assert.equal(searched,true);assert.equal(activeId,2);assert.equal(focusedWindow,8);
 });

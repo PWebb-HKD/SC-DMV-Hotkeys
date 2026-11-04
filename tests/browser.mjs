@@ -140,6 +140,8 @@ try {
     },
     windows: {get: async () => ({id:1,state:'minimized'}), update: async (id, data) => { windowsUpdated.push(data); }},
     scripting: {executeScript: async ({target,func,args}) => {
+      assert.equal(tabs.get(target.tabId).tab.active,true,'Automation must activate the working tab before DOM access');
+      assert.equal(windowsUpdated.at(-1)?.focused,true,'Automation must focus the working window before DOM access');
       if(args[0]==='extensionLogin'&&!args[1].submit)loginFills.push(...args[1].selectors);
       return [{result: await tabs.get(target.tabId).page.evaluate(`(${func.toString()})(...${JSON.stringify(args)})`)}];
     }},
@@ -159,9 +161,14 @@ try {
     assert.equal(disclaimerClicks,0);
     assert.equal(navigation[navigation.indexOf(DISCLAIMER)+1],`${MEMBER}Transactions/VehRec/Page1.aspx`);
   });
-  await tests('customer: skips fresh login and reuses portal, excluding PDF', async () => {
+  await tests('customer: focuses the portal from an unrelated tab with a fresh session, excluding PDF', async () => {
+    await context.route('https://unrelated.fixture.test/**', route=>route.fulfill({contentType:'text/html',body:'Unrelated tab'}));
+    const unrelated=await createTab('https://unrelated.fixture.test/',false);
+    await updateTab(unrelated.id,{active:true});
+    const focusBefore=activated.length;
     const before = tabs.size; await search('customer','12345678',ctx);
     assert.equal(loginClicks,1); assert.equal(tabs.size,before+1);
+    assert.equal(activated[focusBefore],session.portalId);
     assert.equal(submissions.at(-1).ContentPlaceHolder1_idNumberTextBox,'12345678');
   });
   await tests('DL and same-address searches target their supplied fields', async () => {
@@ -170,10 +177,10 @@ try {
     await search('address','987654321',ctx);
     assert.equal(submissions.at(-1).ContentPlaceHolder1_txtDLNumber,'987654321');
   });
-  await tests('validation errors stop the workflow before PDF or focus', async () => {
+  await tests('validation errors stop the workflow before PDF results', async () => {
     invalid = true; const before = activated.length;
     await assert.rejects(search('customer','12345678',ctx), /Invalid search number/);
-    assert.equal(activated.length,before); invalid = false;
+    assert.deepEqual(activated.slice(before),[session.portalId]); invalid = false;
   });
   await tests('expired query age forces login and displays site login errors', async () => {
     session.lastQuery = Date.now()-600001; loginInvalid = true;
