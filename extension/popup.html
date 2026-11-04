@@ -1,0 +1,66 @@
+<!doctype html>
+<!-- popup extension view. Its same-named module owns behavior; static markup supplies stable IDs for that controller. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>SC DMV Hotkeys</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="popup">
+  <header><img src="icons/icon48.png" alt="Palmetto and crescent"><div><h1>SC DMV Hotkeys</h1><p>Searches, follow-ups & keyboard shortcuts</p></div></header>
+  <nav class="tabs" role="tablist" aria-label="Extension views">
+    <button id="historyTab" role="tab" aria-selected="true" aria-controls="historyView">Recent searches</button>
+    <button id="settingsTab" role="tab" aria-selected="false" aria-controls="settingsView">Settings</button>
+    <button id="aboutTab" role="tab" aria-selected="false" aria-controls="aboutView">About</button>
+  </nav>
+  <main>
+    <div id="status" class="status" role="status">Ready</div>
+    <button id="stopFunction" class="secondary stop-function">Stop current function</button>
+    <section id="historyView" role="tabpanel" aria-labelledby="historyTab">
+      <div id="quick" class="quick"></div>
+      <p class="binding-note">Select a search value to run it again.</p>
+      <table><thead><tr><th scope="col">Search type</th><th scope="col">Number / details</th></tr></thead><tbody id="history"></tbody></table>
+      <p id="empty" class="empty" hidden>No searches yet. Start with a plate, DL, or customer number.</p>
+      <div class="footer"><small id="queue"></small><button id="clearHistory" class="secondary">Clear history</button></div>
+      <button id="clearQueue" class="secondary" hidden>Clear customer queue</button>
+    </section>
+    <section id="settingsView" role="tabpanel" aria-labelledby="settingsTab" hidden>
+    <div class="alerts-setting">
+      <label class="alerts-toggle" for="alertsToggle"><span>Plate & license status alerts<small>This session only · Off by default</small></span><span class="switch-control"><input id="alertsToggle" type="checkbox" role="switch"><span class="switch-track" aria-hidden="true"></span></span></label>
+    </div>
+    <div class="alerts-setting">
+      <label class="alerts-toggle" for="speechToggle"><span>Voice status alerts<small>Plays once · Off by default</small></span><span class="switch-control"><input id="speechToggle" type="checkbox" role="switch"><span class="switch-track" aria-hidden="true"></span></span></label>
+      <label for="voiceSource">Announcement source</label>
+      <select id="voiceSource"><option value="recordings">Bundled voice recordings</option><option value="microsoft">Microsoft text to speech</option></select>
+      <label class="alerts-toggle repeat-speech" for="repeatSpeechToggle"><span>Repeat voice announcement<small>Play twice with a one-second pause · Applies to recordings and speech</small></span><span class="switch-control"><input id="repeatSpeechToggle" type="checkbox" role="switch"><span class="switch-track" aria-hidden="true"></span></span></label>
+      <label for="voiceGender">Voice</label>
+      <select id="voiceGender"><option value="female">Female</option><option value="male">Male</option></select>
+      <label for="voiceName">Microsoft voice (optional override)</label>
+      <select id="voiceName"><option value="">Automatic for selected voice</option></select>
+      <small id="voiceHelp">A status without a matching recording uses Microsoft speech with the selected gender. Voice settings apply to this session.</small>
+      <label class="alerts-toggle" for="clipToggle"><span>Suspended audio clip<small>Replaces other voice alerts for suspended results · Plays three times · Off by default</small></span><span class="switch-control"><input id="clipToggle" type="checkbox" role="switch"><span class="switch-track" aria-hidden="true"></span></span></label>
+      <button id="stopAudio" class="secondary">Stop audio</button>
+    </div>
+      <div class="section">
+        <h2>Set up your shortcuts</h2>
+        <p class="about-instructions">Open the keyboard shortcut settings below and find <strong>SC DMV Hotkeys</strong>. Click the edit icon or shortcut box for each command, then press your preferred key combination using a modifier such as Alt or Ctrl. For each search shortcut, change the <strong>Scope</strong> setting from <strong>In Chrome</strong> to <strong>Global</strong> so it works while another application is focused or the browser is minimized. The browser must remain running.</p>
+        <a id="browserShortcuts" href="chrome://extensions/shortcuts">Open browser keyboard shortcut settings</a>
+        <p class="binding-note"><button id="shortcutSetup" class="secondary">Open shortcut setup guide</button></p>
+      </div>
+    </section>
+    <section id="aboutView" role="tabpanel" aria-labelledby="aboutTab" hidden>
+      <h2>Your keyboard shortcuts</h2>
+      <p class="binding-note">Current assignments from your browser's extension keyboard shortcut settings.</p>
+      <div id="shortcutList" class="shortcut-list"></div>
+      <footer class="section about-license">
+        <h2>License & ownership</h2>
+        <p>This extension is licensed on a perpetual basis. All rights to SC DMV Hotkeys belong to <strong>Preston Webb</strong>. All rights reserved.</p>
+      </footer>
+    </section>
+    <p id="feedback" class="error" role="alert"></p>
+  </main>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>
+

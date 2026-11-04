@@ -1,0 +1,76 @@
+{
+  "manifest_version": 3,
+  "name": "SC DMV Hotkeys",
+  "version": "1.4.5",
+  "minimum_chrome_version": "120",
+  "description": "Keyboard shortcut keys for automating searches through the SCDMV online portal.",
+  "permissions": [
+    "storage",
+    "tts",
+    "offscreen",
+    "scripting",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://www.scdmvonline.com/*"
+  ],
+  "optional_host_permissions": [
+    "https://*/*",
+    "http://*/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "SC DMV Hotkeys",
+    "default_popup": "popup.html"
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; worker-src 'self'"
+  },
+  "commands": {
+    "plate": {
+      "description": "License plate search (preferred Alt+P)",
+      "global": true
+    },
+    "license": {
+      "description": "Driver's license search (preferred Alt+L)",
+      "global": true
+    },
+    "customer": {
+      "description": "Customer number search (preferred Alt+O)",
+      "global": true
+    },
+    "owners": {
+      "description": "Queue PDF customers/owners (preferred Alt+J)",
+      "global": true
+    },
+    "next": {
+      "description": "Search next queued customer (preferred Alt+N)",
+      "global": true
+    },
+    "address": {
+      "description": "Customers at same address (preferred Alt+I)",
+      "global": true
+    },
+    "scutties": {
+      "description": "Run driver through SCUTTIES (preferred Alt+U)",
+      "global": true
+    },
+    "barcode": {
+      "description": "Generate PDF417 import barcode (preferred Alt+B)",
+      "global": true
+    },
+    "previous": {
+      "global": true,
+      "description": "Search previous queued customer (preferred Alt+M)"
+    }
+  }
+}

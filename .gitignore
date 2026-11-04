@@ -1,0 +1,14 @@
+tests/tmp/
+test-results/
+output/
+*.zip
+node_modules/
+
+# Local records, credentials, and editor state are never source files.
+.codex-remote-attachments/
+.codex/
+.env
+.env.*
+*.pdf
+*.pem
+*.key

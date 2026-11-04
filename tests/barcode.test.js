@@ -1,0 +1,119 @@
+// Pure field mappings and exact framing using synthetic reports; do not add real identifying data.
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {driverBarcode, vehicleBarcode, reportBarcode, frameAamva, ownerAddress, raceEthnicity} from '../extension/barcode-data.js';
+import {driverReport, vehicleReport} from './barcode-fixtures.js';
+import {COMMANDS} from '../extension/core.js';
+const fields = payload => Object.fromEntries(payload.slice(33).replace(/\r$/, '').split('\n').map(field => [field.slice(0, 3), field.slice(3)]));
+const registrationFields = payload => Object.fromEntries(payload.slice(31).replace(/\r$/, '').split('\n').map(field => [field.slice(0, 3), field.slice(3)]));
+// Only field identifiers/framing from the supplied screenshots; no real personal data.
+const official = JSON.parse(readFileSync(new URL('./sc-barcode-layouts.json', import.meta.url)));
+test('driver import translates demographics and uses the current class rather than Prior class', () => {
+  const result = driverBarcode(driverReport), f = fields(result.payload);
+  assert.equal(result.payload.slice(0, 31), '@\n\x1e\rANSI 636005090001DL0031' + String(result.payload.length - 31).padStart(4, '0'));
+  assert.equal(f.DCA, 'D'); assert.equal(f.DAQ, '123456789'); assert.equal(f.DAQ === '12345678', false);
+  assert.equal(f.DCS, 'EXAMPLE-SAMPLE'); assert.equal(f.DAC, 'JANE'); assert.equal(f.DAD, 'MARIE');
+  assert.equal(f.DBB, '02292000'); assert.equal(f.DBD, '04142026'); assert.equal(f.DBA, '06202030');
+  assert.equal(f.DBC, '2'); assert.equal(f.DAU, '065 in'); assert.equal(f.DAW, '140'); assert.equal(f.DAY, 'BRO');
+  assert.equal(f.DCF, '1234567890123456789'); assert.equal(f.DAK, '292010123  '); assert.equal(f.DCB, 'NONE'); assert.equal(f.DCD, 'NONE');
+  assert.deepEqual(Object.keys(f), official.driver.fields);
+  assert.equal(f.DCK, ''); assert.equal(f.DCR, ''); assert.equal(f.DDK, '');
+  assert.equal(COMMANDS.barcode.key, 'Alt+B');
+});
+test('ID records encode class I and retain ID document type', () => {
+  const result = driverBarcode(driverReport.replace('DL (R) D Modify', 'ID (R) Renewal'));
+  assert.equal(result.payload.slice(21, 23), 'ID'); assert.equal(fields(result.payload).DCA, 'I');
+});
+test('full race labels map to legacy version-09 DCL codes with three-character padding', () => {
+  for (const [label, code] of [['WHITE','W'],['W','W'],['WHT','W'],['WHI','W'],['BLACK','BK'],['B','BK'],['BK','BK'],['BLK','BK'],['AFRICAN AMERICAN','BK'],['ASIAN','AP'],['ASN','AP'],['ASI','AP'],['AP','AP'],['PACIFIC ISLANDER','AP'],['NATIVE AMERICAN','AI'],['AI','AI'],['HISPANIC','H'],['HISP','H'],['hisp','H'],['HISPAN','H'],['H','H'],['UNKNOWN','U'],['UNK','U'],['U','U']]) {
+    assert.equal(raceEthnicity(label), code);
+    assert.equal(fields(driverBarcode(driverReport.replace('Race: W', `Race: ${label}`)).payload).DCL, code.padEnd(3, ' '));
+  }
+  const unknown = driverBarcode(driverReport.replace('Race: W', 'Race: NOT A RECOGNIZED LABEL'));
+  assert.equal(fields(unknown.payload).DCL, undefined);
+  assert.match(unknown.warnings.join(' '), /Race\/ethnicity.*not recognized/);
+});
+test('blank printed dates, beginner permits and original functions retain current class', () => {
+  const result = driverBarcode(driverReport.replace('DL (R) D Modify', 'BP (R) D Original').replace('04/16/2026 ', ''));
+  assert.equal(fields(result.payload).DCA, 'D'); assert.equal(fields(result.payload).DBA, '06202030');
+});
+test('missing current credentials never borrow prior class, dates, or identifier', () => {
+  const result = driverBarcode(driverReport.replace(/Current.*?\n/, ''));
+  assert.equal(fields(result.payload).DCA, 'unavl'); assert.equal(fields(result.payload).DBA, 'unavl');
+});
+test('absent driver numbers encode an empty DAQ without substituting the customer number', () => {
+  for (const replacement of ['Driver License No:', 'Driver License No:   ', '']) {
+    const result = reportBarcode(driverReport.replace('Driver License No: 123456789', replacement));
+    assert.equal(result.kind, 'driver'); assert.equal(fields(result.payload).DAQ, '');
+    assert.match(result.payload, /\nDAQ\nDCF/);
+    assert.doesNotMatch(result.payload, /DAQ12345678|DAQunavl|DAQNONE/);
+    assert.match(result.summary, /No license number/);
+  }
+});
+test('invalid nonempty numbers, invalid birth date, and ambiguous addresses still fail', () => {
+  assert.throws(() => driverBarcode(driverReport.replace('Driver License No: 123456789', 'Driver License No: INVALID')), /number is invalid/);
+  assert.throws(() => driverBarcode(driverReport.replace('02/29/2000', '02/29/2001')), /date of birth/);
+  assert.throws(() => vehicleBarcode(vehicleReport.replace('123 EXAMPLE ROAD, COLUMBIA SC 292010123', 'UNPARSEABLE ADDRESS')), /separated reliably/);
+});
+test('registration maps expiration, plate, VIN, owner and vehicle fields with exact subfile byte offsets', () => {
+  const result = vehicleBarcode(vehicleReport), text = result.payload;
+  assert.equal(text.slice(0, 19), '@\n\x1e\rAAMVA6360050101');
+  const entry = text.slice(19, 29), offset = +entry.slice(2, 6), length = +entry.slice(6);
+  assert.equal(entry.slice(0, 2), 'RG'); assert.equal(offset, 29); assert.equal(offset + length, text.length); assert.equal(text.at(-1), '\r');
+  const f = registrationFields(text);
+  assert.deepEqual(Object.keys(f), [...official.vehicle.fields, 'VAM']);
+  assert.equal(f.RBB, '20260414'); assert.equal(f.RAG, '20990101'); assert.equal(f.RBT, '20300620');
+  assert.equal(f.RAM, 'TEST123  '); assert.equal(f.RBD, 'EXAMPLE-SAMPLE'); assert.equal(f.RBE, 'JANE MARIE');
+  assert.equal(f.RBL, 'SC'); assert.equal(f.RBI, '123 EXAMPLE ROAD'); assert.equal(f.RBK, 'COLUMBIA'); assert.equal(f.RBM, '292010123');
+  assert.equal(f.VAD, '1HGCM82633A004352'); assert.equal(f.VAK, 'HOND'); assert.equal(f.VAL, '2003'); assert.equal(f.VAO, 'SD'); assert.equal(f.VAM, 'ACCORD'); assert.equal(f.RBU, '');
+  assert.doesNotMatch(text, /RBC|IFJ|IR\d{8}|VH\d{8}/);
+});
+test('temporary registrations retain separate plate and decal expiration fields', () => {
+  const result = vehicleBarcode(vehicleReport.replace('ABC PRIVATE PASSENGER', 'T45V TEMPORARY PLATE-VEHICLE'));
+  assert.match(result.payload, /RAG20990101/); assert.doesNotMatch(result.payload, /RAG20300620/);
+});
+test('T45V plate numbers exclude a space-separated display year without changing other plate numbers', () => {
+  const temporary = vehicleReport.replace('ABC PRIVATE PASSENGER', 'T45V TEMPORARY PLATE-VEHICLE');
+  const report = temporary.replace('Plate Number: TEST123', 'Plate Number: XPZ1107U 2026');
+  const result = vehicleBarcode(report);
+  assert.equal(registrationFields(result.payload).RAM, 'XPZ1107U ');
+  assert.match(result.summary, /^XPZ1107U ·/); assert.doesNotMatch(result.summary, /2026/);
+  assert.equal(registrationFields(vehicleBarcode(temporary.replace('TEST123', 'ABCD2026')).payload).RAM, 'ABCD2026 ');
+  assert.equal(registrationFields(vehicleBarcode(temporary).payload).RAM, 'TEST123  ');
+  assert.equal(registrationFields(vehicleBarcode(vehicleReport.replace('Plate Number: TEST123', 'Plate Number: ABCD 2026')).payload).RAM, 'ABCD 2026');
+});
+test('the confirmed SC registration profile preserves both official screenshot date fields', () => {
+  const text = vehicleReport.replace('Plate Exp Date: 01/01/2099', 'Plate Exp Date: 02/29/2028').replace('Decal Exp Date: 06/20/2030', 'Decal Exp Date: 02/28/2027');
+  const f = registrationFields(vehicleBarcode(text).payload);
+  assert.equal(f.RAG, '20280229'); assert.equal(f.RBT, '20270228');
+});
+test('registration does not replace missing issue date with the title date; companies use the business-name field', () => {
+  const text = vehicleReport.replace('Date of Issue: 04/14/2026', 'Date of Issue:').replace('Owner Name: EXAMPLE-SAMPLE, JANE MARIE', 'Owner Name: EXAMPLE COMPANY LLC');
+  const f = registrationFields(vehicleBarcode(text).payload);
+  assert.equal(f.RBB, ''); assert.equal(f.BBC, 'EXAMPLE COMPANY LLC'); assert.equal(f.RBD, ''); assert.equal(f.RBE, '');
+});
+test('driver restriction flags do not invent actual restriction codes or copy sample metadata', () => {
+  const f = fields(driverBarcode(driverReport.replace('N N 1234567890123456789', 'Y Y 1234567890123456789')).payload);
+  assert.equal(f.DCB, 'unavl'); assert.equal(f.DCD, 'unavl'); assert.equal(f.DCR, ''); assert.equal(f.DCK, ''); assert.equal(f.DAX, '');
+});
+test('owner address supports the SC comma-after-state layout and multiword cities', () => {
+  const address = ownerAddress('123 EXAMPLE DR ROCK HILL SC, 297321234');
+  assert.deepEqual(address, {street: '123 EXAMPLE DR', city: 'ROCK HILL', state: 'SC', zip: '297321234', inferred: true});
+  const result = vehicleBarcode(vehicleReport.replace('123 EXAMPLE ROAD, COLUMBIA SC 292010123', '123 EXAMPLE DR ROCK HILL SC, 297321234'));
+  assert.match(result.payload, /RBI123 EXAMPLE DR\nRBKROCK HILL\nRBLSC\nRBM297321234/);
+  assert.match(result.warnings[0], /Verify owner address/);
+});
+test('address splitting preserves units, PO boxes, and existing comma formats without guessing ambiguous cities', () => {
+  assert.equal(ownerAddress('123 EXAMPLE DR APT 4 ROCK HILL SC, 29732').street, '123 EXAMPLE DR APT 4');
+  assert.equal(ownerAddress('PO BOX 123 ROCK HILL SC, 29732').city, 'ROCK HILL');
+  assert.equal(ownerAddress('123 EXAMPLE ROAD, COLUMBIA, SC, 29201').city, 'COLUMBIA');
+  assert.equal(ownerAddress('123 EXAMPLE ROAD, COLUMBIA SC 29201').city, 'COLUMBIA');
+  assert.equal(ownerAddress('123 UNKNOWN ROCK HILL SC, 29732'), null);
+  assert.equal(ownerAddress('123 EXAMPLE DR SOME WAY CITY SC, 29732'), null);
+});
+test('record detection rejects unrelated documents; non-ASCII input cannot corrupt subfile offsets', () => {
+  assert.equal(reportBarcode(driverReport).kind, 'driver'); assert.equal(reportBarcode(vehicleReport).kind, 'vehicle');
+  assert.throws(() => reportBarcode('unrelated text'), /No driver or vehicle/);
+  assert.throws(() => frameAamva([{type: 'DL', fields: [['DCS', '\u4e2d']]}]), /ASCII/);
+});

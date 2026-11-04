@@ -1,0 +1,12 @@
+{
+  "vehicle": {
+    "version": "01",
+    "subfile": "RG",
+    "fields": ["RBB", "RAG", "RAM", "RBD", "RBE", "RBI", "RBK", "RBL", "RBM", "VAD", "VAK", "VAL", "VAO", "RBT", "RBU"]
+  },
+  "driver": {
+    "version": "09",
+    "subfile": "DL",
+    "fields": ["DCA", "DCB", "DCD", "DBA", "DCS", "DAC", "DAD", "DBD", "DBB", "DBC", "DAY", "DAU", "DAG", "DAI", "DAJ", "DAK", "DAQ", "DCF", "DCG", "DDE", "DDF", "DDG", "DCK", "DCL", "DCM", "DCR", "DDC", "DDD", "DAW", "DAX", "DDH", "DDI", "DDK"]
+  }
+}

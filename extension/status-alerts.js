@@ -1,0 +1,149 @@
+/**
+ * Pure report-to-alert rules. Dates are South Carolina calendar days, not elapsed
+ * 24-hour intervals, so daylight-saving changes cannot alter an expiration decision.
+ * The output is display data (sections/tone/timeout), never HTML or browser actions.
+ */
+const DAY = 86400000;
+const DATE = '(\\d{2}\\s*\\/\\s*\\d{2}\\s*\\/\\s*\\d{4})';
+const FLAT_DATE = /\d{2}\s*\/\s*\d{2}\s*\/\s*\d{4}/;
+const LICENSE_HEADER = 'Type\\s+Class\\s+Function\\s+Issued\\s+Expires\\s+Printed\\s+Date\\s+Restr\\.?\\s*Endor\\.?\\s*Document\\s+Identifier';
+const flat = text => String(text || '').replace(/\s+/g, ' ').trim();
+
+function calendar(year, month, day) {
+  const date = new Date(0); date.setUTCFullYear(year, month - 1, day); date.setUTCHours(0, 0, 0, 0);
+  if (year < 1 || date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return null;
+  return {year, month, day, ordinal: date.getTime() / DAY};
+}
+/** Parse mm/dd/yyyy strictly; invalid calendar days return null rather than rolling over. */
+export function parseReportDate(value) {
+  const match = String(value || '').match(/^\s*(\d{2})\s*\/\s*(\d{2})\s*\/\s*(\d{4})\s*$/);
+  return match ? calendar(+match[3], +match[1], +match[2]) : null;
+}
+/** Convert an instant into a South Carolina calendar date with an integer day ordinal. */
+export function reportToday(now = new Date()) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', {timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit'}).formatToParts(now).map(part => [part.type, part.value]));
+  return calendar(+parts.year, +parts.month, +parts.day);
+}
+function shiftMonths(date, delta) {
+  const total = date.year * 12 + date.month - 1 + delta;
+  const year = Math.floor(total / 12), month = total % 12 + 1;
+  let day = date.day;
+  while (day > 0) { const result = calendar(year, month, day); if (result) return result; day--; }
+}
+/** Describe elapsed calendar years/months/days, clamping month ends consistently. */
+export function expirationAge(expired, today) {
+  let years = today.year - expired.year;
+  if (shiftMonths(expired, years * 12).ordinal > today.ordinal) years--;
+  const anniversary = shiftMonths(expired, years * 12);
+  let months = (today.year - anniversary.year) * 12 + today.month - anniversary.month;
+  if (shiftMonths(anniversary, months).ordinal > today.ordinal) months--;
+  const days = today.ordinal - shiftMonths(anniversary, months).ordinal;
+  const units = [[years, 'year'], [months, 'month'], [days, 'day']].filter(([count]) => count > 0).map(([count, label]) => `${count} ${label}${count === 1 ? '' : 's'}`);
+  const totalDays = today.ordinal - expired.ordinal;
+  return {years, months, days, totalDays, text: `${units.join(', ') || '0 days'}${years || months ? ` (${totalDays} days total)` : ''}`};
+}
+function alert(recordType, tone, sections, extra = {}) {
+  return {type: 'record-alert', recordType, tone, sections, autoCloseMs: tone === 'success' ? 10000 : 90000, ...extra};
+}
+export function unavailableAlert(recordType, message) {
+  return alert(recordType, 'warning', [{title: 'STATUS UNAVAILABLE', lines: [message]}]);
+}
+
+/** Combine enforcement and expiration findings; temporary tags use Plate Exp Date. */
+export function plateStatus(raw, now = new Date()) {
+  const text = flat(raw), today = reportToday(now), sections = [];
+  const enforcement = /\bEnforcement\s+Description\s*:\s*([\s\S]*?)\bEnforcement\s+Statute\s*:\s*/gi;
+  for (const match of text.matchAll(enforcement)) {
+    const description = flat(match[1]);
+    if (!description) continue;
+    const statute = text.slice(match.index + match[0].length).match(/^(\d{1,4}\s*[-–—]\s*\d{1,4}\s*[-–—]\s*\d{1,4})(?!\d)/)?.[1].replace(/\s/g, '').replace(/[–—]/g, '-');
+    sections.push({title: 'TAG SUSPENDED', lines: [description, statute ? `Statute: ${statute}` : 'Suspension statute could not be read.']});
+  }
+  const classTail = text.match(/\bPlate\s+Class\s*:\s*(.*)$/i)?.[1];
+  const hasClass = !!classTail && !/^(?:Plate|Decal)\s+Exp\s+Date\s*:/i.test(classTail);
+  const temporary = hasClass && /^T45V\s+TEMPORARY\s+PLATE\s*[-–—]\s*VEHICLE\b/i.test(classTail);
+  const label = temporary ? 'Plate\\s+Exp\\s+Date' : 'Decal\\s+Exp\\s+Date';
+  const expirationText = text.match(new RegExp(`\\b${label}\\s*:\\s*${DATE}`, 'i'))?.[1];
+  const expiration = hasClass && parseReportDate(expirationText);
+  if (expiration && expiration.ordinal < today.ordinal) {
+    const age = expirationAge(expiration, today);
+    sections.push({title: 'EXPIRED', lines: [`Expired for ${age.text}.`]});
+  }
+  if (sections.length) {
+    if (!expiration) sections.push({title: '', lines: ['Expiration status could not be determined from this report.']});
+    return alert('plate', 'danger', sections);
+  }
+  if (!expiration) return unavailableAlert('plate', hasClass ? `A valid ${temporary ? 'Plate' : 'Decal'} Exp Date was not found.` : 'Plate Class was not found in the results PDF.');
+  return alert('plate', 'success', [{title: 'TAG VALID', lines: []}]);
+}
+
+function field(block, label, next) {
+  return flat(block.match(new RegExp(`${label}\\s*:\\s*([\\s\\S]*?)(?=${next}\\s*:|$)`, 'i'))?.[1] || '');
+}
+/** Count DUS violations in the inclusive five-calendar-year window, excluding future dates. */
+function recentDus(text, today) {
+  const cutoff = shiftMonths(today, -60).ordinal;
+  let count = 0;
+  for (const match of text.matchAll(/\bVIOL\s*:\s*([\s\S]*?)(?=\bVIOL\s*:|\bSUSP\s*:|\bLicense\s+Information\b|$)/gi)) {
+    if (!/^.+?\s*[-–—]\s*Driving\s+Under\s+Suspension\s+Ticket\s*#\s*:/i.test(match[1])) continue;
+    const date = parseReportDate(match[1].match(new RegExp(`\\bViolation\\s*:\\s*${DATE}`, 'i'))?.[1]);
+    if (date && date.ordinal >= cutoff && date.ordinal <= today.ordinal) count++;
+  }
+  return count;
+}
+/** Evaluate dated suspension blocks, group active reasons, and count unreadable blocks.
+ * Ticket numbers do not identify a reason; missing optional privilege text is tolerated. */
+function suspensionSummary(text, today) {
+  const reasons = new Map(); let unreadable = 0;
+  for (const match of text.matchAll(/\bSUSP\s*:\s*([\s\S]*?)(?=\bSUSP\s*:|\bVIOL\s*:|\bLicense\s+Information\b|$)/gi)) {
+    const block = match[1];
+    const reason = flat(block.match(/^([\s\S]*?)(?=\bSpecial\s+Driving\s+Privilege\s*:|\bSuspension\s+Beg\s*:)/i)?.[1]).split(/\bTicket\s*#\s*:/i)[0].replace(/\b\d{3}\s*[-–—]\s*/g, '').trim();
+    const begin = parseReportDate(block.match(new RegExp(`\\bSuspension\\s+Beg\\s*:\\s*${DATE}`, 'i'))?.[1]);
+    if (!begin || !reason) { unreadable++; continue; }
+    if (begin.ordinal > today.ordinal) continue;
+    const ending = field(block, 'Suspension\\s+End', 'Causal');
+    const requirements = field(block, 'Reinstatement\\s+Requirements\\s+Met', 'Reinstatement\\s+Fee\\s+Paid');
+    const endDate = parseReportDate(ending.match(FLAT_DATE)?.[0]);
+    const indefinite = /^INDEFINITE\b/i.test(ending) || /^INDEFINITE\b/i.test(requirements);
+    if (!indefinite && !endDate) { unreadable++; continue; }
+    if (!indefinite && endDate.ordinal <= today.ordinal) continue;
+    const key = reason.toLocaleUpperCase('en-US'), current = reasons.get(key);
+    if (current) current.count++; else reasons.set(key, {reason, count: 1});
+  }
+  const groups = [...reasons.values()].sort((a, b) => b.count - a.count || a.reason.localeCompare(b.reason));
+  return {groups, active: groups.reduce((sum, group) => sum + group.count, 0), unreadable};
+}
+/** Suspended status takes precedence. Otherwise inspect only Current credentials;
+ * a Prior section cannot override a current license or supply its expiration date. */
+export function licenseStatus(raw, now = new Date()) {
+  const text = flat(raw), today = reportToday(now);
+  const statuses = new Set([...text.matchAll(/\bStatus\s*[-–—]\s*DL\s*:\s*(NO\s+SUSPENSION|SUSPENDED)\b/gi)].map(match => flat(match[1]).toUpperCase()));
+  if (statuses.size !== 1) return unavailableAlert('license', 'A single recognizable Status - DL value was not found.');
+  if (statuses.has('SUSPENDED')) {
+    const summary = suspensionSummary(text, today), priors = recentDus(text, today);
+    const lines = [`${priors} Prior DUS convictions within 5 years`, `${summary.active} active suspension${summary.active === 1 ? '' : 's'}`];
+    if (!summary.groups.length) lines.push('No active suspension blocks matched the supplied date rules.');
+    if (summary.unreadable) lines.push(`${summary.unreadable} suspension entr${summary.unreadable === 1 ? 'y could' : 'ies could'} not be evaluated.`);
+    return alert('license', 'danger', [{title: 'LICENSE SUSPENDED', lines, listTitle: 'Suspension Reasons:', items: summary.groups.map(group => `${group.reason} × ${group.count}`)}], {activeSuspensions: summary.active, priorDus: priors});
+  }
+  const current = text.match(new RegExp(`\\b${LICENSE_HEADER}\\s+Current\\b(?:\\s*\\(\\s*ACN\\s*\\/\\s*DDN\\s*\\))?\\s*([\\s\\S]*?)(?=\\bLicense\\s+Information\\b|\\bPrior\\b|\\bSUSP\\s*:|\\bVIOL\\s*:|$)`, 'i'))?.[1];
+  const number = text.match(/\bDriver\s+License\s+No\s*:\s*([\s\S]*?)\bName\s*:/i)?.[1];
+  if (number == null) return unavailableAlert('license', 'The first Driver License No / Name sequence was not found.');
+  if (!number.trim()) return alert('license', 'danger', [{title: 'NOT LICENSED', lines: []}]);
+  if (!current) return alert('license', 'danger', [{title: 'NO LONGER LICENSED IN SC', lines: []}]);
+  const type = current.replace(/\(\s*[A-Za-z]\s*\)/g, '').trim().match(/^[A-Za-z0-9]+/)?.[0];
+  if (type?.toUpperCase() === 'ID') return alert('license', 'danger', [{title: 'NOT LICENSED ID ONLY', lines: []}]);
+  // Issued and Expires are the first two dates; Function varies and Printed Date can be blank.
+  const dates = current.match(new RegExp(`^[^/]*?${DATE}\\s+${DATE}`, 'i'));
+  const expiration = dates && parseReportDate(dates[2]);
+  if (!type || !expiration) return unavailableAlert('license', 'The current license expiration date could not be read.');
+  if (expiration.ordinal < today.ordinal) return alert('license', 'danger', [{title: 'LICENSE EXPIRED', lines: []}]);
+  return alert('license', 'success', [{title: 'VALID LICENSE', lines: []}]);
+}
+
+/** Dispatch search kinds to the correct pure parser; unrelated searches have no status. */
+export function recordStatus(kind, text, now = new Date()) {
+  if (kind === 'plate') return plateStatus(text, now);
+  if (kind === 'license' || kind === 'customer') return licenseStatus(text, now);
+  return null;
+}
