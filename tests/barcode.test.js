@@ -2,7 +2,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {driverBarcode, vehicleBarcode, reportBarcode, frameAamva, ownerAddress, raceEthnicity} from '../extension/barcode-data.js';
+import {driverBarcode, vehicleBarcode, reportBarcode, frameAamva, ownerAddress, raceEthnicity, VehiclePartyError} from '../extension/barcode-data.js';
 import {driverReport, vehicleReport} from './barcode-fixtures.js';
 import {COMMANDS} from '../extension/core.js';
 const fields = payload => Object.fromEntries(payload.slice(33).replace(/\r$/, '').split('\n').map(field => [field.slice(0, 3), field.slice(3)]));
@@ -157,4 +157,77 @@ test('driver suffixes have their own DCU field rather than becoming middle or fa
   assert.equal(noMiddle.DAD, 'NONE'); assert.equal(noMiddle.DCU, 'JR');
   const ordinary = fields(driverBarcode(driverReport).payload);
   assert.equal(ordinary.DAD, 'MARIE'); assert.equal(ordinary.DCU, undefined);
+});
+
+test('registrant/lessee fields terminate the owner address without replacing owner barcode identity',()=>{
+  for(const label of ['Registrant/Lessee','Registrant / Lessee']){
+    const text=vehicleReport.replace('123 EXAMPLE ROAD, COLUMBIA SC 292010123', '123 EXAMPLE DR ROCK HILL SC, 297321234')
+      .replace('Last Transaction: RENEWAL', `${label} Number: 00002222\n${label} Name: OTHER, PERSON\n${label} Address: 456 OTHER ROAD, OTHER CITY SC 29202\nLast Transaction: RENEWAL`);
+    const result=vehicleBarcode(text),f=registrationFields(result.payload);
+    assert.equal(f.RBI,'123 EXAMPLE DR');assert.equal(f.RBK,'ROCK HILL');assert.equal(f.RBL,'SC');assert.equal(f.RBM,'297321234');
+    assert.equal(f.RBD,'EXAMPLE-SAMPLE');assert.equal(f.RBE,'JANE MARIE');
+    assert.doesNotMatch(result.payload,/00002222|OTHER/);
+  }
+});
+
+test('vehicle barcode uses only the first party regardless of number category or later duplicate party labels',()=>{
+  const original='Owner Number: 12345678 Owner Name: EXAMPLE-SAMPLE, JANE MARIE\nOwner Address: 123 EXAMPLE ROAD, COLUMBIA SC 292010123';
+  for(const type of ['Owner','Customer','Registrant/Lessee','Registrant / Lessee']){
+    const first=`${type} Number: 1111 ${type} Name: FIRST, PERSON ${type} Address: 123 FIRST ROAD, COLUMBIA SC 29201`;
+    const later='Owner Number: 2222 Owner Name: LATER, OWNER Owner Address: 456 LATER ROAD, CHARLESTON SC 29401 Registrant/Lessee Number: 3333 Registrant/Lessee Name: LATER, LESSEE Registrant/Lessee Address: 789 OTHER ROAD, GREENVILLE SC 29601';
+    const result=vehicleBarcode(vehicleReport.replace(original,first+' '+later)),f=registrationFields(result.payload);
+    assert.equal(f.RBD,'FIRST');assert.equal(f.RBE,'PERSON');assert.equal(f.RBI,'123 FIRST ROAD');assert.equal(f.RBK,'COLUMBIA');
+    assert.doesNotMatch(result.payload,/LATER|LESSEE|456|789 OTHER/);
+  }
+});
+test('an incomplete first party never borrows a name or address from a later complete party',()=>{
+  const original='Owner Number: 12345678 Owner Name: EXAMPLE-SAMPLE, JANE MARIE\nOwner Address: 123 EXAMPLE ROAD, COLUMBIA SC 292010123';
+  for(const first of ['Owner Number: 1111 Owner Name: FIRST, PERSON Owner Address:', 'Owner Number: 1111 Owner Name: Owner Address: 123 FIRST ROAD, COLUMBIA SC 29201']){
+    const later='Owner Number: 2222 Owner Name: LATER, OWNER Owner Address: 456 LATER ROAD, CHARLESTON SC 29401';
+    assert.throws(()=>vehicleBarcode(vehicleReport.replace(original,first+' '+later)),/first listed party/);
+  }
+});
+
+test('incomplete party errors expose an explicit next-party choice without automatically using later parties',()=>{
+  const original='Owner Number: 12345678 Owner Name: EXAMPLE-SAMPLE, JANE MARIE\nOwner Address: 123 EXAMPLE ROAD, COLUMBIA SC 292010123';
+  const next='Registrant/Lessee Number: 2222 Registrant/Lessee Name: NEXT, PERSON Registrant/Lessee Address: 456 NEXT ROAD, CHARLESTON SC 29401';
+  const multiple=vehicleReport.replace(original,'Owner Number: 1111 Owner Name: FIRST, PERSON Owner Address: '+next);
+  assert.throws(()=>vehicleBarcode(multiple),error=>error instanceof VehiclePartyError&&error.hasNext&&error.nextPartyIndex===1);
+  const f=registrationFields(vehicleBarcode(multiple,{partyIndex:1}).payload);
+  assert.equal(f.RBD,'NEXT');assert.equal(f.RBE,'PERSON');assert.equal(f.RBI,'456 NEXT ROAD');
+  const only=vehicleReport.replace('123 EXAMPLE ROAD, COLUMBIA SC 292010123','UNPARSEABLE ADDRESS');
+  assert.throws(()=>vehicleBarcode(only),error=>error instanceof VehiclePartyError&&!error.hasNext);
+  const duplicate=vehicleReport.replace(original,'Owner Number: 1111 Owner Name: FIRST, PERSON Owner Address: '+next.replace('2222','00001111'));
+  assert.throws(()=>vehicleBarcode(duplicate),error=>error instanceof VehiclePartyError&&!error.hasNext);
+});
+
+test('explicit generate-with-blanks preserves known first-party fields and never borrows from later parties',()=>{
+  const noAddress=vehicleReport.replace('123 EXAMPLE ROAD, COLUMBIA SC 292010123','UNPARSEABLE ADDRESS');
+  const result=vehicleBarcode(noAddress,{allowIncompleteParty:true}),f=registrationFields(result.payload);
+  assert.equal(f.RBD,'EXAMPLE-SAMPLE');assert.equal(f.RBE,'JANE MARIE');
+  for(const key of ['RBI','RBK','RBL','RBM'])assert.equal(f[key],'');
+  assert.match(result.warnings.join(' '),/address fields are blank/);assert.equal(f.RAM,'TEST123  ');
+  const noName=vehicleReport.replace('Owner Name: EXAMPLE-SAMPLE, JANE MARIE','Owner Name:');
+  const missing=vehicleBarcode(noName,{allowIncompleteParty:true}),g=registrationFields(missing.payload);
+  assert.equal(g.RBD,'');assert.equal(g.RBE,'');assert.equal(g.RBI,'123 EXAMPLE ROAD');
+  assert.match(missing.warnings.join(' '),/name fields are blank/);
+  assert.throws(()=>vehicleBarcode(noAddress.replace('VIN: 1HGCM82633A004352','VIN: INVALID'),{allowIncompleteParty:true}),/VIN is invalid/);
+});
+
+test('partially missing person names require explicit blank-field approval and retain the known component',()=>{
+  for(const [name,family,given] of [['EXAMPLE,','EXAMPLE',''],[', PERSON','','PERSON']]){
+    const text=vehicleReport.replace('EXAMPLE-SAMPLE, JANE MARIE',name);
+    assert.throws(()=>vehicleBarcode(text),VehiclePartyError);
+    const result=vehicleBarcode(text,{allowIncompleteParty:true}),f=registrationFields(result.payload);
+    assert.equal(f.RBD,family);assert.equal(f.RBE,given);assert.equal(f.RBI,'123 EXAMPLE ROAD');
+    assert.match(result.warnings.join(' '),/missing name fields are blank/);
+  }
+});
+
+test('a missing numbered-party heading offers blanks without treating unbound names as the owner',()=>{
+  const text=vehicleReport.replace('Owner Number: 12345678','');
+  assert.throws(()=>vehicleBarcode(text),error=>error instanceof VehiclePartyError&&!error.hasNext);
+  const result=vehicleBarcode(text,{allowIncompleteParty:true}),f=registrationFields(result.payload);
+  for(const key of ['RBD','RBE','RBI','RBK','RBL','RBM'])assert.equal(f[key],'');
+  assert.equal(f.RAM,'TEST123  ');assert.match(result.warnings.join(' '),/fields are blank/);
 });

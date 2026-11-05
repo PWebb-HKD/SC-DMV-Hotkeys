@@ -268,3 +268,11 @@ Plate status popups show Make, Model, Year and Body style beneath the status sec
 ### EVR 45-day temporary plates (1.6.2)
 
 E45V EVR TEMPORARY PLATE-VEHICLE is now recognized alongside T45V and E60V. Status uses Plate Exp Date, and registration barcodes use that date when Decal Exp Date is blank. Ordinary plate classes still require their decal date for status. Synthetic regressions cover valid/expired dates, blank and conflicting decal dates, and barcode display-year removal for all three temporary classes.
+
+
+### Registrant/lessee reports (1.6.3)
+
+Collect (Alt+J) and Next with an empty queue recognize Registrant/Lessee Number as a customer number, in report order with existing normalization and deduplication. Those entries use the customer-number blacklist check. Registration barcode parsing now stops owner fields at Registrant/Lessee headings so their text cannot contaminate the owner address. The barcode uses only the first listed Owner, Customer, or Registrant/Lessee party's name and address. It stops before the second party and never mixes missing identity fields with later parties. If the selected party is incomplete and another distinct party is listed, a prompt offers Use next owner, Generate with blanks, or Cancel. With only one party, Use next owner is not offered. Generate with blanks retains reliable name/address fields and leaves missing names or unparseable addresses empty, with warnings; required vehicle/plate fields remain mandatory. Vehicle and plate fields still describe the returned vehicle.
+
+
+Business-owner import remains unverified in Coplogic. The existing encoder selects BBC for a name without a comma and RBD/RBE for a comma-separated family/given name; that heuristic can misclassify businesses with commas and people without them. Owner/customer/registrant number categories do not establish entity type. A Coplogic barcode-field specification or a known-working business-owner barcode is needed to confirm its mapping before changing this behavior. Explicit operator selection would avoid automatic type guesses.

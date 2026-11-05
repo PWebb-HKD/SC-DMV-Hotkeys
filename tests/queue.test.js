@@ -3,7 +3,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {MEMBER, PDF_URL, isPdf} from '../extension/core.js';
 import {addBlacklistEntry} from '../extension/vault.js';
-import {driverReport} from './barcode-fixtures.js';
+import {driverReport, vehicleReport} from './barcode-fixtures.js';
 const event=()=>({listeners:[],addListener(fn){this.listeners.push(fn);},removeListener(fn){this.listeners=this.listeners.filter(x=>x!==fn);}});
 const local={history:[{id:'old-persistent',kind:'plate',value:'OLD123',at:1}]}, session={history:[],lastQuery:Date.now(),portalId:1,pdfCreated:{2:100},'pdf:2':{text:'Owner Number: 00001234\nCustomer Number: 87654321\nOwner Number: 1234'}};
 const tabs=new Map([[1,{id:1,url:`${MEMBER}Transactions/DrvRec/Page2.aspx`,status:'complete',windowId:1,active:false}],[2,{id:2,url:PDF_URL,status:'complete',windowId:1,active:true}]]);
@@ -463,6 +463,14 @@ test('SCUTTIES checks driver-report identifiers and stored replay identifiers be
   assert.match(session.status,/identifiers can be checked/);assert.equal(navigations.length,before);
 });
 
+test('registrant/lessee numbers are queued as customers and honor customer blacklist entries',async()=>{
+  session['pdf:2']={text:'Owner Number: 70000004\nRegistrant/Lessee Number: 00012345678\nRegistrant/Lessee Name: SYNTHETIC PERSON'};
+  for(const tab of tabs.values())tab.active=tab.id===2;
+  await send({type:'run',command:'owners'});await wait(()=>session.queue?.values[0]==='70000004'&&session.queue.index===1);
+  assert.deepEqual(session.queue.values,['70000004','12345678']);
+  const before=submittedQueries.length;await send({type:'run',command:'next'});await wait(blockedPanel);
+  assert.equal(session.queue.index,2);assert.equal(submittedQueries.length,before);assert.match(session.status,/Customer number is blacklisted/);
+});
 test('confirmed login-popup reset deletes saved user info and cancels the pending login/search',async()=>{
   delete session.unlockedVault;delete session.vaultKey;delete session.blacklist;
   session.lastQuery=Date.now();session['pdf:reset-fixture']={text:'SYNTHETIC REPORT'};
@@ -471,4 +479,36 @@ test('confirmed login-popup reset deletes saved user info and cancels the pendin
   const win=panel('credentials');await send({type:'clear-saved-user-info',confirmed:true});
   assert.equal(local.vault,undefined);assert.deepEqual(session,{});assert.ok(removedWindows.includes(win.id));
   assert.equal(navigations.length,before);
+});
+
+function barcodeSource(text){session['pdf:2']={text};for(const tab of tabs.values())tab.active=tab.id===2;}
+const barcodeData=()=>{const win=panel('barcode');return win&&session[`panel:${new URL(win.url).searchParams.get('id')}`];};
+test('incomplete first owner prompts for approval before using the next owner and preserves the captured report',async()=>{
+  const text=vehicleReport.replace('123 EXAMPLE ROAD, COLUMBIA SC 292010123','UNPARSEABLE ADDRESS')
+    .replace('Last Transaction: RENEWAL','Owner Number: 2222 Owner Name: NEXT, PERSON Owner Address: 456 NEXT ROAD, CHARLESTON SC 29401 Last Transaction: RENEWAL');
+  barcodeSource(text);const before=submittedQueries.length;
+  await send({type:'run',command:'barcode'});await wait(()=>panel('barcode-owner-incomplete'));
+  const prompt=panel('barcode-owner-incomplete'),id=new URL(prompt.url).searchParams.get('id');
+  assert.equal(session[`panel:${id}`].hasNext,true);assert.equal(barcodeData(),undefined);assert.equal(prompt.width,580);assert.equal(prompt.height,520);
+  session['pdf:2']={text:'REPLACED SOURCE MUST NOT BE USED'};
+  await send({type:'panel-submit',id,value:'next'});await wait(barcodeData);
+  const payload=barcodeData().payload;assert.match(payload,/RBDNEXT\nRBEPERSON/);assert.match(payload,/RBI456 NEXT ROAD/);
+  assert.doesNotMatch(payload,/UNPARSEABLE|EXAMPLE-SAMPLE/);assert.equal(submittedQueries.length,before);
+});
+test('one incomplete owner offers blanks without a next-owner option and encodes empty address fields',async()=>{
+  barcodeSource(vehicleReport.replace('123 EXAMPLE ROAD, COLUMBIA SC 292010123','UNPARSEABLE ADDRESS'));
+  await send({type:'run',command:'barcode'});await wait(()=>panel('barcode-owner-incomplete'));
+  const id=new URL(panel('barcode-owner-incomplete').url).searchParams.get('id');
+  assert.equal(session[`panel:${id}`].hasNext,false);assert.doesNotMatch(session[`panel:${id}`].message,/Another owner/);
+  await send({type:'panel-submit',id,value:'blank'});await wait(barcodeData);
+  assert.match(barcodeData().payload,/RBI\nRBK\nRBL\nRBM\n/);
+  assert.ok(barcodeData().warnings.some(x=>/address fields are blank/.test(x)));
+});
+test('cancelling or replacing an incomplete-owner prompt never generates a barcode',async()=>{
+  const text=vehicleReport.replace('123 EXAMPLE ROAD, COLUMBIA SC 292010123','UNPARSEABLE ADDRESS');
+  barcodeSource(text);await send({type:'run',command:'barcode'});await wait(()=>panel('barcode-owner-incomplete'));
+  const id=new URL(panel('barcode-owner-incomplete').url).searchParams.get('id');
+  await send({type:'panel-submit',id,value:false});await wait(()=>/Barcode generation cancelled/.test(session.status));assert.equal(barcodeData(),undefined);
+  barcodeSource(text);await send({type:'run',command:'barcode'});await wait(()=>panel('barcode-owner-incomplete'));
+  await send({type:'stop'});assert.equal(panel('barcode-owner-incomplete'),undefined);assert.equal(barcodeData(),undefined);
 });

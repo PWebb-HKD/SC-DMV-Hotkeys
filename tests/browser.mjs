@@ -564,6 +564,23 @@ try {
     await page.screenshot({path:join(screenshots,'blacklist-warning.png'),fullPage:true});
     await page.clock.fastForward(90000);await page.waitForFunction(()=>window.panelClosed);await page.close();
   });
+  await tests('incomplete barcode-owner popup offers next owner only when available and submits explicit blank choices',async()=>{
+    for(const [hasNext,choice] of [[true,'next'],[true,'blank'],[false,'blank']]){
+      const page=await ui.newPage();
+      await page.addInitScript(hasNext=>{
+        const original=chrome.runtime.sendMessage;
+        chrome.runtime.sendMessage=async message=>message.type==='panel-data'?{ok:true,value:{type:'barcode-owner-incomplete',hasNext,message:'The selected owner address is incomplete. Generate with blanks or cancel.'}}:original(message);
+      },hasNext);
+      await page.goto(`${base}/panel.html?id=incomplete-owner`);await page.locator('#message').waitFor();
+      assert.match(await page.locator('#message').textContent(),/incomplete/);
+      assert.equal(await page.locator('#barcodeBlanks').isVisible(),hasNext);
+      assert.equal(await page.locator('#submit').textContent(),hasNext?'Use next owner':'Generate with blanks');
+      await page.locator(choice==='blank'&&hasNext?'#barcodeBlanks':'#submit').click();
+      await page.waitForFunction(()=>window.requests.some(x=>x.type==='panel-submit'));
+      assert.equal(await page.evaluate(()=>window.requests.find(x=>x.type==='panel-submit').value),choice);
+      await page.close();
+    }
+  });
   await tests('recent search numbers rerun the stored search by click or keyboard without an input prompt',async()=>{
     for(const [row,kind,value] of [[0,'plate','ABC12345'],[1,'license','123456789']]){
       const page=await ui.newPage();await page.goto(`${base}/popup.html`);
