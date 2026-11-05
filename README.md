@@ -263,3 +263,8 @@ The login popup offers **Use a different login**. If the blacklist is locked, it
 ### Plate vehicle details (1.6.1)
 
 Plate status popups show Make, Model, Year and Body style beneath the status sections in large white text. Values come from the VIN/Year/Make/Model/Body heading ending at Empty Weight; VIN is not displayed. Blank values are marked Unavailable, and reports without that heading keep the status-only layout.
+
+
+### EVR 45-day temporary plates (1.6.2)
+
+E45V EVR TEMPORARY PLATE-VEHICLE is now recognized alongside T45V and E60V. Status uses Plate Exp Date, and registration barcodes use that date when Decal Exp Date is blank. Ordinary plate classes still require their decal date for status. Synthetic regressions cover valid/expired dates, blank and conflicting decal dates, and barcode display-year removal for all three temporary classes.

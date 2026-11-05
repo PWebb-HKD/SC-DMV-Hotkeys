@@ -154,7 +154,7 @@ test('PDF whitespace changes are tolerated and residence/SCUTTIES result types d
   assert.deepEqual(titles(recordStatus('customer', driver(), NOW)), ['VALID LICENSE']);
 });
 
-for (const plateClass of ['T45V TEMPORARY PLATE-VEHICLE', 'E60V EVR TEMPORARY PLATE-VEHICLE']) {
+for (const plateClass of ['T45V TEMPORARY PLATE-VEHICLE', 'E45V EVR TEMPORARY PLATE-VEHICLE', 'E60V EVR TEMPORARY PLATE-VEHICLE']) {
   test(`${plateClass}: status uses plate expiry with blank or conflicting decal dates`, () => {
     for (const decal of ['', '01/01/2000', '01/01/2099']) {
       const text = `Plate Class: ${plateClass} Vehicle Type: 4 Plate Exp Date: 10/28/2026 Decal Exp Date: ${decal}`;
@@ -186,4 +186,11 @@ test('vehicle summary never borrows fields from a later record when the first he
   const text='VIN: FIRST Year: 2026 Model: FIRST MODEL Body: 4S Empty Weight: 3000 '+
     'VIN: SECOND Year: 2025 Make: SECOND MAKE Model: SECOND MODEL Body: 4D Empty Weight: 4000 '+vehicle('11/01/2026');
   assert.equal(plateStatus(text,NOW).vehicle,undefined);
+});
+
+test('ordinary plate classes with blank decal dates never inherit plate expiration',()=>{
+  const text='Plate Class: ABC PRIVATE PASSENGER Plate Exp Date: 11/12/2026 Decal Exp Date: GVW: 0';
+  const result=plateStatus(text,NOW);
+  assert.deepEqual(titles(result),['STATUS UNAVAILABLE']);
+  assert.match(result.sections[0].lines[0],/Decal Exp Date/);
 });

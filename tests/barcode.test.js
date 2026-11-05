@@ -118,7 +118,7 @@ test('record detection rejects unrelated documents; non-ASCII input cannot corru
   assert.throws(() => frameAamva([{type: 'DL', fields: [['DCS', '\u4e2d']]}]), /ASCII/);
 });
 
-for (const plateClass of ['T45V TEMPORARY PLATE-VEHICLE', 'E60V EVR TEMPORARY PLATE-VEHICLE']) {
+for (const plateClass of ['T45V TEMPORARY PLATE-VEHICLE', 'E45V EVR TEMPORARY PLATE-VEHICLE', 'E60V EVR TEMPORARY PLATE-VEHICLE']) {
   test(`${plateClass}: blank decal dates inherit plate expiry and display years are excluded`, () => {
     const temporary = vehicleReport.replace('ABC PRIVATE PASSENGER', plateClass)
       .replace('TEST123', 'TEST1234 2026');
