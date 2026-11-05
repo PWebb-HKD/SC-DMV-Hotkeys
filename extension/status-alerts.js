@@ -49,9 +49,9 @@ export function unavailableAlert(recordType, message) {
   return alert(recordType, 'warning', [{title: 'STATUS UNAVAILABLE', lines: [message]}]);
 }
 
-/** Temporary vehicle plate classes observed in the 45-day and EVR 60-day reports. */
+/** Temporary vehicle plate classes observed in the 45-day, EVR 45-day and EVR 60-day reports. */
 export function isTemporaryPlate(plateClass) {
-  return /^(?:T45V|E60V)\b/i.test(flat(plateClass));
+  return /^(?:T45V|E45V|E60V)\b/i.test(flat(plateClass));
 }
 
 /** Read the vehicle heading only; VIN is a delimiter, never display data. */
