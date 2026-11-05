@@ -645,6 +645,26 @@ try {
     },payload);
     await page.goto(`${base}/panel.html?id=record-status`);await page.locator('.record-status-title').first().waitFor();return page;
   }
+  await tests('plate popups render vehicle details beneath valid, expired and suspended statuses in smaller large white text',async()=>{
+    for(const [name,expiration,enforcement] of [['valid','11/01/2026',''],['expired','10/27/2026',''],['suspended','11/01/2026','Enforcement Description: Insurance suspension Enforcement Statute: 56-1-460']]){
+      const report=`VIN: SYNTHETICVIN Year: 2026 Make: TEST MAKE Model: EXAMPLE MODEL Body: 4S Empty Weight: 3000 Plate Class: ABC PRIVATE PASSENGER Decal Exp Date: ${expiration} ${enforcement}`;
+      const page=await statusPage(plateStatus(report,fixedNow));
+      const details=page.locator('.record-vehicle-details');await details.waitFor();
+      assert.deepEqual(await details.locator('p').allTextContents(),['Make: TEST MAKE','Model: EXAMPLE MODEL','Year: 2026','Body style: 4S']);
+      assert.equal(await details.evaluate(el=>getComputedStyle(el).color),'rgb(255, 255, 255)');
+      const size=await details.evaluate(el=>parseFloat(getComputedStyle(el).fontSize));
+      assert.ok(size>=22&&size<await page.locator('.record-status-title').first().evaluate(el=>parseFloat(getComputedStyle(el).fontSize)));
+      assert.equal(await details.evaluate(el=>el.previousElementSibling.classList.contains('record-status-section')),true);
+      assert.doesNotMatch(await details.textContent(),/SYNTHETICVIN|3000/);
+      assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+      await page.screenshot({path:join(screenshots,`plate-vehicle-${name}.png`),fullPage:true});await page.close();
+    }
+    const payload=plateStatus('VIN: TEST Year: 2026 Make: TEST Model: Body: Empty Weight: 3000 Plate Class: ABC Decal Exp Date: 11/01/2026',fixedNow);
+    payload.vehicle.model='<img src=x>';
+    const page=await statusPage(payload);await page.locator('.record-vehicle-details').waitFor();
+    assert.match(await page.locator('.record-vehicle-details').textContent(),/Model: <img src=x>.*Body style: Unavailable/s);
+    assert.equal(await page.locator('.record-vehicle-details img').count(),0);await page.close();
+  });
   await tests('combined plate alert renders large red headings, remains open for 90 seconds, then closes',async()=>{
     const payload=plateStatus('Plate Class: ABC Decal Exp Date: 09/27/2025 Enforcement Description: <img src=x> Insurance suspension Enforcement Statute: 56-1-460',fixedNow);
     const page=await statusPage(payload);

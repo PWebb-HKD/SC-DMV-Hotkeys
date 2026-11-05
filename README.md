@@ -258,3 +258,8 @@ A visible DMV error on the requested customer search page consumes that queued a
 The login popup offers **Use a different login**. If the blacklist is locked, its passphrase must still be entered before the different login can be used. This overwrites the old saved login in the existing vault; blacklist entries remain intact. Blacklist edits during the session do not switch back to the old credentials.
 
 **Clear/delete saved user info and vault** on the login popup explicitly resets the application after confirmation. It deletes the encrypted vault (including its blacklist), cached credentials and encryption key, session history, queue, and cached report text. The pending login/search is cancelled and the popup closes. With the blacklist deleted, its numbers will no longer be blocked. The confirmation explicitly warns that saved credentials will be deleted and blacklisted numbers must be re-entered before blacklist protection is enabled again. The reset does not require the old passphrase.
+
+
+### Plate vehicle details (1.6.1)
+
+Plate status popups show Make, Model, Year and Body style beneath the status sections in large white text. Values come from the VIN/Year/Make/Model/Body heading ending at Empty Weight; VIN is not displayed. Blank values are marked Unavailable, and reports without that heading keep the status-only layout.
