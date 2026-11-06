@@ -63,16 +63,16 @@ export function driverLicense(text) {
   const value = match[1].replace(/\s/g, '');
   return /^\d{1,9}$/.test(value) ? value : null;
 }
-/** Collect distinct customer/owner numbers in document order, excluding driver records. */
+/** Collect distinct customer/owner/registrant numbers in document order, excluding driver records. */
 export function ownerNumbers(text) {
   if (/Driver\s+License\s+No\s*:/i.test(text)) throw new Error('This PDF is a driver record. Open a vehicle or residence results PDF to collect customer/owner numbers.');
   const results = [];
   // PDF text extraction preserves line breaks; never consume a following numeric column/line.
-  const regex = /\b(?:Owner|Customer)\s+Number\s*:\s*(\d(?:[ \t]*\d)*)(?!\d)/gi;
+  const regex = /\b(?:Owner|Customer|Registrant\s*\/\s*Lessee)\s+Number\s*:\s*(\d(?:[ \t]*\d)*)(?!\d)/gi;
   for (const match of text.matchAll(regex)) {
     try { const v = normalize('customer', match[1]); if (v && !results.includes(v)) results.push(v); } catch { /* Ignore malformed identifiers. */ }
   }
-  if (!results.length) throw new Error('No Customer/Owner Numbers were detected on the open page.');
+  if (!results.length) throw new Error('No Customer/Owner/Registrant/Lessee Numbers were detected on the open page.');
   return results;
 }
 /** Extract the surname (without generational suffix) and a real calendar DOB for SCUTTIES. */

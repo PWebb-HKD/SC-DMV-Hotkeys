@@ -5,12 +5,13 @@
  */
 import {COMMANDS, normalize} from './core.js';
 const $ = id => document.getElementById(id), id = new URL(location.href).searchParams.get('id');
-let data, unlocking = false, submitted = false;
+let data, unlocking = false, submitted = false, barcodeChoice;
 const port = chrome.runtime.connect({name: 'panel'});
 const heartbeat = setInterval(() => { try { port.postMessage({type: 'heartbeat'}); } catch {} }, 15000);
 async function send(message) { const r = await chrome.runtime.sendMessage(message); if (!r?.ok) throw new Error(r?.error || 'Extension unavailable.'); return r.value; }
 async function close() { clearInterval(heartbeat); if (data?.type === 'record-alert') await send({type: 'stop-audio'}).catch(() => {}); window.close(); }
 $('cancel').onclick = close;
+$('barcodeBlanks').onclick = () => { barcodeChoice = 'blank'; $('form').requestSubmit(); };
 document.addEventListener('keydown', event => { if (event.key === 'Escape') { event.preventDefault(); close(); } });
 $('save').onchange = () => { $('savePassArea').hidden = !$('save').checked; };
 $('clearSavedInfo').onclick = async () => {
@@ -70,9 +71,10 @@ try {
       unlocking = data.hasVault; $('unlockArea').hidden = !unlocking; $('newCredentials').hidden = unlocking;
       (unlocking ? $('unlockPass') : $('user')).focus();
     } else {
-      $('title').textContent = data.type === 'restart' ? 'Queue complete' : data.type === 'permission' ? 'Website access needed' : 'SC DMV Hotkeys';
+      $('title').textContent = data.type === 'barcode-owner-incomplete' ? 'Incomplete owner information' : data.type === 'restart' ? 'Queue complete' : data.type === 'permission' ? 'Website access needed' : 'SC DMV Hotkeys';
       $('message').hidden = false; $('message').textContent = data.message;
-      $('submit').textContent = data.type === 'restart' ? 'Start again' : data.type === 'permission' ? 'Allow site' : 'OK';
+      $('submit').textContent = data.type === 'barcode-owner-incomplete' ? (data.hasNext ? 'Use next owner' : 'Generate with blanks') : data.type === 'restart' ? 'Start again' : data.type === 'permission' ? 'Allow site' : 'OK';
+      $('barcodeBlanks').hidden = data.type !== 'barcode-owner-incomplete' || !data.hasNext;
       $('cancel').hidden = data.type === 'notice'; $('submit').focus();
     }
   }
@@ -82,7 +84,7 @@ $('form').onsubmit = async event => {
   event.preventDefault(); if (!data || submitted) return;
   if (data.type === 'record-alert') { await close(); return; }
   $('error').textContent = '';
-  const request = {type: 'panel-submit', id, value: true};
+  const request = {type: 'panel-submit', id, value: data.type === 'barcode-owner-incomplete' ? barcodeChoice || (data.hasNext ? 'next' : 'blank') : true};
   try {
     if (data.type === 'input') { request.value = normalize(data.command, $('value').value); if (!request.value) { await close(); return; } }
     if (data.type === 'credentials') Object.assign(request, {unlock: unlocking, user: $('user').value, password: $('password').value, save: $('save').checked, passphrase: unlocking ? $('unlockPass').value : $('savePass').value});

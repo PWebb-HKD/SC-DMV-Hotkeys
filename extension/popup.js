@@ -10,7 +10,7 @@ const DESCRIPTIONS = {
   plate: 'Enter a license plate number to search for its vehicle record.',
   license: "Enter a driver's license number to search for a driving record.",
   customer: 'Enter a customer number to search for a driving record.',
-  owners: 'Collect unique customer/owner numbers from the open results PDF and search the second on Customers at Same Residence reports (the first on other reports).',
+  owners: 'Collect unique customer/owner/registrant numbers from the open results PDF and search the second on Customers at Same Residence reports (the first on other reports).',
   next: 'Search the next queued customer. If the queue is empty, collect numbers from the open results PDF.',
   previous: 'Search the previous saved customer number. Stops at the first customer without wrapping around.',
   address: "Read the driver's license number from a driving-record PDF and find customers at the same address.",

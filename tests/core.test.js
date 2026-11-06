@@ -51,3 +51,9 @@ test('SCUTTIES drops suffixes attached to the surname while retaining compound s
     assert.deepEqual(driverIdentity(`Driver License No: 123456789 Name: DE LA CRUZ-SMITH ${suffix}, JOHN PAUL DOB: 01/02/2000`), {lastName: 'DE LA CRUZ-SMITH', dob: '01/02/2000'});
   }
 });
+
+test('registrant/lessee numbers are customer IDs in report order with canonical deduplication',()=>{
+  const text='Owner Number: 00001111\nRegistrant/Lessee Number: 00002222\nRegistrant/Lessee Name: EXAMPLE, PERSON\nCustomer Number: 2222\nRegistrant / Lessee Number: 3 3 3 3\nRegistrant/Lessee Number: 123456789\nRegistrant/Lessee Number:\nRegistrant/Lessee Name: OTHER, PERSON\nOwner Number: 4444';
+  assert.deepEqual(ownerNumbers(text),['1111','2222','3333','4444']);
+  assert.deepEqual(ownerNumbers('Registrant/Lessee Number: 00001234'),['1234']);
+});

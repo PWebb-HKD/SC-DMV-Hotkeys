@@ -19,10 +19,10 @@ function date(value, iso = false) {
 }
 /** Read the first occurrence of each known label, ending at the next label. */
 function labeled(text, labels) {
-  const pattern = labels.map(label => label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/ /g, '\\s+')).join('|');
+  const pattern = labels.map(label => label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/ /g, '\\s+')).join('|').replace(/\//g, '\\s*/\\s*');
   const matches = [...text.matchAll(new RegExp(`\\b(${pattern})\\s*:`, 'gi'))], values = {};
   matches.forEach((match, index) => {
-    const key = flat(match[1]).toLowerCase();
+    const key = flat(match[1]).replace(/\s*\/\s*/g, '/').toLowerCase();
     if (!(key in values)) values[key] = flat(text.slice(match.index + match[0].length, matches[index + 1]?.index ?? text.length));
   });
   return values;
@@ -151,17 +151,45 @@ export function ownerAddress(raw) {
   }
   return candidates.length === 1 ? candidates[0] : null;
 }
+/** Incomplete party information can be retried only after explicit user approval. */
+export class VehiclePartyError extends Error {
+  constructor(message, partyIndex, partyCount) {
+    super(message); this.name = 'VehiclePartyError';
+    this.nextPartyIndex = partyIndex + 1; this.hasNext = this.nextPartyIndex < partyCount;
+  }
+}
 /** Map registration fields to the observed SC RG profile. */
-export function vehicleBarcode(raw) {
+export function vehicleBarcode(raw, {partyIndex = 0, allowIncompleteParty = false} = {}) {
   const text = flat(raw), start = text.search(/\bVIN\s*:/i);
   if (start < 0) throw new Error('A vehicle record heading was not found.');
   const body = text.slice(start).split(/\b(?:Enforcement\s+Description\s*:|Document\s+obtained\s+from\s+DMV\s+web\s+site\s*:)/i)[0];
-  const v = labeled(body, ['VIN', 'Year', 'Make', 'Model', 'Body', 'Empty Weight', 'Title Number', 'Status', 'Issue Date', 'Dup', 'Owner Number', 'Owner Name', 'Owner Address', 'Last Transaction', 'Plate Number', 'Plate Class', 'Vehicle Type', 'Date of Issue', 'Plate Exp Date', 'Decal Exp Date', 'Decal Number', 'Window Sticker Number', 'GVW', 'Equip Number', 'Annual Fee', 'County', 'Municipality', 'School District', 'Vehicle Housed Address', 'Insurance']);
-  requireFields(v, ['vin', 'year', 'make', 'owner name', 'owner address', 'plate number', 'plate class']);
+  const partyLabels = ['Owner', 'Customer', 'Registrant/Lessee'].flatMap(type => ['Number', 'Name', 'Address'].map(field => `${type} ${field}`));
+  const labels = ['VIN', 'Year', 'Make', 'Model', 'Body', 'Empty Weight', 'Title Number', 'Status', 'Issue Date', 'Dup', ...partyLabels, 'Last Transaction', 'Plate Number', 'Plate Class', 'Vehicle Type', 'Date of Issue', 'Plate Exp Date', 'Decal Exp Date', 'Decal Number', 'Window Sticker Number', 'GVW', 'Equip Number', 'Annual Fee', 'County', 'Municipality', 'School District', 'Vehicle Housed Address', 'Insurance'];
+  const v = labeled(body, labels);
+  // Bind identity to the first listed party, rather than independently choosing
+  // the first nonempty name/address found anywhere in the vehicle record.
+  const headers = [...body.matchAll(/\b(Owner|Customer|Registrant\s*\/\s*Lessee)\s+Number\s*:\s*(\d(?:[ \t]*\d)*)?/gi)];
+  const seen = new Set();
+  const parties = headers.map((match, index) => ({match, end: headers[index + 1]?.index ?? body.length, id: match[2]?.replace(/\s/g, '').replace(/^0+(?=\d)/, '') || `unknown:${index}`}))
+    .filter(party => { if (seen.has(party.id)) return false; seen.add(party.id); return true; });
+  if (!parties.length && !allowIncompleteParty) throw new VehiclePartyError('The first listed customer, owner, or registrant/lessee heading was not found.', 0, 0);
+  if (!Number.isInteger(partyIndex) || partyIndex < 0 || partyIndex >= Math.max(parties.length, 1)) throw new Error('The selected barcode owner is not in this report.');
+  v['owner name'] = ''; v['owner address'] = '';
+  if (parties.length) {
+    const selected = parties[partyIndex], category = flat(selected.match[1]).replace(/\s*\/\s*/g, '/').toLowerCase();
+    const first = labeled(body.slice(selected.match.index, selected.end), labels);
+    v['owner name'] = first[`${category} name`] || '';
+    v['owner address'] = first[`${category} address`] || '';
+  }
+  if ((!v['owner name'] || !v['owner address']) && !allowIncompleteParty) throw new VehiclePartyError(`${partyIndex ? 'The selected party' : 'The first listed party'}'s name or address is missing.`, partyIndex, parties.length);
+  const nameComma = v['owner name'].indexOf(',');
+  const incompleteName = nameComma >= 0 && (!flat(v['owner name'].slice(0, nameComma)) || !flat(v['owner name'].slice(nameComma + 1)));
+  if (incompleteName && !allowIncompleteParty) throw new VehiclePartyError('The selected party has an incomplete person name.', partyIndex, parties.length);
+  requireFields(v, ['vin', 'year', 'make', 'plate number', 'plate class']);
   const vin = clean(v.vin); if (!/^[A-HJ-NPR-Z0-9]{1,17}$/.test(vin)) throw new Error('The vehicle VIN is invalid.');
   if (!/^\d{4}$/.test(v.year)) throw new Error('The vehicle model year is invalid.');
   const address = ownerAddress(v['owner address']);
-  if (!address) throw new Error('The owner street, city, state, and ZIP could not be separated reliably. Open a complete vehicle record.');
+  if (!address && !allowIncompleteParty) throw new VehiclePartyError('The owner street, city, state, and ZIP could not be separated reliably. Open a complete vehicle record.', partyIndex, parties.length);
   const temporary = isTemporaryPlate(v['plate class']);
   const expiration = date(v['plate exp date'], true);
   // Only blank temporary decal dates inherit plate expiry; preserve populated dates.
@@ -171,27 +199,30 @@ export function vehicleBarcode(raw) {
   const displayedPlate = flat(v['plate number']);
   const plateValue = temporary ? displayedPlate.replace(/^(\S+)\s+\d{4}$/, '$1') : displayedPlate;
   const plate = valueField(plateValue, 9), make = valueField(v.make, 4), comma = v['owner name'].indexOf(',');
-  const ownerFields = comma > 0
-    ? [['RBD', valueField(v['owner name'].slice(0, comma), 35)], ['RBE', valueField(v['owner name'].slice(comma + 1), 35)]]
+  const ownerFields = !v['owner name'] ? [['RBD', ''], ['RBE', '']] : comma >= 0
+    ? [['RBD', flat(v['owner name'].slice(0, comma)) ? valueField(v['owner name'].slice(0, comma), 35) : ''], ['RBE', flat(v['owner name'].slice(comma + 1)) ? valueField(v['owner name'].slice(comma + 1), 35) : '']]
     : [['BBC', valueField(v['owner name'], 70)], ['RBD', ''], ['RBE', '']];
   const warnings = [];
+  if (!v['owner name']) warnings.push('Owner name is unavailable; barcode name fields are blank. Verify the imported record after scanning.');
+  if (incompleteName) warnings.push('Owner name is incomplete; missing name fields are blank. Verify the imported record after scanning.');
+  if (!address) warnings.push('Owner address could not be separated reliably; barcode address fields are blank. Verify the imported record after scanning.');
   const issued = date(v['date of issue'], true);
   if (!issued) warnings.push('Registration Date of Issue is unavailable; RBB is blank. Title Issue Date is not substituted.');
   if (!decalExpiration) warnings.push('Decal expiration is unavailable; the SC RBT field is blank.');
   // Official SC version-01 RG layout, decoded from the supplied barcode:
   // RAG = Plate Exp Date; SC uses RBT for Decal Exp Date (confirmed against source).
   const fields = [['RBB', issued], ['RAG', expiration], ['RAM', plate.padEnd(9, ' ')], ...ownerFields,
-    ['RBI', valueField(address.street, 35)], ['RBK', valueField(address.city, 20)], ['RBL', address.state], ['RBM', address.zip],
+    ['RBI', address ? valueField(address.street, 35) : ''], ['RBK', address ? valueField(address.city, 20) : ''], ['RBL', address?.state || ''], ['RBM', address?.zip || ''],
     ['VAD', vin], ['VAK', make], ['VAL', v.year], ['VAO', v.body ? valueField(v.body, 2) : ''],
     ['RBT', decalExpiration], ['RBU', clean(v['decal number'] || v['window sticker number'])]];
   if (v.model) fields.push(['VAM', valueField(v.model, 20)]);
   const payload = frameAamva([{type: 'RG', fields}], {kind: 'vehicle'});
   return {type: 'barcode', kind: 'vehicle', title: 'Vehicle registration import barcode', profile: 'AAMVA SC registration v01 · RG', payload, summary: `${plate} Â· ${vin}`,
-    warnings: [...(address.inferred ? [`Verify owner address: ${address.street}, ${address.city} ${address.state} ${address.zip}. The street/city boundary was identified from the address format.`] : []), ...warnings]};
+    warnings: [...(address?.inferred ? [`Verify owner address: ${address.street}, ${address.city} ${address.state} ${address.zip}. The street/city boundary was identified from the address format.`] : []), ...warnings]};
 }
 /** Recognize the report family, then return payload plus readable summary/warnings. */
-export function reportBarcode(text) {
+export function reportBarcode(text, options) {
   if (/\bDriver\s+License\s+No\s*:/i.test(text) || /\bCustomer\s+No\s*:/i.test(text) && /\bDOB\s*:/i.test(text) && /\bName\s*:/i.test(text)) return driverBarcode(text);
-  if (/\bVIN\s*:/i.test(text)) return vehicleBarcode(text);
+  if (/\bVIN\s*:/i.test(text)) return vehicleBarcode(text, options);
   throw new Error('No driver or vehicle record was recognized. Open the appropriate SCDMV results PDF and try Alt+B again.');
 }

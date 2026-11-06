@@ -6,7 +6,7 @@ import {join, extname} from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {dependency} from './runtime.mjs';
-import {reportBarcode} from '../extension/barcode-data.js';
+import {reportBarcode, vehicleBarcode} from '../extension/barcode-data.js';
 import {driverReport, vehicleReport} from './barcode-fixtures.js';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const mime = {'.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css'};
@@ -22,8 +22,8 @@ const {chromium} = dependency('playwright');
 const browser = await chromium.launch({executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true});
 const out = join(root, 'tests/tmp/barcodes'); await mkdir(out, {recursive: true});
 try {
-  for (const [kind, source] of [['driver', driverReport.replace('Race: W', 'Race: WHITE')], ['suffix', driverReport.replace('JANE MARIE', 'JANE MARIE JR')], ['vehicle', vehicleReport.replace('123 EXAMPLE ROAD, COLUMBIA SC 292010123', '123 EXAMPLE DR ROCK HILL SC, 297321234')], ['id', driverReport.replace('DL (R) D Modify', 'ID (R) Renewal').replace('Race: W', 'Race: HISP')], ['blank-number', driverReport.replace('Driver License No: 123456789', 'Driver License No:')]]) {
-    const data = reportBarcode(source), page = await browser.newPage({viewport: {width: 1020, height: 800}});
+  for (const [kind, source] of [['driver', driverReport.replace('Race: W', 'Race: WHITE')], ['suffix', driverReport.replace('JANE MARIE', 'JANE MARIE JR')], ['blank-owner', vehicleReport.replace('123 EXAMPLE ROAD, COLUMBIA SC 292010123','UNPARSEABLE ADDRESS')], ['next-owner', vehicleReport.replace('123 EXAMPLE ROAD, COLUMBIA SC 292010123','UNPARSEABLE ADDRESS').replace('Last Transaction: RENEWAL','Registrant/Lessee Number: 2222 Registrant/Lessee Name: NEXT, PERSON Registrant/Lessee Address: 456 NEXT ROAD, CHARLESTON SC 29401 Last Transaction: RENEWAL')], ['first-registrant', vehicleReport.replaceAll('Owner ', 'Registrant/Lessee ').replace('Last Transaction: RENEWAL', 'Owner Number: 2222 Owner Name: LATER, PERSON Owner Address: 456 OTHER ROAD, OTHER CITY SC 29202 Last Transaction: RENEWAL')], ['vehicle', vehicleReport.replace('123 EXAMPLE ROAD, COLUMBIA SC 292010123', '123 EXAMPLE DR ROCK HILL SC, 297321234')], ['id', driverReport.replace('DL (R) D Modify', 'ID (R) Renewal').replace('Race: W', 'Race: HISP')], ['blank-number', driverReport.replace('Driver License No: 123456789', 'Driver License No:')]]) {
+    const data = kind === 'blank-owner' ? vehicleBarcode(source,{allowIncompleteParty:true}) : kind === 'next-owner' ? vehicleBarcode(source,{partyIndex:1}) : reportBarcode(source), page = await browser.newPage({viewport: {width: 1020, height: 800}});
     await page.addInitScript(data => {
       window.closedByUser = false; window.close = () => {window.closedByUser = true;};
       window.chrome = {runtime: {connect: () => ({postMessage() {}}), sendMessage: async () => ({ok: true, value: data})}};
@@ -49,7 +49,7 @@ sys.path.insert(0,'tests/tmp/python')
 import zxingcpp
 from PIL import Image
 root=pathlib.Path('tests/tmp/barcodes')
-for kind in ['driver','suffix','vehicle','id','blank-number']:
+for kind in ['driver','suffix','blank-owner','next-owner','first-registrant','vehicle','id','blank-number']:
  expected=(root/(kind+'.txt')).read_bytes()
  for scale in [2,3,4]:
   codes=zxingcpp.read_barcodes(Image.open(root/f'{kind}-{scale}.png'),formats=zxingcpp.BarcodeFormat.PDF417)

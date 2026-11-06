@@ -11,7 +11,7 @@ import {checkBlacklist, driverIdentifiers, validateBlacklist, BlacklistedSearchE
 import {SearchRun, guardedApi, isCancelled} from './run.js';
 import {recordStatus, unavailableAlert} from './status-alerts.js';
 import {AudioAlerts, availableVoices} from './audio-alerts.js';
-import {reportBarcode} from './barcode-data.js';
+import {reportBarcode, VehiclePartyError} from './barcode-data.js';
 const audioAlerts = new AudioAlerts();
 
 // In-memory Maps hold live callbacks. Session storage holds view/report data, not
@@ -61,7 +61,7 @@ async function createPanel(data, callbacks = {}, run) {
     panels.delete(id); await chrome.storage.session.remove(`panel:${id}`); run?.check(); return null;
   }
   let win;
-  try { run?.check(); win = await chrome.windows.create({url: chrome.runtime.getURL(`${data.type === 'barcode' ? 'barcode' : 'panel'}.html?id=${id}`), type: 'popup', width: data.type === 'barcode' ? 1020 : data.type === 'record-alert' ? 580 : 460, height: data.type === 'barcode' ? 800 : data.type === 'credentials' ? 720 : data.type === 'record-alert' ? 620 : 430, focused: true}); }
+  try { run?.check(); win = await chrome.windows.create({url: chrome.runtime.getURL(`${data.type === 'barcode' ? 'barcode' : 'panel'}.html?id=${id}`), type: 'popup', width: data.type === 'barcode' ? 1020 : (data.type === 'record-alert' || data.type === 'barcode-owner-incomplete') ? 580 : 460, height: data.type === 'barcode' ? 800 : data.type === 'credentials' ? 720 : data.type === 'barcode-owner-incomplete' ? 520 : data.type === 'record-alert' ? 620 : 430, focused: true}); }
   catch (e) { panels.delete(id); await chrome.storage.session.remove(`panel:${id}`); throw e; }
   entry.windowId = win.id;
   if (run?.signal.aborted || entry.cancelled) {
@@ -324,7 +324,19 @@ async function execute(command, value, source, options, run) {
       await runSearch('customer', queue.values[previousIndex], ctx, () => api.storage.session.set({queue: {...queue, index: previousIndex + 1}}));
     } else if (command === 'barcode') {
       const text = await pdfText(source, run);
-      await createPanel(reportBarcode(text), {}, run);
+      let partyIndex = 0, barcode;
+      while (!barcode) {
+        run.check();
+        try { barcode = reportBarcode(text, {partyIndex}); }
+        catch (error) {
+          if (!(error instanceof VehiclePartyError)) throw error;
+          const choice = await ask({type: 'barcode-owner-incomplete', hasNext: error.hasNext, message: `${error.message}\nYou can generate this barcode with incomplete owner fields left blank.${error.hasNext ? " Another owner/customer/registrant is listed; you can choose Use next owner instead." : ''}`}, run);
+          if (choice === 'blank') barcode = reportBarcode(text, {partyIndex, allowIncompleteParty: true});
+          else if (choice === 'next' && error.hasNext) partyIndex = error.nextPartyIndex;
+          else { await api.storage.session.set({status: 'Barcode generation cancelled; owner information is incomplete'}); return; }
+        }
+      }
+      await createPanel(barcode, {}, run);
       await api.storage.session.set({status: 'Import barcode ready; verify the scanned fields against the report'});
     } else if (command === 'address') {
       const dl = options.replay ? normalize('license', value) : driverLicense(await pdfText(source, run));
