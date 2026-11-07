@@ -12,6 +12,16 @@ A Manifest V3 extension for SCDMV member searches, PDF follow-ups, and SCUTTIES 
 
 No build, npm installation, or external script download is required to run the packaged extension. PDF.js 5.6.205 is bundled locally, including its license and supporting assets.
 
+## Built-in DMV website dark mode (1.8.0)
+
+The extension now supplies dark styling for **https://www.scdmvonline.com/** without requiring a separate dark mode extension. **Settings → DMV website → Dark DMV website** starts enabled and is saved between browser sessions. The charcoal background, warm gray text, blue links, and Bootstrap control colors follow the Dark Reader appearance in the supplied login DOM. Navigation, forms, menus, panels, tables, validation messages, and dialogs retain their layout and behavior. Images and logos keep their original colors.
+
+The theme uses a user-origin important stylesheet and an important cascade layer to take priority over ordinary page CSS, inline important colors, and CSS/filter-based theme extensions. It neutralizes whole-page/element inversion, backdrop filters, and blend effects. Dark Reader's supported page lock additionally asks its dynamic engine to stand down. This works without changing another extension's settings or disabling it on other websites. An extension using equally privileged competing user styles or rewriting the DOM/images can still conflict; Chromium provides no exclusive ownership of a page's appearance.
+
+The theme is installed at document start to avoid a light page during normal loading, and the switch updates open DMV tabs. Turning it off removes this extension's theme and its own Dark Reader lock. Reload DMV tabs afterward to let another dark mode extension reapply. No form values, hidden state, or login/search actions are changed. Content scripts receive only the appearance preference, never credentials, blacklist entries, or vault data.
+
+Other websites, including SCUTTIES, are untouched. Native DMV PDF attachments and the existing dark PDF viewer keep their separate handling under **Settings → PDF results**. Portal CSS applies only on screen; printing uses the site's original print styling.
+
 ## PDF results dark mode (1.7.6)
 
 Enable **Settings → PDF results → Dark PDF results (keep photos unchanged)**, then run a new DMV search. The report opens dark in the same results tab DMV opens, with continuous scrolling through all pages. There is no second viewer tab and no Next/Previous page button. Select text and copy it normally with Ctrl+C (Command+C on macOS) or the browser context menu. Version 1.7.3 adds a transparent PDF.js text layer aligned with each page, including rotated pages and resized windows. Text layers remain available when distant page canvases are released. Image-only scans still require OCR. Nearby pages render as you scroll; distant page canvases are released to limit memory use.
@@ -122,7 +132,7 @@ The optional browser/worker tests use Playwright and pdf-lib. They can use Codex
 node tests\browser.mjs
 ```
 
-Browser tests cover all four DMV form flows, login timing/errors, inactive-tab behavior, SCUTTIES destination permission and framework events, popup UI, plate validation, real PDF.js worker extraction, and dark PDF rendering with pixel-for-pixel photo preservation. Screenshots are written to `test-results`.
+Browser tests cover all four DMV form flows, login timing/errors, inactive-tab behavior, SCUTTIES destination permission and framework events, popup UI, plate validation, real PDF.js worker extraction, and dark PDF rendering with pixel-for-pixel photo preservation. Screenshots are written to `test-results`. For website-theme tests, run `npm ci --ignore-scripts` to install the pinned, test-only Dark Reader API and then `npm run test:dmv-theme` (set `CHROME_PATH` as needed). These checks run the native controller in an isolated script world and verify coexistence with the real Dark Reader engine, generic competing themes, unchanged form values, site scope, toggling, and print colors. The Dark Reader development dependency is not included in the installable extension.
 
 To verify a local residence report without embedding its data in the test suite, optionally run `node tests\browser.mjs --sample-pdf "C:\path\to\report.pdf"`. This checks the twelve-customer sample used for the 1.0.2 regression. The report stays local and is not included in the distribution package.
 

@@ -11,6 +11,7 @@ import {checkBlacklist, driverIdentifiers, validateBlacklist, BlacklistedSearchE
 import {SearchRun, guardedApi, isCancelled} from './run.js';
 import {recordStatus, unavailableAlert} from './status-alerts.js';
 import {AudioAlerts, availableVoices} from './audio-alerts.js';
+import {configureDmvTheme, initDmvTheme, refreshDmvThemeTabs, isDmvThemePage} from './dmv-theme-settings.js';
 import {darkResultSource, setPdfRouting, isNativePrintUrl} from './pdf-routing.js';
 import {reportBarcode, VehiclePartyError} from './barcode-data.js';
 const audioAlerts = new AudioAlerts();
@@ -28,7 +29,8 @@ const boot = Promise.all([
   chrome.storage.local.remove('history'),
   // Retire the removed shortcut-pause preference on update or worker startup.
   chrome.storage.session.remove('shortcutsPaused'),
-  chrome.storage.local.get('pdfDarkMode').then(({pdfDarkMode}) => setPdfRouting(pdfDarkMode === true))
+  chrome.storage.local.get('pdfDarkMode').then(({pdfDarkMode}) => setPdfRouting(pdfDarkMode === true)),
+  configureDmvTheme().catch(error=>chrome.storage.session.set({status:`DMV website dark mode unavailable: ${error.message}`}))
 ]);
 /** Replace the active command and cancel its readers, audio, and panels. Callers await
  * run.cleanup before opening new UI; late-created windows also check this run. */
@@ -541,12 +543,16 @@ chrome.runtime.onInstalled.addListener(async details => {
   // credentials, history, and unrelated session data. No host is launched.
   await chrome.storage.local.remove('bindings');
   await chrome.storage.session.remove(['nativeStatus', 'nativeErrors']);
+  await refreshDmvThemeTabs();
   if (details?.reason === 'install') await openShortcutSetup();
 });
 // Only extension-owned views may call this router. Keep the response channel open
 // for async work and use one {ok, value/error} envelope for every request.
 chrome.runtime.onMessage.addListener((message, sender, reply) => {
   if (message.target === 'audio-player' || message.target === 'pdf-reader') return false;
+  if(message.type==='dmv-theme-init'&&sender.id===chrome.runtime.id&&sender.tab?.id!=null&&Number.isInteger(sender.frameId)&&isDmvThemePage(sender.url)) {
+    (async()=>{await boot;return initDmvTheme(sender);})().then(value=>reply({ok:true,value}),error=>reply({ok:false,error:error.message}));return true;
+  }
   if (sender.id !== chrome.runtime.id || !sender.url?.startsWith(chrome.runtime.getURL(''))) return false;
   (async () => {
     await boot;
@@ -619,7 +625,10 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
         dispatch(query.kind, {...query, ...(entry.identifiers ? {identifiers: validateBlacklist(entry.identifiers)} : {}), replay: true}).catch(error => report(error));
         return true;
       }
-      case 'state': return {blacklist: await blacklistState(), ...await chrome.storage.local.get(['vault','pdfDarkMode']), ...await chrome.storage.session.get(['history', 'queue', 'status', 'alertsEnabled', 'speechEnabled', 'repeatSpeech', 'suspendedClipEnabled', 'voiceSource', 'voiceGender', 'voiceName']), voices: await availableVoices().catch(() => []), commands: await chrome.commands.getAll(), extensionId: chrome.runtime.id};
+      case 'state': return {blacklist: await blacklistState(), ...await chrome.storage.local.get(['vault','pdfDarkMode','dmvDarkMode']), ...await chrome.storage.session.get(['history', 'queue', 'status', 'alertsEnabled', 'speechEnabled', 'repeatSpeech', 'suspendedClipEnabled', 'voiceSource', 'voiceGender', 'voiceName']), voices: await availableVoices().catch(() => []), commands: await chrome.commands.getAll(), extensionId: chrome.runtime.id};
+      case 'dmv-display-settings': {
+        await chrome.storage.local.set({dmvDarkMode:message.enabled===true});await configureDmvTheme();await refreshDmvThemeTabs();return message.enabled===true;
+      }
       case 'pdf-display-settings': await setPdfRouting(message.enabled === true); await chrome.storage.local.set({pdfDarkMode: message.enabled === true}); return message.enabled === true;
       case 'clear-saved-user-info': {
         if (message.confirmed !== true) throw new Error('Confirm deletion of saved user information and the vault.');

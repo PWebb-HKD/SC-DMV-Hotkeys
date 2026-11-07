@@ -13,6 +13,7 @@ This guide describes first-party source. Read it alongside the module/function c
 | License/tag status rules | extension/status-alerts.js | status-alerts and report-layouts tests |
 | Barcode fields | extension/barcode-data.js | barcode unit and browser decoder tests |
 | Recorded voices / TTS | extension/voice-recordings.js, audio-alerts.js, audio-player.js | audio-alerts and browser tests |
+| DMV website theme | dmv-theme.css, dmv-theme.js, dmv-theme-start.js, dmv-theme-settings.js | DMV theme browser tests; settings/message authorization tests |
 | Toolbar / settings / About | extension/popup.html, popup.js, style.css | browser harness |
 | Prompt / alert / credential UI | extension/panel.html, panel.js | browser and queue tests |
 
@@ -22,6 +23,7 @@ This guide describes first-party source. Read it alongside the module/function c
 - **automation.js:** Portal transactions. Receives a context containing a SearchRun and worker callbacks. The table of transactions shares the same Page1 -> submit -> Page2 -> Download workflow.
 - **page.js:** A single serialized function injected into the website MAIN world. It cannot close over extension imports or variables. Its DOM setters and bubbling events notify website frameworks. Credential and PDF origin checks deliberately live inside this function as well as in the caller.
 - **popup/panel/barcode/shortcut-setup pages:** Extension-owned UI. Render report text with textContent, not HTML. Panels use unpredictable IDs to associate replies with worker jobs. Permission prompts request destination access from a user gesture.
+- **DMV website theme:** dmv-theme-start.js and its scoped stylesheet are registered at document_start only while enabled. The manifest controller is always available on DMV HTML documents for live preference changes. The dmv-theme-init message permits matching DMV content-script senders to receive only {enabled}, injects USER-origin CSS into their exact document, and keeps the normal private-message router closed to website contexts. Dark Reader is asked to yield through its own lock; generic competing styles are overridden by important user-origin layered rules. Never read form values or fetch stylesheets to theme the site.
 - **reader.js:** Bundled PDF.js in either a temporary inactive extraction tab or the same results tab redirected by pdf-routing.js when dark mode is enabled. The redirected document joins a capture bound to its tab ID and document ID; it replaces its URL with a job ID so reload cannot refetch a historical report. Nearby pages render on a continuous scrolling surface; image regions retain original pixels. This reads PDF bytes rather than attempting to inspect Chromium's internal PDF viewer. Text-only extraction cannot recover image-only scans.
 - **audio-player.js:** An offscreen document, because service workers have no Audio DOM. Only catalogued packaged recordings are accepted.
 

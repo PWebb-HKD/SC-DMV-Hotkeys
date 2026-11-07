@@ -108,6 +108,7 @@ $('blacklistUnlock').onclick = async () => {
 async function refresh() {
   const data = await send({type: 'state'});
   renderBlacklist(data.blacklist);
+  $('dmvDarkMode').checked = data.dmvDarkMode !== false;
   $('pdfDarkMode').checked = data.pdfDarkMode === true;
   $('alertsToggle').checked = data.alertsEnabled === true;
   $('speechToggle').checked = data.speechEnabled === true;
@@ -147,6 +148,7 @@ async function refresh() {
   renderShortcuts(data.commands);
 }
 // UI events send worker requests; they never mutate the queue or submit website forms.
+$('dmvDarkMode').onchange = async () => { try { await send({type:'dmv-display-settings',enabled:$('dmvDarkMode').checked}); feedback(''); } catch(error) { feedback(error.message); await refresh(); } };
 $('pdfDarkMode').onchange = async () => { try { await send({type:'pdf-display-settings',enabled:$('pdfDarkMode').checked}); feedback(''); } catch(error) { feedback(error.message); await refresh(); } };
 $('historyTab').onclick = () => tab('history');
 $('settingsTab').onclick = () => { tab('settings'); refresh().catch(error => feedback(error.message)); };
@@ -191,7 +193,7 @@ for (const [id, type] of [['clearHistory', 'clear-history'], ['clearQueue', 'cle
 }
 // Update session controls while this short-lived popup remains open.
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && (changes.vault || changes.pdfDarkMode) || area === 'session' && (changes.blacklist || changes.unlockedVault)) refresh().catch(error => feedback(error.message));
+  if (area === 'local' && (changes.vault || changes.pdfDarkMode || changes.dmvDarkMode) || area === 'session' && (changes.blacklist || changes.unlockedVault)) refresh().catch(error => feedback(error.message));
   if (area === 'session' && changes.history) refresh().catch(error => feedback(error.message));
   if (area === 'session' && changes.status) $('status').textContent = changes.status.newValue;
   if (area === 'session' && changes.alertsEnabled) $('alertsToggle').checked = changes.alertsEnabled.newValue === true;

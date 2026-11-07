@@ -13,7 +13,8 @@ let reportText='Driver License No: 123456789 Name: TEST, PERSON\nDOB: 01/01/2000
 let pauseAlertWindow=false,alertWindowRelease;
 const removedWindows=[],removedTabs=[];
 const store=data=>({clear:async()=>{for(const key of Object.keys(data))delete data[key];},get:async keys=>typeof keys==='string'?{[keys]:data[keys]}:Array.isArray(keys)?Object.fromEntries(keys.map(k=>[k,data[k]])):{...data},set:async values=>Object.assign(data,values),remove:async keys=>{for(const k of Array.isArray(keys)?keys:[keys])delete data[k];},setAccessLevel:async()=>{}});
-const runtimeMessages=[],routingUpdates=[];
+const runtimeMessages=[],routingUpdates=[],themeRegistrations=[],themeCss=[];
+let registeredThemes=[];
 const runtime={sendMessage:async message=>{runtimeMessages.push(message);},id:'a'.repeat(32),getURL:path=>`chrome-extension://${'a'.repeat(32)}/${path}`,onMessage:event(),onConnect:event(),onStartup:event(),onInstalled:event()};
 globalThis.chrome={
   runtime,webNavigation:{onCommitted:event(),getFrame:async({tabId})=>({documentId:tabs.get(tabId)?.documentId})},declarativeNetRequest:{updateDynamicRules:async rules=>{routingUpdates.push(rules);}},storage:{local:store(local),session:store(session)},
@@ -22,10 +23,12 @@ globalThis.chrome={
     get:async id=>({...tabs.get(id)}),
     create:async opts=>{const tab={id:nextId++,url:opts.url,status:'complete',windowId:1,active:!!opts.active};tabs.set(tab.id,tab);return {...tab};},
     update:async(id,update)=>{if(update.url)navigations.push(update.url);const tab=tabs.get(id);Object.assign(tab,update);if(update.active){for(const t of tabs.values())if(t.id!==id)t.active=false;if(onResultFocus&&isPdf(tab.url)){const hook=onResultFocus;onResultFocus=null;queueMicrotask(hook);}}return {...tab};},
-    remove:async id=>{removedTabs.push(id);},onCreated:event(),onUpdated:event(),onRemoved:event()
+    sendMessage:async()=>{},remove:async id=>{removedTabs.push(id);},onCreated:event(),onUpdated:event(),onRemoved:event()
   },
   windows:{get:async()=>({id:1,state:'normal'}),update:async()=>{},onRemoved:event(),create:async data=>{const win={id:windows.length+10,...data};windows.push(win);if(pauseAlertWindow&&session[`panel:${new URL(data.url).searchParams.get('id')}`]?.type==='record-alert')await new Promise(resolve=>{alertWindowRelease=resolve;});return win;},remove:async id=>{removedWindows.push(id);}},
-  scripting:{executeScript:async({target,args:[op,args]})=>{
+  scripting:{getRegisteredContentScripts:async()=>registeredThemes,registerContentScripts:async scripts=>{registeredThemes=scripts;themeRegistrations.push(scripts);},updateContentScripts:async scripts=>{registeredThemes=scripts;themeRegistrations.push(scripts);},unregisterContentScripts:async()=>{registeredThemes=[];},insertCSS:async options=>{themeCss.push({enabled:true,...options});},removeCSS:async options=>{themeCss.push({enabled:false,...options});},executeScript:async request=>{
+    if(request.files)return [];
+    const {target,args:[op,args]}=request;
     const tab=tabs.get(target.tabId); let result=true;
     if(op==='fill'&&technicalFailure)throw new Error('Script connection lost');
     if(op==='state')result={url:tab.url,present:true,enabled:true,presentSelectors:args.selectors?.map(()=>true)||[],errors:(invalid&&tab.url.includes('Page1.aspx'))||(invalidAfterSubmit&&tab.url.includes('Page2.aspx'))?['Invalid customer number']:[]};
@@ -647,4 +650,18 @@ test('printing does not wait for a still-pending PDF capture',async()=>{
   const result=fromReader({type:'pdf-native-print',url,text:driverReport});
   await wait(()=>tabs.get(nativeId)?.url===url);await result;
   assert.equal(session[`pdf:${nativeId}`].text,driverReport);await send({type:'stop'});
+});
+
+
+test('DMV dark mode is default-on, injects USER CSS in its requesting document, and never exposes private state to content scripts',async()=>{
+  assert.equal(registeredThemes[0].runAt,'document_start');assert.equal(registeredThemes[0].allFrames,true);
+  const sender={id:runtime.id,url:MEMBER+'logon.aspx',tab:{id:1},frameId:2,documentId:'dmv-frame'};
+  const webSend=message=>new Promise((resolve,reject)=>runtime.onMessage.listeners[0](message,sender,r=>r.ok?resolve(r.value):reject(new Error(r.error))));
+  assert.deepEqual(await webSend({type:'dmv-theme-init'}),{enabled:true});
+  assert.equal(themeCss.at(-1).origin,'USER');assert.deepEqual(themeCss.at(-1).target,{tabId:1,documentIds:['dmv-frame']});
+  assert.equal(runtime.onMessage.listeners[0]({type:'state'},sender,()=>assert.fail('Private state leaked')),false);
+  for(const url of ['https://unrelated.test/',PDF_URL,'http://www.scdmvonline.com/logon.aspx','https://www.scdmvonline.com.example.org/'])assert.equal(runtime.onMessage.listeners[0]({type:'dmv-theme-init'},{...sender,url},()=>assert.fail('Untrusted page accepted')),false);
+  assert.equal(await send({type:'dmv-display-settings',enabled:false}),false);assert.equal(local.dmvDarkMode,false);assert.equal(registeredThemes.length,0);
+  assert.deepEqual(await webSend({type:'dmv-theme-init'}),{enabled:false});assert.equal(themeCss.at(-1).enabled,false);
+  assert.equal(await send({type:'dmv-display-settings',enabled:true}),true);assert.equal(local.dmvDarkMode,true);assert.equal(registeredThemes.length,1);
 });

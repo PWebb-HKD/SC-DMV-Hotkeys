@@ -310,13 +310,13 @@ try {
     window.requests=[];window.runtimeListeners=[];
     window.panelClosed=false;window.close=()=>{window.panelClosed=true;};
     window.openedTabs=[];
-    window.sessionAlerts=false;window.pdfDarkMode=false;window.blacklistData={hasVault:false,unlocked:false,entries:[]};window.historyErrors=[];window.storageListeners=[];
+    window.sessionAlerts=false;window.pdfDarkMode=false;window.dmvDarkMode=true;window.blacklistData={hasVault:false,unlocked:false,entries:[]};window.historyErrors=[];window.storageListeners=[];
     window.audioSettings={};
     window.commandShortcuts=[{name:'plate',shortcut:'Ctrl+Shift+7'},{name:'next',shortcut:'Alt+N'},{name:'_execute_action',shortcut:'Alt+Period'}];
     window.chrome = {
       runtime:{onMessage:{addListener:fn=>window.runtimeListeners.push(fn)},getURL:path=>`${location.origin}/${path}`,connect:()=>({postMessage:()=>{}}),sendMessage:async message=>{
         window.requests.push(message);
-        if(message.type==='state')return {ok:true,value:{pdfDarkMode:window.pdfDarkMode,blacklist:window.blacklistData,history:[...window.historyErrors,{kind:'plate',value:'ABC12345',at:Date.now()},{kind:'license',value:'123456789',at:Date.now()}],queue:{values:['123','456'],index:1},commands:window.commandShortcuts,alertsEnabled:window.sessionAlerts,...window.audioSettings,voices:[{voiceName:'Microsoft David Desktop',lang:'en-US'},{voiceName:'Microsoft Zira Desktop',lang:'en-US'}]}};
+        if(message.type==='state')return {ok:true,value:{dmvDarkMode:window.dmvDarkMode,pdfDarkMode:window.pdfDarkMode,blacklist:window.blacklistData,history:[...window.historyErrors,{kind:'plate',value:'ABC12345',at:Date.now()},{kind:'license',value:'123456789',at:Date.now()}],queue:{values:['123','456'],index:1},commands:window.commandShortcuts,alertsEnabled:window.sessionAlerts,...window.audioSettings,voices:[{voiceName:'Microsoft David Desktop',lang:'en-US'},{voiceName:'Microsoft Zira Desktop',lang:'en-US'}]}};
         if(message.type==='blacklist-unlock'){
           if(message.passphrase!=='fixture passphrase')return {ok:false,error:'Could not unlock the vault. Check the passphrase.'};
           window.blacklistData.unlocked=true;return {ok:true,value:window.blacklistData};
@@ -327,6 +327,7 @@ try {
         if(message.type==='blacklist-remove'){
           window.blacklistData.entries=window.blacklistData.entries.filter(x=>x.kind!==message.kind||x.value!==message.value);return {ok:true,value:window.blacklistData};
         }
+        if(message.type==='dmv-display-settings'){window.dmvDarkMode=message.enabled;return {ok:true,value:window.dmvDarkMode};}
         if(message.type==='pdf-display-settings'){window.pdfDarkMode=message.enabled;return {ok:true,value:window.pdfDarkMode};}
         if(message.type==='audio-settings'){Object.assign(window.audioSettings,message);return {ok:true,value:true};}
         if(message.type==='alerts'){window.sessionAlerts=message.enabled;return {ok:true,value:message.enabled};}
@@ -707,6 +708,12 @@ try {
   await tests('green plate and license alerts close after ten seconds',async()=>{
     const payloads=[plateStatus('Plate Class: ABC Decal Exp Date: 10/28/2026',fixedNow),licenseStatus(`Status - DL: NO SUSPENSION Driver License No:123456789 Name: FICTIONAL, PERSON ${currentHeader} DL Renewal 01/01/2020 10/28/2026 01/01/2020`,fixedNow)];
     for(const payload of payloads){const page=await statusPage(payload);assert.equal(await page.locator('.record-status-title').evaluate(el=>getComputedStyle(el).color),'rgb(67, 220, 121)');await page.clock.fastForward(9000);assert.equal(await page.evaluate(()=>window.closedByAlert),false);await page.clock.fastForward(1000);assert.equal(await page.evaluate(()=>window.closedByAlert),true);await page.close();}
+  });
+  await tests('DMV website dark mode starts enabled and changes independently of the PDF preference',async()=>{
+    const page=await ui.newPage();await page.goto(base+'/popup.html');await page.locator('#settingsTab').click();
+    assert.equal(await page.locator('#dmvDarkMode').isChecked(),true);await page.locator('#dmvDarkMode').uncheck();
+    assert.deepEqual(await page.evaluate(()=>window.requests.find(x=>x.type==='dmv-display-settings')),{type:'dmv-display-settings',enabled:false});
+    assert.equal(await page.locator('#pdfDarkMode').isChecked(),false);assert.equal(await page.evaluate(()=>window.requests.some(x=>x.type==='run')),false);await page.close();
   });
   await tests('PDF dark-view setting is opt-in and changes only the PDF preference',async()=>{
     const page=await ui.newPage();await page.goto(`${base}/popup.html`);await page.locator('#history tr').first().waitFor();await page.locator('#settingsTab').click();
