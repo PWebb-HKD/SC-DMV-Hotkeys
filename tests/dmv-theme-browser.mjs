@@ -8,6 +8,7 @@ import {dependency} from './runtime.mjs';
 const {chromium}=dependency('playwright'),root=fileURLToPath(new URL('../',import.meta.url));
 const require=createRequire(import.meta.url),darkReaderPath=require.resolve('darkreader');
 const css=await readFile(join(root,'extension/dmv-theme.css'),'utf8');
+const memberFixture=await readFile(join(root,'tests/fixtures/dmv-member-header.html'),'utf8');
 const controller=await readFile(join(root,'extension/dmv-theme.js'),'utf8'),startup=await readFile(join(root,'extension/dmv-theme-start.js'),'utf8');
 const fixture=`<!doctype html><html lang="en-us"><head><title>Fictional DMV member login</title><style>
 body{margin:0;background:#fff;color:#333;font:16px Arial,sans-serif}a{color:#337ab7}h1{font-size:26px}label{color:#333;display:block;margin:14px 0 6px}input,select{box-sizing:border-box;padding:10px;width:100%;background:#fff;color:#555;border:1px solid #ccc;border-radius:4px}.container{max-width:920px;margin:auto}.navbar{background:#00345e;padding:18px;color:white}.navbar a{color:white;margin-right:24px}.navbar img{width:38px;height:38px;vertical-align:middle;margin-right:14px}.panel{margin:24px 0;border:1px solid #ddd;border-radius:4px;background:white}.panel-heading{padding:12px;background:#f5f5f5;color:#333}.panel-body{padding:18px}.btn{padding:10px 20px;border:1px solid #ccc;border-radius:4px;background:white;color:#333;margin:16px 8px 0 0}.btn-primary{background:#337ab7;color:#fff;border-color:#2e6da4}.alert{padding:12px;margin:12px 0;border:1px solid}.alert-danger{background:#f2dede;color:#a94442;border-color:#ebccd1}.iFormsRequired{color:#a94442}.text-muted{color:#777}table{border-collapse:collapse;width:100%;background:white;color:#333}th,td{padding:10px;border:1px solid #ddd}thead{background:#eee}.table-striped>tbody>tr:nth-of-type(odd){background:#f9f9f9}.dropdown-menu{display:none;background:#fff}.dropdown-menu.open{display:block}.dropdown-menu li{padding:7px}footer{margin:24px;padding:20px;background:#eee}button:focus,input:focus{outline:2px solid #66afe9}#globalTopPanel_message{display:none}
@@ -18,7 +19,7 @@ const worldEval=async(page,expression)=>{const {session,id}=worlds.get(page),res
 const test=async(name,run)=>{await run();passed++;console.log('PASS '+name);};
 try {
  const context=await browser.newContext({viewport:{width:1100,height:1000}});
- await context.route('**/*',route=>route.fulfill({contentType:'text/html',body:fixture}));
+ await context.route('**/*',route=>route.fulfill({contentType:'text/html',body:route.request().url().includes('member-header-fixture')?memberFixture:fixture}));
  async function pageAt(url='https://www.scdmvonline.com/SCTRNS/Member/logon.aspx') {
   const page=await context.newPage();
   await page.goto(url);
@@ -40,6 +41,26 @@ try {
   await page.evaluate(()=>{const row=document.querySelector('tbody').insertRow();row.insertCell().textContent='New transaction';row.insertCell().textContent='Available';});
   assert.equal(await color(page,'tbody tr:last-child td','color'),'rgb(200, 195, 188)');
   await page.locator('#ContentPlaceHolder1_passwordText').fill('');await mkdir(join(root,'test-results'),{recursive:true});await page.screenshot({path:join(root,'test-results/dmv-native-dark.png'),fullPage:true});await page.close();
+ });
+ await test('real DMV header roles match the supplied Dark Reader screenshot without recoloring other images',async()=>{
+  const page=await pageAt('https://www.scdmvonline.com/SCTRNS/Member/logon.aspx?member-header-fixture=1');await page.setViewportSize({width:1900,height:1000});
+  const logoImage=await color(page,'#dmvHomeLink','backgroundImage'),link=await page.locator('#dmvHomeLink').getAttribute('href');await activate(page);
+  assert.equal(await color(page,'.first-navbar','backgroundColor'),'rgb(16, 62, 112)');assert.equal(await color(page,'.navbar.pageTitle','backgroundColor'),'rgb(16, 62, 112)');
+  assert.equal(await color(page,'.topnav-Logo','backgroundColor'),'rgb(24, 26, 27)');assert.equal(await color(page,'.topnav-Logo','borderBottomColor'),'rgba(0, 0, 0, 0)');
+  assert.equal(await color(page,'#dmvHomeLink','filter'),'brightness(0) invert(1)');assert.equal(await color(page,'#dmvHomeLink','backgroundImage'),logoImage);assert.equal(await page.locator('#dmvHomeLink').getAttribute('href'),link);
+  await page.locator('#dmvHomeLink').hover();assert.equal(await color(page,'#dmvHomeLink','backgroundColor'),'rgba(0, 0, 0, 0)');
+  assert.equal(await color(page,'#globalTopPanel_header','backgroundColor'),'rgba(0, 0, 0, 0)');assert.equal(await color(page,'#globalTopPanel_header a span','color'),'rgb(178, 171, 161)');
+  assert.equal(await color(page,'#driverPhoto','filter'),'none');assert.equal(await color(page,'#ContentPlaceHolder1_userNameText','boxShadow'),'none');
+  // Force browser autofill to check that no inset shadow covers its native fill.
+  const {session}=worlds.get(page);await session.send('DOM.enable');await session.send('CSS.enable');
+  const {root:dom}=await session.send('DOM.getDocument');const {nodeId}=await session.send('DOM.querySelector',{nodeId:dom.nodeId,selector:'#ContentPlaceHolder1_userNameText'});
+  await session.send('CSS.forcePseudoState',{nodeId,forcedPseudoClasses:['autofill']});
+  assert.equal(await color(page,'#ContentPlaceHolder1_userNameText','boxShadow'),'none');
+  await page.locator('#ContentPlaceHolder1_passwordText').fill('');await page.evaluate(()=>document.activeElement?.blur());
+  await mkdir(join(root,'test-results'),{recursive:true});await page.screenshot({path:join(root,'test-results/dmv-member-header-native.png'),fullPage:true});
+  await page.emulateMedia({media:'print'});assert.equal(await color(page,'#dmvHomeLink','filter'),'none');
+  await page.emulateMedia({media:'screen'});await worldEval(page,"window.themeEnabled=false;window.themeListeners.forEach(fn=>fn({type:'dmv-theme-changed'}));");await page.waitForFunction(()=>!document.documentElement.hasAttribute('data-scdmv-dark'));
+  assert.equal(await color(page,'#dmvHomeLink','filter'),'none');assert.equal(await color(page,'#dmvHomeLink','backgroundImage'),logoImage);await page.close();
  });
  await test('an active Dark Reader engine yields to the native lock and cannot invert images or replace the theme when enabled again',async()=>{
   const page=await pageAt();await page.addScriptTag({path:darkReaderPath});await page.evaluate(()=>DarkReader.enable({brightness:100,contrast:100,sepia:0}));

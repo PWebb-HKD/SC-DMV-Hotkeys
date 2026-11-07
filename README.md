@@ -12,9 +12,9 @@ A Manifest V3 extension for SCDMV member searches, PDF follow-ups, and SCUTTIES 
 
 No build, npm installation, or external script download is required to run the packaged extension. PDF.js 5.6.205 is bundled locally, including its license and supporting assets.
 
-## Built-in DMV website dark mode (1.8.0)
+## Built-in DMV website dark mode (1.8.1)
 
-The extension now supplies dark styling for **https://www.scdmvonline.com/** without requiring a separate dark mode extension. **Settings → DMV website → Dark DMV website** starts enabled and is saved between browser sessions. The charcoal background, warm gray text, blue links, and Bootstrap control colors follow the Dark Reader appearance in the supplied login DOM. Navigation, forms, menus, panels, tables, validation messages, and dialogs retain their layout and behavior. Images and logos keep their original colors.
+The extension now supplies dark styling for **https://www.scdmvonline.com/** without requiring a separate dark mode extension. **Settings → DMV website → Dark DMV website** starts enabled and is saved between browser sessions. The charcoal background, warm gray text, blue links, and Bootstrap control colors follow the Dark Reader appearance in the supplied login DOM. Navigation, forms, menus, panels, tables, validation messages, and dialogs retain their layout and behavior. Images keep their original colors; only the DMV header logo is lightened against its charcoal strip. Version 1.8.1 separates that strip from the blue top/title bands, removes the filled background behind the member information heading, and lets Chromium display its normal dark autofill colors.
 
 The theme uses a user-origin important stylesheet and an important cascade layer to take priority over ordinary page CSS, inline important colors, and CSS/filter-based theme extensions. It neutralizes whole-page/element inversion, backdrop filters, and blend effects. Dark Reader's supported page lock additionally asks its dynamic engine to stand down. This works without changing another extension's settings or disabling it on other websites. An extension using equally privileged competing user styles or rewriting the DOM/images can still conflict; Chromium provides no exclusive ownership of a page's appearance.
 

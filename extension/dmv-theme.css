@@ -19,7 +19,15 @@
   :root[data-scdmv-dark] :where(hr,fieldset,legend,table,td,th) {border-color:#3e4446!important;}
   :root[data-scdmv-dark] :where(.panel,.well,.jumbotron,.modal-content,.dropdown-menu,.list-group-item,.popover,.ui-widget-content,.ui-dialog,.card) {background-color:#181a1b!important;background-image:none!important;color:inherit!important;border-color:#3e4446!important;}
   :root[data-scdmv-dark] :where(.panel-default>.panel-heading,.panel-footer,.modal-header,.modal-footer,.well,.breadcrumb,.input-group-addon,.ui-widget-header,.card-header) {background-color:#1e2021!important;background-image:none!important;color:#c8c3bc!important;border-color:#3e4446!important;}
-  :root[data-scdmv-dark] :where(.navbar,.topnav-color,.first-navbar,.second-navbar,.third-navbar,.navbar-inverse) {background-color:#002b50!important;background-image:none!important;color:#e8e6e3!important;border-color:#28465d!important;}
+  :root[data-scdmv-dark] :where(.navbar,.navbar-inverse) {background-color:#181a1b!important;background-image:none!important;color:#e8e6e3!important;border-color:transparent!important;}
+  /* DMV's logo strip is separate from the blue top/title bands. */
+  :root[data-scdmv-dark] .topnav-color {background-color:#103e70!important;color:#e8e6e3!important;border-color:transparent!important;}
+  :root[data-scdmv-dark] .topnav-Logo {background-color:#181a1b!important;border-color:transparent!important;}
+  :root[data-scdmv-dark] .topnav-Logo #dmvHomeLink.globalLogo {background-color:transparent!important;filter:brightness(0) invert(1)!important;}
+  :root[data-scdmv-dark] #globalTopPanel {background-color:transparent!important;border-color:transparent!important;box-shadow:none!important;}
+  :root[data-scdmv-dark] #globalTopPanel_header {background-color:transparent!important;color:#b2aba1!important;border-color:transparent!important;}
+  :root[data-scdmv-dark] #globalTopPanel_header a {color:inherit!important;background-color:transparent!important;}
+  :root[data-scdmv-dark] #globalTopPanel_message {background-color:transparent!important;border-color:#454b4e!important;}
   :root[data-scdmv-dark] :is(.navbar,.topnav-color) :where(a,.navbar-brand,.navbar-text,.navbar-toggle,.icon-bar) {color:#e8e6e3!important;}
   :root[data-scdmv-dark] .navbar-toggle .icon-bar {background-color:#e8e6e3!important;}
   :root[data-scdmv-dark] :where(.navbar,.topnav-color) a:hover {background-color:#123f60!important;color:#fff!important;}
@@ -32,7 +40,7 @@
   :root[data-scdmv-dark] ::placeholder {color:#b2aba1!important;opacity:.5!important;}
   :root[data-scdmv-dark] :where(input,textarea,select):disabled,:root[data-scdmv-dark] :where(input,textarea)[readonly] {background-color:#222526!important;color:#b2aba1!important;}
   :root[data-scdmv-dark] :where(input[type=checkbox],input[type=radio]) {accent-color:#337ab7!important;}
-  :root[data-scdmv-dark] :where(input,textarea,select):-webkit-autofill {-webkit-text-fill-color:#e8e6e3!important;box-shadow:0 0 0 1000px #222526 inset!important;}
+  :root[data-scdmv-dark] :where(input,textarea,select):-webkit-autofill {-webkit-text-fill-color:#e8e6e3!important;box-shadow:none!important;}
   :root[data-scdmv-dark] :where(button,.btn,input[type=button],input[type=submit],input[type=reset]) {background-color:#181a1b!important;background-image:none!important;color:#c8c3bc!important;border-color:#3e4446!important;box-shadow:none!important;}
   :root[data-scdmv-dark] :where(button,.btn,input[type=button],input[type=submit]):hover {background-color:#25282a!important;}
   :root[data-scdmv-dark] .btn-primary,:root[data-scdmv-dark] .panel-primary>.panel-heading {background-color:#296292!important;color:#e8e6e3!important;border-color:#2b638e!important;}
