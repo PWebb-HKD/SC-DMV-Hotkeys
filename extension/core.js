@@ -66,9 +66,11 @@ export function driverLicense(text) {
   const value = match[1].replace(/\s/g, '');
   return /^\d{1,9}$/.test(value) ? value : null;
 }
+/** The title distinguishes a residence listing from repeated driver-number header fields. */
+export function isResidenceReport(text) {return /^\s*Customers\s+at\s+Same\s+Residence\b/i.test(text);}
 /** Collect distinct customer/owner/registrant numbers in document order, excluding driver records. */
 export function ownerNumbers(text) {
-  if (/Driver\s+License\s+No\s*:/i.test(text)) throw new Error('This PDF is a driver record. Open a vehicle or residence results PDF to collect customer/owner numbers.');
+  if (!isResidenceReport(text) && /Driver\s+License\s+No\s*:/i.test(text)) throw new Error('This PDF is a driver record. Open a vehicle or residence results PDF to collect customer/owner numbers.');
   const results = [];
   // PDF text extraction preserves line breaks; never consume a following numeric column/line.
   const regex = /\b(?:Owner|Customer|Registrant\s*\/\s*Lessee)\s+Number\s*:\s*(\d(?:[ \t]*\d)*)(?!\d)/gi;

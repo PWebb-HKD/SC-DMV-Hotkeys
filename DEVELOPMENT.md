@@ -35,7 +35,7 @@ This guide describes first-party source. Read it alongside the module/function c
 4. The search form is filled using native setters and bubbling events. Visible portal validation messages stop the workflow.
 5. The results watcher is installed before Download is clicked. It accepts a new or navigated/reused PDF tab without waiting for the built-in viewer to report complete.
 6. Result discovery commits queue position and history before focusing the result. PDF text capture runs separately so the next command remains responsive.
-7. Enabled session alerts analyze the captured snapshot. Settings are rechecked after extraction to suppress late alerts following Stop, a new query, or disabling alerts.
+7. Enabled alerts analyze the captured snapshot. Settings are rechecked after extraction to suppress late alerts following Stop, a new query, or disabling alerts.
 
 SearchRun.step() races work against cancellation and checks again after it resolves. guardedApi() applies this to browser APIs. Cancellation cannot undo a request already submitted to the website; it prevents further actions, stale focus, and stale messages. Keep these checks around any new awaits, especially window creation and result callbacks. Event listeners and temporary readers must be released in finally blocks.
 
@@ -47,11 +47,11 @@ The worker's panels/readers/captures Maps are live jobs, not durable job storage
 | --- | --- |
 | local | vault (salt/IV/ciphertext), pdfDarkMode |
 | session | history (last 20 attempts), credentials and blacklist (unlocked values), unlockedVault (ciphertext identity), portalId, lastQuery, queue, status |
-| session alert preferences | alertsEnabled, speechEnabled, suspendedClipEnabled, repeatSpeech; voiceSource/voiceGender/voiceName |
+| local alertPreferences, mirrored to session | alertsEnabled, speechEnabled, suspendedClipEnabled, repeatSpeech; voiceSource/voiceGender/voiceName |
 | session report bookkeeping | tabCreated, pdfCreated, pdfSources, pdf:TAB_ID with text and capture timestamp |
 | session panels | panel:UUID, removed on submission/close/cancellation |
 
-Local/session access is restricted to trusted extension contexts. The vault derives an AES-GCM key from a user passphrase using PBKDF2. The passphrase is never retained. The derived AES key is held only in trusted storage.session for this browser session; it is never written to local storage. Vault version 2 encrypts credentials plus blacklist entries. Legacy credential-only vaults unlock with an empty blacklist and migrate on save. Vault writes serialize and decrypt the latest payload before merging edits. A saved vault must be unlocked before searches; the legacy forget-credentials action refuses deletion while locked or while blacklist entries remain. Confirmed reset deletes the vault, blacklist, and all session state.
+Local/session access is restricted to trusted extension contexts. The vault derives an AES-GCM key from a user passphrase using PBKDF2. The passphrase is never retained. The derived AES key is held only in trusted storage.session for this browser session; it is never written to local storage. Vault version 2 encrypts credentials plus blacklist entries. Legacy credential-only vaults unlock with an empty blacklist and migrate on save. Vault writes serialize and decrypt the latest payload before merging edits. A saved vault must be unlocked before searches; the legacy forget-credentials action refuses deletion while locked or while blacklist entries remain. Confirmed reset deletes the vault, blacklist, and all private session state, then restores the non-sensitive alert preference mirrors.
 
 The worker validates extension sender identity/URL. UI requests receive {ok: true, value} or {ok: false, error}; returning true from the listener keeps its asynchronous response channel open. Reader replies additionally bind their job ID to the temporary reader tab. The offscreen player has its own target and playback reply contract.
 
@@ -126,3 +126,7 @@ Validation commands: `npm test` includes blacklist normalization, encrypted-vaul
 
 
 The login popup reset uses clear-saved-user-info with confirmed: true. It cancels pending work, drains tracking writes, serializes vault deletion, clears storage.session (including the encryption key/history/reports), and closes panels. New commands wait for reset to complete before creating a new run. Reset intentionally allows deleting a locked vault and its blacklist without the old passphrase; the confirmation warns that those numbers will no longer be blocked.
+
+Alert preferences are whitelisted and serialized by `alert-settings.js`. Initial migration uses active session selections when no saved value exists; saved choices win on subsequent starts. Defaults apply only to unset preferences. Local storage contains popup/speech/clip/repeat flags and voice source/gender/name, never credentials, report data, or query history. The worker restores session mirrors at startup without replaying alerts.
+
+Residence classification uses the opening report title before rejecting repeated Driver License No headers. Barcode party boundaries include Mailing Address as a label so a mailing address cannot become part of the selected owner's street/city/ZIP. The synthetic footer fixture covers actual DMV footer class roles, panel borders, emblem-only filtering, and unchanged print/photo colors.

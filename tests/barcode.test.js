@@ -231,3 +231,11 @@ test('a missing numbered-party heading offers blanks without treating unbound na
   for(const key of ['RBD','RBE','RBI','RBK','RBL','RBM'])assert.equal(f[key],'');
   assert.equal(f.RAM,'TEST123  ');assert.match(result.warnings.join(' '),/fields are blank/);
 });
+
+test('a separate mailing address cannot contaminate the first owner address on a personalized tag',()=>{
+  const report=vehicleReport.replace('123 EXAMPLE ROAD, COLUMBIA SC 292010123', '123 EXAMPLE DR ROCK HILL SC, 297321234 Mailing Address: PO BOX 456 COLUMBIA SC, 292010123')
+    .replace('Plate Class: ABC PRIVATE PASSENGER','Plate Class: PR PERSONALIZED PLATE');
+  const f=registrationFields(vehicleBarcode(report).payload);
+  assert.equal(f.RBI,'123 EXAMPLE DR');assert.equal(f.RBK,'ROCK HILL');assert.equal(f.RBM,'297321234');assert.equal(f.RAM,'TEST123  ');
+  assert.equal(f.RBD,'EXAMPLE-SAMPLE');assert.equal(f.RBE,'JANE MARIE');assert.ok(!Object.values(f).some(v=>v.includes('PO BOX 456')));
+});

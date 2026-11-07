@@ -73,7 +73,7 @@ The extension uses desktop Chromium Manifest V3 APIs and targets Chromium 120 or
 
 ## Session status alerts (1.1.0)
 
-Enable **Plate & license status alerts** in the popup to analyze new plate and driver-record query results. The switch starts off each browser session and is stored only in session memory, not local or sync storage. Turning it off dismisses any current status alert. Residence-list and SCUTTIES results do not receive driver-record alerts.
+Enable **Plate & license status alerts** in the popup to analyze new plate and driver-record query results. The switch starts off until enabled. Popup and voice preferences are saved locally between browser sessions; upgrading preserves the currently selected session preferences. Turning it off dismisses any current status alert. Residence-list and SCUTTIES results do not receive driver-record alerts.
 
 - Plates: T45V TEMPORARY PLATE-VEHICLE uses Plate Exp Date; other plate classes use Decal Exp Date. Expired means earlier than today. Suspensions use Enforcement Description and Enforcement Statute. An expired and suspended plate produces a single combined popup. Expiration age is shown in calendar years/months/days with total days where useful.
 - Suspended drivers: a suspension begins on or before today and has an indefinite end/requirements value or an end date strictly after today. Active reasons are grouped without their three-digit codes and sorted by descending count. The popup includes the active total and the number of Driving Under Suspension VIOL entries dated within the inclusive five-calendar-year window, excluding future dates. Those entries are labeled as prior DUS convictions according to the supplied rule; no other disposition field is evaluated.
@@ -157,7 +157,7 @@ This extension is licensed on a perpetual basis. All rights to SC DMV Hotkeys be
 
 ## Audio status alerts (1.1.6)
 
-Popup, spoken status, and suspended-clip alerts have independent session-only switches. All start off each browser session. Speech says only the status once by default. Enable Repeat spoken status in Settings to say it twice with a one-second pause after the first announcement ends. Combined suspended/expired tags announce both statuses. Suspension reasons, counts, identifiers, and personal information are never spoken.
+Popup, spoken status, and suspended-clip alerts have independent switches saved between browser sessions. All are off until enabled. Voice source, gender, selected voice, and repeat preferences are also saved. Restarting the browser restores these choices without replaying previous alerts. Speech says only the status once by default. Enable Repeat spoken status in Settings to say it twice with a one-second pause after the first announcement ends. Combined suspended/expired tags announce both statuses. Suspension reasons, counts, identifiers, and personal information are never spoken.
 
 Choose Female or Male for automatic selection of a recognized installed local voice (for example, Microsoft Zira or David). Chromium ignores its deprecated gender parameter, so selection uses the installed voice name. The Installed voice dropdown lets the user select another local voice explicitly. If no matching voice is installed, the status area explains how to select one; the independently enabled suspension clip still plays. Remote voices are excluded.
 
@@ -219,13 +219,13 @@ Alt+M is the preferred shortcut for Previous Customer Number. It looks up the pr
 
 Stop current function is directly below the popup status box on every tab. It immediately cancels the active extension workflow, pending panels, PDF extraction and audio; queued customer numbers and search history remain. A new command can start immediately. A request already submitted to the DMV server cannot be recalled, but stopped work cannot perform later extension actions or report stale errors.
 
-Recent searches remains the default tab. Settings now contains plate/license popup alerts, voice selection and spoken alerts, the suspended audio clip, and shortcut setup instructions and links. About retains the current keyboard assignments, command descriptions and licensing information. Spoken alerts play once by default; Repeat spoken status enables a second announcement after one second. This repeat preference is session-only and off by default. The special suspended clip still replaces speech for suspended results and plays exactly three times.
+Recent searches remains the default tab. Settings now contains plate/license popup alerts, voice selection and spoken alerts, the suspended audio clip, and shortcut setup instructions and links. About retains the current keyboard assignments, command descriptions and licensing information. Spoken alerts play once by default; Repeat spoken status enables a second announcement after one second. This repeat preference is saved between sessions and off until enabled. The special suspended clip still replaces speech for suspended results and plays exactly three times.
 
 Assign Alt+M to Previous Customer Number in the browser shortcut settings and set its Scope to Global.
 
 ## Bundled voice announcements (1.4.0)
 
-Settings > Voice status alerts now offers one Announcement source selector: **Bundled voice recordings** is the first/default choice, and **Microsoft text to speech** is the alternative. Only one source is selected at a time. The supplied archive contributes 18 MP3 files (nine statuses for each gender); WAV files are not extracted or included. Alerts remain off by default each session.
+Settings > Voice status alerts now offers one Announcement source selector: **Bundled voice recordings** is the first/default choice, and **Microsoft text to speech** is the alternative. Only one source is selected at a time. The supplied archive contributes 18 MP3 files (nine statuses for each gender); WAV files are not extracted or included. Alerts remain off until enabled; selected preferences persist between browser sessions.
 
 Choose Female or Male for the recordings. Matching recordings play once, or twice with a one-second pause when Repeat voice announcement is enabled. The combined expired-and-suspended tag status uses its single combined recording. No additional suspension reasons, customer values or other personal details are spoken.
 
@@ -296,3 +296,12 @@ Collect (Alt+J) and Next with an empty queue recognize Registrant/Lessee Number 
 
 
 Business-owner import remains unverified in Coplogic. The existing encoder selects BBC for a name without a comma and RBD/RBE for a comma-separated family/given name; that heuristic can misclassify businesses with commas and people without them. Owner/customer/registrant number categories do not establish entity type. A Coplogic barcode-field specification or a known-working business-owner barcode is needed to confirm its mapping before changing this behavior. Explicit operator selection would avoid automatic type guesses.
+
+## Version 1.8.2 fixes
+
+- Alt+J recognizes the Customers at Same Residence report title even when later pages repeat a Driver License No header. All unique customer numbers stay in the queue, and collection on a residence report starts with the second customer.
+- Popup and voice alert settings persist locally across sessions. Only these preferences are saved; query history and unlocked credentials keep their existing session lifetime.
+- Vehicle barcode parsing separates Mailing Address from the selected owner's address, including personalized plates. It does not combine addresses or substitute a later owner.
+- Native DMV dark mode restores the dark footer area, white footer emblem, blue copyright band, and blue transaction-panel headers and borders. Report photos retain their original colors.
+
+Optional local PDF checks use real PDF.js extraction without logging identifiers: `CHROME_PATH=/usr/bin/chromium node tests/browser.mjs --residence-pdf /path/to/residence.pdf --barcode-pdf /path/to/vehicle.pdf`. Do not commit real reports or extracted personal information.

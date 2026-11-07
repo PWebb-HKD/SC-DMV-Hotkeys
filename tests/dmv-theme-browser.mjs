@@ -62,6 +62,24 @@ try {
   await page.emulateMedia({media:'screen'});await worldEval(page,"window.themeEnabled=false;window.themeListeners.forEach(fn=>fn({type:'dmv-theme-changed'}));");await page.waitForFunction(()=>!document.documentElement.hasAttribute('data-scdmv-dark'));
   assert.equal(await color(page,'#dmvHomeLink','filter'),'none');assert.equal(await color(page,'#dmvHomeLink','backgroundImage'),logoImage);await page.close();
  });
+ await test('DMV footer and transaction panels retain their distinct colors and emblem without filtering report photos',async()=>{
+  const page=await pageAt('https://www.scdmvonline.com/SCTRNS/Member/logon.aspx?member-header-fixture=1');
+  const emblem=await color(page,'.footer-Logo','backgroundImage');await activate(page);
+  assert.equal(await color(page,'.footer-Area','backgroundColor'),'rgb(34, 37, 38)');
+  assert.equal(await color(page,'.footer-copyright','backgroundColor'),'rgb(16, 62, 112)');
+  assert.equal(await color(page,'#copyright','color'),'rgb(232, 230, 227)');
+  assert.equal(await color(page,'.footer-text-head','color'),'rgb(105, 166, 213)');
+  assert.equal(await color(page,'.footer-address','color'),'rgb(105, 166, 213)');
+  assert.equal(await color(page,'.footer-Area a','color'),'rgb(105, 166, 213)');
+  assert.equal(await color(page,'.footer-Logo','filter'),'brightness(0) invert(1)');
+  assert.equal(await color(page,'.footer-Logo','backgroundImage'),emblem);
+  assert.equal(await color(page,'.panel-primary','borderTopColor'),'rgb(36, 106, 166)');
+  assert.equal(await color(page,'.panel-primary>.panel-heading','backgroundColor'),'rgb(16, 62, 112)');
+  assert.equal(await color(page,'#driverPhoto','filter'),'none');
+  await page.setViewportSize({width:1900,height:1300});await mkdir(join(root,'test-results'),{recursive:true});await page.screenshot({path:join(root,'test-results/dmv-footer-native.png'),fullPage:true});
+  await page.emulateMedia({media:'print'});assert.equal(await color(page,'.footer-Logo','filter'),'none');
+  assert.equal(await color(page,'.footer-copyright','backgroundColor'),'rgb(20, 78, 139)');await page.close();
+ });
  await test('an active Dark Reader engine yields to the native lock and cannot invert images or replace the theme when enabled again',async()=>{
   const page=await pageAt();await page.addScriptTag({path:darkReaderPath});await page.evaluate(()=>DarkReader.enable({brightness:100,contrast:100,sepia:0}));
   await page.waitForFunction(()=>document.documentElement.dataset.darkreaderMode==='dynamic');

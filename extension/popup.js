@@ -200,6 +200,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'session' && changes.speechEnabled) $('speechToggle').checked = changes.speechEnabled.newValue === true;
   if (area === 'session' && changes.repeatSpeech) $('repeatSpeechToggle').checked = changes.repeatSpeech.newValue === true;
   if (area === 'session' && changes.suspendedClipEnabled) $('clipToggle').checked = changes.suspendedClipEnabled.newValue === true;
+  if (area === 'session' && (changes.voiceGender || changes.voiceName)) refresh().catch(error => feedback(error.message));
   if (area === 'session' && changes.voiceSource) { $('voiceSource').value = changes.voiceSource.newValue || 'recordings'; voiceSourceUI(); }
 });
 refresh().catch(error => feedback(error.message));

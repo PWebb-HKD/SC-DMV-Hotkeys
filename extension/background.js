@@ -4,12 +4,13 @@
  * credentials requests, and message authorization; DOM work belongs to page.js.
  * See DEVELOPMENT.md for the lifecycle and storage/message contracts.
  */
-import {COMMANDS, ROOT, PDF_URL, attachmentUrl, isPdf, isPortal, normalize, ownerNumbers, driverLicense, driverIdentity, historySearch} from './core.js';
+import {COMMANDS, ROOT, PDF_URL, attachmentUrl, isPdf, isPortal, normalize, ownerNumbers, isResidenceReport, driverLicense, driverIdentity, historySearch} from './core.js';
 import {search, scutties, evaluate, focusTab, PortalSearchError} from './automation.js';
 import {saveCredentials, unlockCredentials, blacklistState, addBlacklistEntry, removeBlacklistEntry, forgetCredentials, replaceCredentials, clearSavedUserInfo} from './vault.js';
 import {checkBlacklist, driverIdentifiers, validateBlacklist, BlacklistedSearchError} from './blacklist.js';
 import {SearchRun, guardedApi, isCancelled} from './run.js';
 import {recordStatus, unavailableAlert} from './status-alerts.js';
+import {initializeAlertPreferences, saveAlertPreferences, restoreAlertPreferences} from './alert-settings.js';
 import {AudioAlerts, availableVoices} from './audio-alerts.js';
 import {configureDmvTheme, initDmvTheme, refreshDmvThemeTabs, isDmvThemePage} from './dmv-theme-settings.js';
 import {darkResultSource, setPdfRouting, isNativePrintUrl} from './pdf-routing.js';
@@ -30,6 +31,7 @@ const boot = Promise.all([
   // Retire the removed shortcut-pause preference on update or worker startup.
   chrome.storage.session.remove('shortcutsPaused'),
   chrome.storage.local.get('pdfDarkMode').then(({pdfDarkMode}) => setPdfRouting(pdfDarkMode === true)),
+  initializeAlertPreferences(),
   configureDmvTheme().catch(error=>chrome.storage.session.set({status:`DMV website dark mode unavailable: ${error.message}`}))
 ]);
 /** Replace the active command and cancel its readers, audio, and panels. Callers await
@@ -368,7 +370,7 @@ async function collectQueue(source, run, skipResidenceFirst = false) {
   const text = await pdfText(origin, run), values = ownerNumbers(text);
   // Collect retains the source customer but starts with the next residence entry.
   // An empty Next queue and other report types retain their first-entry behavior.
-  const residence = /^\s*Customers\s+at\s+Same\s+Residence\b/i.test(text);
+  const residence = isResidenceReport(text);
   const index = skipResidenceFirst && residence && values.length > 1 ? 1 : 0;
   const queue = {values, index, sourceTabId: origin.id};
   await guardedApi(chrome, run).storage.session.set({queue});
@@ -528,8 +530,8 @@ chrome.tabs.onRemoved.addListener(async id => {
     await chrome.storage.session.remove(`pdf:${id}`);
   });
 });
-// Alert consent is session-scoped; do not turn it on automatically after restart.
-chrome.runtime.onStartup.addListener(() => { audioAlerts.stop(); chrome.storage.session.set({alertsEnabled: false, speechEnabled: false, repeatSpeech: false, suspendedClipEnabled: false}); });
+// Restore saved preferences without replaying any previous alert or query.
+chrome.runtime.onStartup.addListener(async () => { audioAlerts.stop(); await boot; await restoreAlertPreferences(); });
 /** Reuse the guide window when possible; installation is the only automatic trigger. */
 async function openShortcutSetup() {
   const url = chrome.runtime.getURL('shortcut-setup.html');
@@ -632,7 +634,7 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
       case 'pdf-display-settings': await setPdfRouting(message.enabled === true); await chrome.storage.local.set({pdfDarkMode: message.enabled === true}); return message.enabled === true;
       case 'clear-saved-user-info': {
         if (message.confirmed !== true) throw new Error('Confirm deletion of saved user information and the vault.');
-        const reset = (async () => { const run = beginRun(); await run.cleanup; await tracking; const {pdfViewSources = {}} = await chrome.storage.session.get('pdfViewSources'); for (const id of Object.keys(pdfViewSources)) await chrome.tabs.remove(+id).catch(() => {}); await tracking; await clearSavedUserInfo(true); })();
+        const reset = (async () => { const run = beginRun(); await run.cleanup; await tracking; const {pdfViewSources = {}} = await chrome.storage.session.get('pdfViewSources'); for (const id of Object.keys(pdfViewSources)) await chrome.tabs.remove(+id).catch(() => {}); await tracking; await clearSavedUserInfo(true); await restoreAlertPreferences(); })();
         resettingUserInfo = reset;
         try { await reset; return true; } finally { if (resettingUserInfo === reset) resettingUserInfo = null; }
       }
@@ -660,11 +662,11 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
         if ('voiceGender' in message) { if (!['male', 'female'].includes(message.voiceGender)) throw new Error('Choose male or female.'); settings.voiceGender = message.voiceGender; }
         if ('voiceName' in message) settings.voiceName = String(message.voiceName || '');
         audioAlerts.stop();
-        await chrome.storage.session.set(settings); return true;
+        await saveAlertPreferences(settings); return true;
       }
       case 'alerts': {
         const enabled = message.enabled === true;
-        await chrome.storage.session.set({alertsEnabled: enabled});
+        await saveAlertPreferences({alertsEnabled: enabled});
         if (!enabled) for (const [id, entry] of panels) {
           if (entry.data.type !== 'record-alert' || entry.data.blacklist) continue;
           entry.cancelled = true; panels.delete(id); clearTimeout(entry.timer);

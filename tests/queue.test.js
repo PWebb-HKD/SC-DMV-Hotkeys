@@ -189,8 +189,8 @@ test('login asks for extension credentials even when a portal form already exist
   assert.equal(submissions[before],'43000001');
   assert.deepEqual(session.credentials,{user:'extension-user',password:'extension-password'});
 });
-test('record alerts are off by default and their toggle is stored only in session memory',async()=>{
-  assert.equal((await send({type:'state'})).alertsEnabled,undefined);
+test('record alerts are off by default and their toggle is saved persistently',async()=>{
+  assert.equal((await send({type:'state'})).alertsEnabled,false);
   reportText='Plate Class: ABC Decal Exp Date: 01/01/2000 Enforcement Description: Insurance suspension Enforcement Statute: 56-1-460';
   const before=submissions.length;await input('ALRT100','plate');await wait(()=>submissions.length>before&&session.history[0].value==='ALRT100');
   await new Promise(resolve=>setTimeout(resolve,30));assert.equal(panel('record-alert'),undefined);
@@ -215,10 +215,10 @@ test('disabling alerts or replacing a query suppresses a pending PDF analysis',a
   await input('44000003');await wait(()=>session.history[0].value==='44000003');
   assert.equal(panel('record-alert'),undefined);
 });
-test('browser startup resets the session alert preference',async()=>{
+test('browser startup restores the saved alert preference',async()=>{
   await send({type:'alerts',enabled:true});
-  for(const listener of runtime.onStartup.listeners)await listener();
-  assert.equal(session.alertsEnabled,false);
+  delete session.alertsEnabled;for(const listener of runtime.onStartup.listeners)await listener();
+  assert.equal(session.alertsEnabled,true);assert.equal(local.alertPreferences.alertsEnabled,true);await send({type:'alerts',enabled:false});
 });
 test('turning alerts off during popup creation closes the late window as well',async()=>{
   await send({type:'alerts',enabled:true});pauseAlertWindow=true;
@@ -249,7 +249,7 @@ test('installation opens setup once; updates retire companion state and preserve
   await send({type:'shortcut-setup'});assert.equal(windows.length,before+2);
 });
 
-test('speech runs with visual alerts off and startup resets session audio options',async()=>{
+test('speech runs with visual alerts off and startup restores saved audio options',async()=>{
   const spoken=[];
   chrome.tts={stop(){},getVoices:cb=>cb([{voiceName:'Microsoft David Desktop',lang:'en-US'}]),speak(text,options,callback){spoken.push(text);callback();queueMicrotask(()=>options.onEvent({type:'end'}));}};
   await send({type:'audio-settings',speechEnabled:true,voiceSource:'microsoft',repeatSpeech:true,voiceGender:'male'});
@@ -259,8 +259,9 @@ test('speech runs with visual alerts off and startup resets session audio option
   assert.deepEqual(spoken,['Valid tag','Valid tag']);assert.equal(panel('record-alert'),undefined);
   await send({type:'audio-settings',suspendedClipEnabled:true});
   for(const listener of runtime.onStartup.listeners)await listener();
-  assert.equal(session.speechEnabled,false);assert.equal(session.suspendedClipEnabled,false);
-  assert.equal(session.repeatSpeech,false);
+  assert.equal(session.speechEnabled,true);assert.equal(session.suspendedClipEnabled,true);
+  assert.equal(session.repeatSpeech,true);assert.equal(session.voiceGender,'male');assert.equal(local.alertPreferences.voiceSource,'microsoft');
+  await send({type:'audio-settings',speechEnabled:false,suspendedClipEnabled:false,repeatSpeech:false});
 });
 
 test('background passes the selected exclusive voice source and gender to recorded and Microsoft announcements',async()=>{
@@ -481,7 +482,7 @@ test('confirmed login-popup reset deletes saved user info and cancels the pendin
   await input('70000008');await wait(()=>panel('credentials'));const before=navigations.length;
   await assert.rejects(send({type:'clear-saved-user-info',confirmed:false}),/Confirm deletion/);assert.ok(local.vault);
   const win=panel('credentials');await send({type:'clear-saved-user-info',confirmed:true});
-  assert.equal(local.vault,undefined);assert.deepEqual(session,{});assert.ok(removedWindows.includes(win.id));
+  assert.equal(local.vault,undefined);assert.deepEqual(session,local.alertPreferences);assert.ok(removedWindows.includes(win.id));
   assert.equal(navigations.length,before);
 });
 
@@ -664,4 +665,13 @@ test('DMV dark mode is default-on, injects USER CSS in its requesting document, 
   assert.equal(await send({type:'dmv-display-settings',enabled:false}),false);assert.equal(local.dmvDarkMode,false);assert.equal(registeredThemes.length,0);
   assert.deepEqual(await webSend({type:'dmv-theme-init'}),{enabled:false});assert.equal(themeCss.at(-1).enabled,false);
   assert.equal(await send({type:'dmv-display-settings',enabled:true}),true);assert.equal(local.dmvDarkMode,true);assert.equal(registeredThemes.length,1);
+});
+
+
+test('Collect on a residence PDF with a repeated driver header retains every customer and runs the second',async()=>{
+  await send({type:'stop'});await send({type:'audio-settings',speechEnabled:false,suspendedClipEnabled:false});await send({type:'alerts',enabled:false});
+  session.lastQuery=Date.now();session['pdf:2']={text:'Customers at Same Residence\nCustomer Number: 111 FIRST, FICTIONAL\nCustomer Number: 222 SECOND, FICTIONAL\nPage 1 of 2\fCustomers at Same Residence\nCustomer No: 111 Driver License No: 123456789\nCustomer Number: 333 THIRD, FICTIONAL'};
+  for(const tab of tabs.values())tab.active=tab.id===2;
+  await send({type:'run',command:'owners'});await wait(()=>session.queue?.values?.join(',')==='111,222,333'&&session.queue.index===2);
+  assert.equal(submissions.at(-1),'222');await send({type:'run',command:'next'});await wait(()=>session.queue.index===3);assert.equal(submissions.at(-1),'333');
 });

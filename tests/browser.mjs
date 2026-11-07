@@ -6,7 +6,8 @@ import {join, extname} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {dependency} from './runtime.mjs';
 import {search, scutties} from '../extension/automation.js';
-import {ROOT, MEMBER, LOGIN, DISCLAIMER, PDF_URL, ownerNumbers} from '../extension/core.js';
+import {ROOT, MEMBER, LOGIN, DISCLAIMER, PDF_URL, ownerNumbers, isResidenceReport} from '../extension/core.js';
+import {reportBarcode} from '../extension/barcode-data.js';
 import {plateStatus, licenseStatus} from '../extension/status-alerts.js';
 import {RECORDING_PATHS} from '../extension/voice-recordings.js';
 const {chromium} = dependency('playwright');
@@ -879,6 +880,31 @@ try {
       assert.ok(result.text.includes(text.split('\n')[0]));
       await page.close();
     }
+  });
+  const residenceIndex=process.argv.indexOf('--residence-pdf');
+  if(residenceIndex>=0)await tests('supplied residence PDF is recognized and its customer numbers are collected',async()=>{
+    const base64=(await readFile(process.argv[residenceIndex+1])).toString('base64'),page=await ui.newPage();
+    await page.addInitScript(base64=>{chrome.runtime.sendMessage=async message=>{
+      if(message.type==='reader-start')return {ok:true,value:{base64}};
+      if(message.type==='reader-result'){window.pdfResult=message;return {ok:true,value:true};}
+      return {ok:true};
+    };},base64);
+    await page.goto(base+'/reader.html?id=residence-regression');await page.waitForFunction(()=>window.pdfResult,{timeout:20000});
+    const result=await page.evaluate(()=>window.pdfResult);assert.equal(result.error,undefined,result.error);assert.equal(isResidenceReport(result.text),true);
+    const numbers=ownerNumbers(result.text);assert.ok(numbers.length>0);console.log(`Residence PDF check: ${numbers.length} unique customer numbers; identifiers are not logged.`);await page.close();
+  });
+  const barcodeIndex=process.argv.indexOf('--barcode-pdf');
+  if(barcodeIndex>=0)await tests('supplied barcode PDF extracts and generates a vehicle payload',async()=>{
+    const base64=(await readFile(process.argv[barcodeIndex+1])).toString('base64'),page=await ui.newPage();
+    await page.addInitScript(base64=>{chrome.runtime.sendMessage=async message=>{
+      if(message.type==='reader-start')return {ok:true,value:{base64}};
+      if(message.type==='reader-result'){window.pdfResult=message;return {ok:true,value:true};}
+      return {ok:true};
+    };},base64);
+    await page.goto(base+'/reader.html?id=barcode-regression');await page.waitForFunction(()=>window.pdfResult,{timeout:20000});
+    const result=await page.evaluate(()=>window.pdfResult);assert.equal(result.error,undefined,result.error);
+    const barcode=reportBarcode(result.text);assert.equal(barcode.kind,'vehicle');assert.ok(barcode.payload.startsWith('@\n'));
+    console.log('Supplied barcode PDF generated successfully; identifiers are not logged.');await page.close();
   });
   const sampleIndex=process.argv.indexOf('--sample-pdf');
   if(sampleIndex>=0)await tests('supplied local PDF: browser worker extracts all 12 unique customer numbers',async()=>{

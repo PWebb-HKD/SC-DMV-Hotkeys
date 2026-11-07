@@ -164,7 +164,7 @@ export function vehicleBarcode(raw, {partyIndex = 0, allowIncompleteParty = fals
   if (start < 0) throw new Error('A vehicle record heading was not found.');
   const body = text.slice(start).split(/\b(?:Enforcement\s+Description\s*:|Document\s+obtained\s+from\s+DMV\s+web\s+site\s*:)/i)[0];
   const partyLabels = ['Owner', 'Customer', 'Registrant/Lessee'].flatMap(type => ['Number', 'Name', 'Address'].map(field => `${type} ${field}`));
-  const labels = ['VIN', 'Year', 'Make', 'Model', 'Body', 'Empty Weight', 'Title Number', 'Status', 'Issue Date', 'Dup', ...partyLabels, 'Last Transaction', 'Plate Number', 'Plate Class', 'Vehicle Type', 'Date of Issue', 'Plate Exp Date', 'Decal Exp Date', 'Decal Number', 'Window Sticker Number', 'GVW', 'Equip Number', 'Annual Fee', 'County', 'Municipality', 'School District', 'Vehicle Housed Address', 'Insurance'];
+  const labels = ['VIN', 'Year', 'Make', 'Model', 'Body', 'Empty Weight', 'Title Number', 'Status', 'Issue Date', 'Dup', ...partyLabels, 'Mailing Address', 'Last Transaction', 'Plate Number', 'Plate Class', 'Vehicle Type', 'Date of Issue', 'Plate Exp Date', 'Decal Exp Date', 'Decal Number', 'Window Sticker Number', 'GVW', 'Equip Number', 'Annual Fee', 'County', 'Municipality', 'School District', 'Vehicle Housed Address', 'Insurance'];
   const v = labeled(body, labels);
   // Bind identity to the first listed party, rather than independently choosing
   // the first nonempty name/address found anywhere in the vehicle record.
