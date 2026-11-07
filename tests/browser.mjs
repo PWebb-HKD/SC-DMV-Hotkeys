@@ -314,7 +314,7 @@ try {
     window.audioSettings={};
     window.commandShortcuts=[{name:'plate',shortcut:'Ctrl+Shift+7'},{name:'next',shortcut:'Alt+N'},{name:'_execute_action',shortcut:'Alt+Period'}];
     window.chrome = {
-      runtime:{getURL:path=>`${location.origin}/${path}`,connect:()=>({postMessage:()=>{}}),sendMessage:async message=>{
+      runtime:{onMessage:{addListener:()=>{}},getURL:path=>`${location.origin}/${path}`,connect:()=>({postMessage:()=>{}}),sendMessage:async message=>{
         window.requests.push(message);
         if(message.type==='state')return {ok:true,value:{pdfDarkMode:window.pdfDarkMode,blacklist:window.blacklistData,history:[...window.historyErrors,{kind:'plate',value:'ABC12345',at:Date.now()},{kind:'license',value:'123456789',at:Date.now()}],queue:{values:['123','456'],index:1},commands:window.commandShortcuts,alertsEnabled:window.sessionAlerts,...window.audioSettings,voices:[{voiceName:'Microsoft David Desktop',lang:'en-US'},{voiceName:'Microsoft Zira Desktop',lang:'en-US'}]}};
         if(message.type==='blacklist-unlock'){
@@ -722,17 +722,36 @@ try {
     const pdf=doc.addPage([400,400]);pdf.drawText('SYNTHETIC DRIVER RECORD',{x:20,y:350,font,size:16});pdf.drawImage(photo,{x:100,y:150,width:120,height:120});
     doc.addPage([400,400]).drawText('SECOND PAGE',{x:20,y:350,font,size:16});
     const base64=Buffer.from(await doc.save()).toString('base64');
-    await page.addInitScript(base64=>{const original=chrome.runtime.sendMessage;chrome.runtime.sendMessage=async message=>{if(message.type==='reader-start')return {ok:true,value:{base64}};if(message.type==='reader-result'){window.pdfResult=message;return {ok:true,value:true};}return original(message);};},base64);
-    await page.goto(base+'/reader.html?id=photo-fixture&dark=1');await page.waitForFunction(()=>window.pdfResult?.viewReady===true);
-    const pixels=()=>page.locator('.pdf-page').evaluate(canvas=>{const ctx=canvas.getContext('2d');return {photo:[...ctx.getImageData(150,195,180,180).data],paper:[...ctx.getImageData(5,5,1,1).data],bright:[...ctx.getImageData(20,45,500,40).data].filter((v,i)=>i%4!==3&&v>200).length};});
+    await page.addInitScript(base64=>{const original=chrome.runtime.sendMessage;chrome.runtime.sendMessage=async message=>{if(message.type==='reader-start'||message.type==='reader-direct-start')return {ok:true,value:{base64,id:'synthetic-direct'}};if(message.type==='reader-result'){window.pdfResult=message;return {ok:true,value:true};}return original(message);};},base64);
+    await page.goto(base+'/reader.html?dark=1&pdf=1#https://www.scdmvonline.com/SCTRNS/Member/Transactions/ViewAttachment.aspx');await page.waitForFunction(()=>window.pdfResult?.viewReady===true);
+    const pixels=()=>page.locator('.pdf-sheet:first-child .pdf-page').evaluate(canvas=>{const ctx=canvas.getContext('2d');return {photo:[...ctx.getImageData(150,195,180,180).data],paper:[...ctx.getImageData(5,5,1,1).data],bright:[...ctx.getImageData(20,45,500,40).data].filter((v,i)=>i%4!==3&&v>200).length};});
+    assert.equal(new URL(page.url()).searchParams.get('id'),'synthetic-direct');
     const dark=await pixels();assert.deepEqual(dark.paper,[24,26,27,255]);assert.ok(dark.bright>100);
-    assert.equal(await page.locator('.pdf-page').evaluate(el=>getComputedStyle(el).filter),'none');
+    assert.equal(await page.locator('.pdf-sheet:first-child .pdf-page').evaluate(el=>getComputedStyle(el).filter),'none');
     await page.screenshot({path:join(screenshots,'pdf-dark-photo.png'),fullPage:true});
-    await page.locator('#pdfColors').click();await page.locator('.pdf-page[data-ready=true]').waitFor();const light=await pixels();
+    await page.locator('#pdfColors').click();await page.locator('.pdf-sheet:first-child .pdf-page[data-ready=true]').waitFor();const light=await pixels();
     assert.deepEqual(light.paper,[255,255,255,255]);assert.deepEqual(dark.photo,light.photo);
-    assert.equal(await page.locator('.pdf-page').count(),1);await page.locator('#pdfNext').click();await page.waitForFunction(()=>document.querySelector('#pdfProgress').textContent==='Page 2 of 2');
-    assert.equal(await page.locator('.pdf-page').count(),1);await page.locator('#pdfPrev').click();await page.waitForFunction(()=>document.querySelector('#pdfProgress').textContent==='Page 1 of 2');
+    assert.equal(await page.locator('.pdf-sheet').count(),2);assert.equal(await page.locator('#pdfNext,#pdfPrev').count(),0);
+    await page.locator('.pdf-sheet:nth-child(2)').scrollIntoViewIfNeeded();await page.locator('.pdf-sheet:nth-child(2) .pdf-page[data-ready=true]').waitFor();
+    await page.locator('.pdf-sheet:first-child').scrollIntoViewIfNeeded();await page.locator('.pdf-sheet:first-child .pdf-page[data-ready=true]').waitFor();
     assert.match((await page.evaluate(()=>window.pdfResult.text)),/SYNTHETIC DRIVER RECORD.*SECOND PAGE/s);await page.close();
+  });
+  await tests('continuous PDF scrolling renders distant pages on demand and releases offscreen canvases',async()=>{
+    const doc=await PDFDocument.create(),font=await doc.embedFont(StandardFonts.Helvetica);
+    for(let n=1;n<=30;n++)doc.addPage([400,400]).drawText(`SYNTHETIC PAGE ${n}`,{x:20,y:350,font,size:16});
+    const base64=Buffer.from(await doc.save()).toString('base64'),page=await ui.newPage();
+    await page.addInitScript(base64=>{chrome.runtime.sendMessage=async message=>{
+      if(message.type==='reader-direct-start')return {ok:true,value:{base64,id:'long-report'}};
+      if(message.type==='reader-result'){window.pdfResult=message;return {ok:true,value:true};}
+      return {ok:false};
+    };},base64);
+    await page.goto(base+'/reader.html?dark=1&pdf=1#https://www.scdmvonline.com/SCTRNS/Member/Transactions/ViewAttachment.aspx');
+    await page.waitForFunction(()=>window.pdfResult?.viewReady===true);assert.equal(await page.locator('.pdf-sheet').count(),30);
+    assert.ok(await page.locator('.pdf-page').count()<=5);assert.equal(await page.locator('.pdf-sheet:last-child canvas').count(),0);
+    await page.locator('.pdf-sheet:last-child').scrollIntoViewIfNeeded();await page.locator('.pdf-sheet:last-child canvas[data-ready=true]').waitFor();
+    await page.waitForFunction(()=>!document.querySelector('.pdf-sheet:first-child canvas'));assert.ok(await page.locator('.pdf-page').count()<=5);
+    const paper=await page.locator('.pdf-sheet:last-child canvas').evaluate(c=>[...c.getContext('2d').getImageData(5,5,1,1).data]);assert.deepEqual(paper,[24,26,27,255]);
+    assert.match((await page.evaluate(()=>window.pdfResult.text)),/SYNTHETIC PAGE 30/);await page.close();
   });
   await tests('bundled PDF.js extracts owner and driver text in a real browser worker',async()=>{
     for (const text of ['Owner Number: 00001234\nCustomer Number: 87654321','Driver License No: 123456789 Name: DE LA CRUZ, JANE\nDOB: 01/02/2000']) {

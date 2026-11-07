@@ -1,29 +1,45 @@
 /**
- * Temporary extension tab that extracts PDF text with bundled PDF.js. It receives a
+ * Results viewer or temporary extraction tab that reads PDF text with bundled PDF.js. It receives a
  * single authorized job from the worker and returns text/errors by job ID. Reading
  * PDF bytes avoids depending on the browser viewer DOM; this is not an OCR engine.
  */
 import {openDarkViewer} from './pdf-dark-view.js';
 import {getDocument, GlobalWorkerOptions} from './vendor/pdf.mjs';
 GlobalWorkerOptions.workerSrc = chrome.runtime.getURL('vendor/pdf.worker.mjs');
-const id = new URL(location.href).searchParams.get('id');
+const params = new URL(location.href).searchParams;
+let id = params.get('id'), loadingTask;
+const controller = new AbortController(), cancelledIds = new Set();
+chrome.runtime.onMessage.addListener(message => {
+  if(message.target !== 'pdf-reader' || message.type !== 'reader-cancel')return;
+  if(!id)cancelledIds.add(message.id);
+  if(message.id===id){controller.abort();loadingTask?.destroy();}
+});
 // A live port with heartbeat messages keeps the pending worker job reachable.
 const port = chrome.runtime.connect({name: 'panel'});
 const heartbeat = setInterval(() => { try { port.postMessage({type: 'heartbeat'}); } catch {} }, 15000);
 try {
-  const response = await chrome.runtime.sendMessage({type: 'reader-start', id});
+  const direct = params.get('pdf') === '1';
+  if(direct && id)throw new Error('Run the DMV search again to reopen this report.');
+  const response = await chrome.runtime.sendMessage({type: direct ? 'reader-direct-start' : 'reader-start', id});
   if (!response?.ok) throw new Error(response?.error || 'PDF request expired.');
   let {base64, url} = response.value;
+  if(direct) {
+    id=response.value.id;
+    const locationUrl=new URL(location.href);locationUrl.searchParams.set('id',id);history.replaceState(null,'',locationUrl);
+    if(cancelledIds.has(id))controller.abort();
+  }
+  controller.signal.throwIfAborted();
   let data;
   if (base64) { data = Uint8Array.from(atob(base64), c => c.charCodeAt(0)); base64 = null; }
   else {
-    const result = await fetch(url, {credentials: 'include', cache: 'no-store', signal: AbortSignal.timeout(25000)});
+    const result = await fetch(url, {credentials: 'include', cache: 'no-store', signal: AbortSignal.any([controller.signal,AbortSignal.timeout(25000)])});
     if (!result.ok) throw new Error(`PDF download failed (${result.status}).`);
     data = new Uint8Array(await result.arrayBuffer());
     if (data.length > 24 * 1024 * 1024) throw new Error('PDF exceeds the 24 MB extraction limit.');
     if (!new TextDecoder().decode(data.slice(0, 1024)).includes('%PDF-')) throw new Error('The attachment is not a PDF. Sign in and run the search again.');
   }
-  const doc = await getDocument({data, isEvalSupported: false, disableFontFace: true, useSystemFonts: true, cMapUrl: chrome.runtime.getURL('vendor/cmaps/'), cMapPacked: true, standardFontDataUrl: chrome.runtime.getURL('vendor/standard_fonts/'), wasmUrl: chrome.runtime.getURL('vendor/wasm/')}).promise;
+  loadingTask = getDocument({data, isEvalSupported: false, disableFontFace: true, useSystemFonts: true, cMapUrl: chrome.runtime.getURL('vendor/cmaps/'), cMapPacked: true, standardFontDataUrl: chrome.runtime.getURL('vendor/standard_fonts/'), wasmUrl: chrome.runtime.getURL('vendor/wasm/')});
+  const doc = await loadingTask.promise;
   const lines = [];
   let viewReady = false, viewerError;
   try {
@@ -44,7 +60,7 @@ try {
       page.cleanup();
     }
     if (new URL(location.href).searchParams.get('dark') === '1') {
-      try { document.body.classList.add('pdf-viewer'); await openDarkViewer(doc); viewReady = true; }
+      try { document.body.classList.add('pdf-viewer'); await openDarkViewer(doc,controller.signal); viewReady = true; }
       catch (error) { viewerError = error.message; }
     }
   } finally { if (!viewReady) await doc.destroy(); }
@@ -52,5 +68,7 @@ try {
   if (text.length > 1000000) throw new Error('PDF text exceeds the extraction limit.');
   await chrome.runtime.sendMessage({type: 'reader-result', id, text, viewReady, viewerError});
 } catch (error) {
+  document.getElementById('reading').hidden=false;
+  document.getElementById('readingNote').textContent=error.name==='AbortError'?'Report loading stopped. Run the search again to reopen it.':error.message;
   await chrome.runtime.sendMessage({type: 'reader-result', id, error: error.name === 'PasswordException' ? 'This PDF requires a document password. Open an accessible report or enter the number manually.' : error.message});
 } finally { clearInterval(heartbeat); }

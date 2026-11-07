@@ -21,47 +21,80 @@ export function darkenPaper(context, coordinates) {
   }
   context.putImageData(image,0,0);
 }
-export async function openDarkViewer(doc) {
-  document.title = 'DMV PDF — dark view';
+/** Continuous scroll, rendering only nearby pages and never exposing a white render-in-progress. */
+export async function openDarkViewer(doc, signal) {
+  document.title = 'DMV PDF results';
   document.getElementById('reading').hidden = true;
-  const viewer = document.getElementById('pdfViewer'); viewer.hidden = false;
+  document.getElementById('pdfViewer').hidden = false;
   const pages = document.getElementById('pdfPages'), toggle = document.getElementById('pdfColors');
-  let dark = true, generation = 0, currentTask, pageNumber = 1;
-  const previous = document.getElementById('pdfPrev'), next = document.getElementById('pdfNext');
-  const render = async () => {
-    const token = ++generation; currentTask?.cancel();
-    pages.replaceChildren(); document.getElementById('pdfProgress').textContent = 'Rendering PDF…';
-    const page = await doc.getPage(pageNumber);
-    if (token !== generation) return;
-    const initial = page.getViewport({scale: 1});
-    // Render only the selected page and bound raster size, even for long reports.
-    const scale = Math.min(1.5, 1600/initial.width, 2400/initial.height), viewport = page.getViewport({scale});
-    const canvas = document.createElement('canvas'); canvas.className = 'pdf-page';
-    canvas.width = Math.ceil(viewport.width); canvas.height = Math.ceil(viewport.height);
-    canvas.setAttribute('aria-label', `PDF page ${pageNumber} of ${doc.numPages}`); pages.append(canvas);
-    const task = page.render({canvasContext: canvas.getContext('2d'), viewport, background: '#ffffff', recordImages: true});
-    currentTask = task;
-    try { await task.promise; } catch(error) { if (token !== generation) return; throw error; }
-    if (token !== generation) return;
-    let originalOnly = false;
-    if (dark) {
-      const ops = await page.getOperatorList();
-      originalOnly = ops.fnArray.some(op => unsafeImageOps.has(op));
-      const coordinates = page.imageCoordinates;
-      const hasImages = ops.fnArray.some(op => op === OPS.paintImageXObject || op === OPS.paintInlineImageXObject);
-      if (hasImages && !coordinates?.length) originalOnly = true;
-      if (!originalOnly) darkenPaper(canvas.getContext('2d'), coordinates || []);
-    }
-    if (token !== generation) return;
-    document.getElementById('pdfProgress').textContent = `Page ${pageNumber} of ${doc.numPages}${originalOnly ? ' — original colors retained to protect images' : ''}`;
-    previous.disabled = pageNumber <= 1; next.disabled = pageNumber >= doc.numPages;
-    canvas.dataset.ready = 'true'; page.cleanup();
+  const progress = document.getElementById('pdfProgress');
+  let dark = true, generation = 0, currentTask, pumping = false, stopped = false;
+  const first = await doc.getPage(1), initial = first.getViewport({scale:1}); first.cleanup();
+  const sheets = Array.from({length:doc.numPages}, (_,index) => {
+    const element = document.createElement('section'); element.className = 'pdf-sheet';
+    element.style.width = `${Math.min(1600,initial.width*1.5)}px`; element.style.aspectRatio = `${initial.width}/${initial.height}`;
+    element.setAttribute('aria-label', `PDF page ${index+1} of ${doc.numPages}`);
+    const label = document.createElement('span'); label.className = 'pdf-page-label'; label.textContent = `Page ${index+1}`;element.append(label);
+    pages.append(element);return {number:index+1,element,near:index===0,ready:false};
+  });
+  const status = () => {progress.textContent = `${doc.numPages} ${doc.numPages===1?'page':'pages'} · ${dark?'Dark':'Original'} colors`;};
+  const render = async (sheet, token) => {
+    const page = await doc.getPage(sheet.number);
+    if (stopped || token !== generation) return;
+    const initial = page.getViewport({scale:1}), scale = Math.min(1.5,1600/initial.width,2400/initial.height), viewport = page.getViewport({scale});
+    sheet.element.style.width = `${viewport.width}px`;sheet.element.style.aspectRatio = `${viewport.width}/${viewport.height}`;
+    // Keep the actual canvas detached until rendering and recoloring both finish.
+    const canvas = document.createElement('canvas');canvas.className = 'pdf-page';
+    canvas.width = Math.ceil(viewport.width);canvas.height = Math.ceil(viewport.height);
+    canvas.setAttribute('aria-label', `PDF page ${sheet.number} of ${doc.numPages}`);
+    currentTask = page.render({canvasContext:canvas.getContext('2d'),viewport,background:'#ffffff',recordImages:true});
+    try {
+      await currentTask.promise;
+      if(stopped || token !== generation || !sheet.near)return;
+      let originalOnly = false;
+      if(dark) {
+        const ops = await page.getOperatorList();
+        originalOnly = ops.fnArray.some(op=>unsafeImageOps.has(op));
+        const coordinates = page.imageCoordinates;
+        const hasImages = ops.fnArray.some(op=>op===OPS.paintImageXObject || op===OPS.paintInlineImageXObject);
+        if(hasImages && !coordinates?.length)originalOnly = true;
+        if(!originalOnly)darkenPaper(canvas.getContext('2d'),coordinates||[]);
+      }
+      if(stopped || token !== generation || !sheet.near)return;
+      canvas.dataset.ready = 'true';sheet.element.append(canvas);sheet.ready = true;
+      if(originalOnly)sheet.element.querySelector('.pdf-page-label').textContent = `Page ${sheet.number} — original colors retained to protect images`;
+    } catch(error) {
+      if(!stopped && token === generation) {sheet.ready=true;sheet.element.querySelector('.pdf-page-label').textContent=`Page ${sheet.number}: ${error.message}`;}
+    } finally {currentTask=null;page.cleanup();}
   };
-  const update = () => render().catch(error => { document.getElementById('pdfProgress').textContent = `Unable to render: ${error.message}`; });
-  toggle.onclick = () => { dark = !dark; toggle.textContent = dark ? 'Use original PDF colors' : 'Use dark PDF colors'; update(); };
-  previous.onclick = () => { if (pageNumber > 1) {pageNumber--;update();} };
-  next.onclick = () => { if (pageNumber < doc.numPages) {pageNumber++;update();} };
-  window.addEventListener('beforeunload', () => {generation++;currentTask?.cancel();doc.destroy();}, {once:true});
-  toggle.disabled = previous.disabled = next.disabled = true;
-  await render(); toggle.disabled = false;
+  const pump = async () => {
+    if(pumping || stopped)return;
+    pumping=true;
+    try {
+      let sheet;
+      while(!stopped && (sheet=sheets.find(item=>item.near&&!item.ready)))await render(sheet,generation);
+    } finally {pumping=false;}
+  };
+  let observer;
+  const stop = () => {stopped=true;generation++;observer?.disconnect();currentTask?.cancel();doc.destroy();};
+  signal?.addEventListener('abort',stop,{once:true});
+  window.addEventListener('beforeunload',stop,{once:true});
+  toggle.disabled=true;
+  await render(sheets[0],generation);
+  if(stopped)throw new DOMException('Report loading stopped.','AbortError');
+  status();toggle.disabled=false;
+  observer = new IntersectionObserver(entries => {
+    for(const entry of entries) {
+      const sheet = sheets.find(item=>item.element===entry.target);sheet.near=entry.isIntersecting;
+      if(!sheet.near) {sheet.element.querySelector('canvas')?.remove();sheet.ready=false;}
+    }
+    pump().catch(error=>{progress.textContent=`Unable to render: ${error.message}`;});
+  },{rootMargin:'800px 0px'});
+  sheets.forEach(sheet=>observer.observe(sheet.element));
+  toggle.onclick=()=>{
+    dark=!dark;generation++;currentTask?.cancel();
+    toggle.textContent=dark?'Use original PDF colors':'Use dark PDF colors';
+    sheets.forEach(sheet=>{sheet.element.querySelector('canvas')?.remove();sheet.ready=false;sheet.element.querySelector('.pdf-page-label').textContent=`Page ${sheet.number}`;});
+    status();pump().catch(error=>{progress.textContent=`Unable to render: ${error.message}`;});
+  };
 }

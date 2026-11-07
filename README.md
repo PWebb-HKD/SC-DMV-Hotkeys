@@ -12,13 +12,15 @@ A Manifest V3 extension for SCDMV member searches, PDF follow-ups, and SCUTTIES 
 
 No build, npm installation, or external script download is required to run the packaged extension. PDF.js 5.6.205 is bundled locally, including its license and supporting assets.
 
-## PDF results dark mode (1.7.0)
+## PDF results dark mode (1.7.1 test build)
 
-Enable **Settings → PDF results → Dark PDF results (keep photos unchanged)**, then run a new DMV search. The extension opens a separate dark viewer for the captured PDF. The original browser PDF tab stays available for printing, zooming, and normal PDF tools. This setting changes only PDF results; continue using Dark Reader for the portal pages.
+Enable **Settings → PDF results → Dark PDF results (keep photos unchanged)**, then run a new DMV search. The report opens dark in the same results tab DMV opens, with continuous scrolling through all pages. There is no second viewer tab and no Next/Previous page button. Nearby pages render as you scroll; distant page canvases are released to limit memory use.
 
-The viewer darkens neutral paper and text while protecting embedded image areas, including grayscale photographs. It does not invert the whole page. Scanned/image-only areas retain their original colors; pages with image operations whose boundaries cannot be safely protected retain original colors as well. Use **Use original PDF colors** to compare, and **Previous page / Next page** for longer reports. The setting is off by default and applies to newly captured reports.
+Chromium's native PDF viewer can be darkened with a whole-view filter, as Dark Reader does, but that also changes embedded photos. This feature routes the top-level DMV PDF request to the bundled renderer before the native viewer loads. The viewer starts with a dark loading background and does not display a canvas until recoloring finishes. Its address is an extension URL in the same tab. Portal pages keep their normal behavior, including Dark Reader styling.
 
-Barcode generation, customer collection, and SCUTTIES follow-ups work from the selected dark viewer using that report’s captured text. Each viewer retains its own snapshot even if the portal reuses the original PDF tab for another report. PDF bytes stay in the viewer’s memory; closing it releases the document and its cached text. Reloading a dark viewer requires running the search again.
+The renderer darkens neutral paper and text while protecting embedded image areas, including grayscale photographs. Scanned/image-only areas retain their original colors; pages with image operations whose boundaries cannot be safely protected retain original colors as well. **Use original PDF colors** changes the captured report without another request. The setting is off by default; turning it off restores native handling for future PDF openings.
+
+Barcode generation, customer collection, and SCUTTIES follow-ups use that tab's captured report text. Reusing a named results tab discards the old snapshot. PDF bytes stay in the viewer's memory; closing it releases the document and its cached text. Reloading the viewer requires running the search again, so it cannot silently fetch another person's report from the portal's shared attachment URL. Native PDF tools are available by disabling the setting and running the search again.
 
 ## Blacklist (1.6.0)
 
@@ -101,7 +103,7 @@ It uses native input value setters, then explicitly dispatches bubbling input/ch
 - Saved login: AES-256-GCM encryption, PBKDF2-SHA256 with a random salt and 310,000 iterations; unlocked credentials and blacklist entries stay in trusted session storage.
 - PDF text and queued identifiers: session storage, accessible only to trusted extension contexts. Closing a PDF tab removes its cached text. The browser's session-storage quota limits the total cached text; large reports can fail with an error.
 - Network traffic: the authenticated DMV attachment and normal site navigation. No analytics, telemetry, external AI service, or third-party backend.
-- Site access: SCDMV by default. Other HTTP(S) origins are optional and requested only when needed for SCUTTIES navigation. The `tabs` permission exposes tab URLs/pending URLs so PDF viewer wrappers and attachments in other windows can be identified; it does not grant access to arbitrary page contents.
+- Site access: SCDMV by default. Other HTTP(S) origins are optional and requested only when needed for SCUTTIES navigation. The `declarativeNetRequestWithHostAccess` permission redirects only top-level SCDMV attachment requests while PDF dark mode is enabled; attachment fetches and portal pages are unaffected. The `tabs` permission exposes tab URLs/pending URLs so PDF viewer wrappers and attachments in other windows can be identified; it does not grant access to arbitrary page contents.
 
 ## Validation
 

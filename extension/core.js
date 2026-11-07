@@ -27,6 +27,9 @@ export function attachmentUrl(url = '', depth = 0) {
     const u = new URL(url);
     if (u.origin === ROOT && u.pathname.toLowerCase() === new URL(PDF_URL).pathname.toLowerCase()) { u.hash = ''; return u.href; }
     if (['chrome-extension:', 'chrome:', 'edge:', 'chrome-untrusted:'].includes(u.protocol)) {
+      if (u.pathname === '/reader.html' && u.searchParams.get('pdf') === '1' && u.hash) {
+        const source = attachmentUrl(u.hash.slice(1), depth + 1); if (source) return source;
+      }
       for (const key of ['src', 'file', 'url', 'originalUrl', 'streamUrl']) {
         const inner = u.searchParams.get(key);
         if (inner) { const source = attachmentUrl(inner, depth + 1); if (source) return source; }

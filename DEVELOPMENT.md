@@ -22,7 +22,7 @@ This guide describes first-party source. Read it alongside the module/function c
 - **automation.js:** Portal transactions. Receives a context containing a SearchRun and worker callbacks. The table of transactions shares the same Page1 -> submit -> Page2 -> Download workflow.
 - **page.js:** A single serialized function injected into the website MAIN world. It cannot close over extension imports or variables. Its DOM setters and bubbling events notify website frameworks. Credential and PDF origin checks deliberately live inside this function as well as in the caller.
 - **popup/panel/barcode/shortcut-setup pages:** Extension-owned UI. Render report text with textContent, not HTML. Panels use unpredictable IDs to associate replies with worker jobs. Permission prompts request destination access from a user gesture.
-- **reader.js:** A temporary inactive extension tab using bundled PDF.js. This reads PDF bytes rather than attempting to inspect Chromium's internal PDF viewer. Text-only extraction cannot recover image-only scans.
+- **reader.js:** Bundled PDF.js in either a temporary inactive extraction tab or the same results tab redirected by pdf-routing.js when dark mode is enabled. The redirected document joins a capture bound to its tab ID and document ID; it replaces its URL with a job ID so reload cannot refetch a historical report. Nearby pages render on a continuous scrolling surface; image regions retain original pixels. This reads PDF bytes rather than attempting to inspect Chromium's internal PDF viewer. Text-only extraction cannot recover image-only scans.
 - **audio-player.js:** An offscreen document, because service workers have no Audio DOM. Only catalogued packaged recordings are accepted.
 
 ## A search from start to finish
@@ -43,7 +43,7 @@ The worker's panels/readers/captures Maps are live jobs, not durable job storage
 
 | Location | Keys / lifetime |
 | --- | --- |
-| local | vault (salt/IV/ciphertext) |
+| local | vault (salt/IV/ciphertext), pdfDarkMode |
 | session | history (last 20 attempts), credentials and blacklist (unlocked values), unlockedVault (ciphertext identity), portalId, lastQuery, queue, status |
 | session alert preferences | alertsEnabled, speechEnabled, suspendedClipEnabled, repeatSpeech; voiceSource/voiceGender/voiceName |
 | session report bookkeeping | tabCreated, pdfCreated, pdfSources, pdf:TAB_ID with text and capture timestamp |

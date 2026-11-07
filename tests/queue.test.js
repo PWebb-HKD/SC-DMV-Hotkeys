@@ -13,9 +13,10 @@ let reportText='Driver License No: 123456789 Name: TEST, PERSON\nDOB: 01/01/2000
 let pauseAlertWindow=false,alertWindowRelease;
 const removedWindows=[],removedTabs=[];
 const store=data=>({clear:async()=>{for(const key of Object.keys(data))delete data[key];},get:async keys=>typeof keys==='string'?{[keys]:data[keys]}:Array.isArray(keys)?Object.fromEntries(keys.map(k=>[k,data[k]])):{...data},set:async values=>Object.assign(data,values),remove:async keys=>{for(const k of Array.isArray(keys)?keys:[keys])delete data[k];},setAccessLevel:async()=>{}});
-const runtime={id:'a'.repeat(32),getURL:path=>`chrome-extension://${'a'.repeat(32)}/${path}`,onMessage:event(),onConnect:event(),onStartup:event(),onInstalled:event()};
+const runtimeMessages=[],routingUpdates=[];
+const runtime={sendMessage:async message=>{runtimeMessages.push(message);},id:'a'.repeat(32),getURL:path=>`chrome-extension://${'a'.repeat(32)}/${path}`,onMessage:event(),onConnect:event(),onStartup:event(),onInstalled:event()};
 globalThis.chrome={
-  runtime,storage:{local:store(local),session:store(session)},
+  runtime,declarativeNetRequest:{updateDynamicRules:async rules=>{routingUpdates.push(rules);}},storage:{local:store(local),session:store(session)},
   tabs:{
     query:async opts=>[...tabs.values()].filter(t=>!opts.active||t.active).map(t=>({...t})),
     get:async id=>({...tabs.get(id)}),
@@ -527,31 +528,53 @@ test('dark-view preference persists independently and an active dark snapshot ne
 });
 
 
-test('PDF capture retains only successful opted-in viewers, authorizes the reader, and cleans up snapshot caches',async()=>{
-  await send({type:'stop'});captureBlocked=false;
-  const capture=async(enabled,viewReady,viewerError)=>{
-    await send({type:'pdf-display-settings',enabled});
-    const native={id:nextId++,url:PDF_URL,status:'complete',windowId:1,active:true};tabs.set(native.id,native);
-    for(const tab of tabs.values())tab.active=tab.id===native.id;
-    session.pdfCreated[native.id]=Date.now();
-    const start=nextId,done=chrome.tabs.onUpdated.listeners[0](native.id,{status:'complete'},native);
-    await wait(()=>[...tabs.values()].some(t=>t.id>=start&&t.url.includes('reader.html?id=')));
-    const reader=[...tabs.values()].find(t=>t.id>=start&&t.url.includes('reader.html?id=')),id=new URL(reader.url).searchParams.get('id');
-    assert.equal(new URL(reader.url).searchParams.get('dark'),enabled?'1':null);
-    const fromReader=message=>new Promise((resolve,reject)=>runtime.onMessage.listeners[0](message,{id:runtime.id,tab:{id:reader.id},url:reader.url},r=>r.ok?resolve(r.value):reject(new Error(r.error))));
-    await assert.rejects(send({type:'reader-result',id,text:'spoofed'}),/Unknown PDF reader/);
-    assert.equal((await fromReader({type:'reader-start',id})).url,PDF_URL);
-    await fromReader({type:'reader-result',id,text:driverReport,viewReady,viewerError});await done;
-    assert.equal(session[`pdf:${native.id}`].text,driverReport);
-    if(viewReady){
-      assert.equal(removedTabs.includes(reader.id),false);assert.equal(session.pdfViewSources[reader.id],true);
-      assert.equal(session[`pdf:${reader.id}`].text,driverReport);assert.equal(tabs.get(reader.id).active,true);
-      await chrome.tabs.onRemoved.listeners[0](native.id);assert.equal(session[`pdf:${reader.id}`].text,driverReport);
-      await chrome.tabs.onRemoved.listeners[0](reader.id);assert.equal(session[`pdf:${reader.id}`],undefined);assert.equal(session.pdfViewSources[reader.id],undefined);
-    } else {assert.equal(removedTabs.includes(reader.id),true);assert.equal(session.pdfViewSources[reader.id],undefined);}
-  };
-  await capture(true,true);
-  await capture(false,false);
-  await capture(true,false,'Synthetic rendering failure');assert.match(session.status,/PDF dark view unavailable: Synthetic rendering failure/);
-  await send({type:'pdf-display-settings',enabled:false});
+test('normal PDF text extraction removes its temporary reader and never requests a dark view',async()=>{
+  await send({type:'stop'});captureBlocked=false;await send({type:'pdf-display-settings',enabled:false});
+  const native={id:nextId++,url:PDF_URL,status:'complete',windowId:1,active:true};tabs.set(native.id,native);session.pdfCreated[native.id]=Date.now();
+  const start=nextId,done=chrome.tabs.onUpdated.listeners[0](native.id,{status:'complete'},native);
+  await wait(()=>[...tabs.values()].some(t=>t.id>=start&&t.url.includes('reader.html?id=')));
+  const reader=[...tabs.values()].find(t=>t.id>=start&&t.url.includes('reader.html?id=')),id=new URL(reader.url).searchParams.get('id');
+  assert.equal(new URL(reader.url).searchParams.get('dark'),null);
+  const fromReader=message=>new Promise((resolve,reject)=>runtime.onMessage.listeners[0](message,{id:runtime.id,tab:{id:reader.id},url:reader.url},r=>r.ok?resolve(r.value):reject(new Error(r.error))));
+  await assert.rejects(send({type:'reader-result',id,text:'spoofed'}),/Unknown PDF reader/);
+  assert.equal((await fromReader({type:'reader-start',id})).url,PDF_URL);
+  await fromReader({type:'reader-result',id,text:driverReport});await done;
+  assert.equal(session[`pdf:${native.id}`].text,driverReport);assert.equal(removedTabs.includes(reader.id),true);
+});
+
+test('redirected PDF captures in the DMV results tab, rejects other documents, supports reuse, and never opens or closes a results tab',async()=>{
+  runtime.sendMessage=async message=>{runtimeMessages.push(message);return {ok:true};};
+  await send({type:'pdf-display-settings',enabled:true});assert.equal(routingUpdates.at(-1).addRules[0].condition.resourceTypes[0],'main_frame');
+  const tab={id:nextId++,url:runtime.getURL(`reader.html?dark=1&pdf=1#${PDF_URL}?a=1&b=2`),status:'complete',windowId:1,active:true};tabs.set(tab.id,tab);
+  for(const t of tabs.values())t.active=t.id===tab.id;
+  const next=nextId;
+  let documentId='direct-first';
+  const fromReader=(message,overrides={})=>new Promise((resolve,reject)=>runtime.onMessage.listeners[0](message,{id:runtime.id,tab:{id:tab.id},url:tab.url,frameId:0,documentId,...overrides},r=>r.ok?resolve(r.value):reject(new Error(r.error))));
+  await assert.rejects(send({type:'reader-direct-start'}),/Unknown PDF results/);
+  await assert.rejects(fromReader({type:'reader-direct-start'},{frameId:1}),/Unknown PDF results/);
+  let job=await fromReader({type:'reader-direct-start'});assert.equal(job.url,PDF_URL+'?a=1&b=2');assert.equal(job.sameTab,true);
+  assert.equal(nextId,next);assert.equal(removedTabs.includes(tab.id),false);
+  await assert.rejects(fromReader({type:'reader-result',id:job.id,text:'wrong document'},{documentId:'different-document'}),/Unknown PDF reader/);
+  await fromReader({type:'reader-result',id:job.id,text:driverReport,viewReady:true});await wait(()=>session.pdfViewSources?.[tab.id]&&session[`pdf:${tab.id}`]);
+  await send({type:'run',command:'barcode'});await wait(barcodeData);assert.match(barcodeData().payload,/DAQ123456789/);await send({type:'stop'});
+  const url=new URL(tab.url);url.searchParams.set('id',job.id);tab.url=url.href;
+  await assert.rejects(fromReader({type:'reader-direct-start'}),/Unknown PDF results/);
+  // A newly redirected report reusing the same named tab must discard the previous person's text.
+  tab.url=runtime.getURL(`reader.html?dark=1&pdf=1#${PDF_URL}`);documentId='direct-second';
+  await chrome.tabs.onUpdated.listeners[0](tab.id,{status:'loading'},tab);assert.equal(session[`pdf:${tab.id}`],undefined);
+  job=await fromReader({type:'reader-direct-start'});
+  await fromReader({type:'reader-result',id:job.id,text:driverReport.replace('123456789','987654321'),viewReady:true});await wait(()=>session[`pdf:${tab.id}`]);
+  assert.match(session[`pdf:${tab.id}`].text,/987654321/);assert.equal(nextId,next);
+  await chrome.tabs.onRemoved.listeners[0](tab.id);assert.equal(session[`pdf:${tab.id}`],undefined);assert.equal(session.pdfViewSources[tab.id],undefined);
+  // Stopping a pending read notifies that document without removing the user's results tab.
+  documentId='direct-third';job=await fromReader({type:'reader-direct-start'});await send({type:'stop'});
+  await wait(()=>runtimeMessages.some(m=>m.type==='reader-cancel'&&m.id===job.id));
+  assert.equal(removedTabs.includes(tab.id),false);await assert.rejects(fromReader({type:'reader-result',id:job.id,text:driverReport}),/Unknown PDF reader/);
+  // A rendering failure keeps extracted text and the user's results tab available.
+  documentId='direct-fourth';job=await fromReader({type:'reader-direct-start'});
+  await fromReader({type:'reader-result',id:job.id,text:driverReport,viewReady:false,viewerError:'Synthetic rendering failure'});
+  await wait(()=>session.status==='PDF dark view unavailable: Synthetic rendering failure');assert.equal(session[`pdf:${tab.id}`].text,driverReport);assert.equal(removedTabs.includes(tab.id),false);
+  delete session[`pdf:${tab.id}`];delete session.pdfViewSources[tab.id];
+  await send({type:'run',command:'barcode'});await wait(()=>panel('notice'));assert.match(session.status,/captured text.*no longer available/);assert.equal(nextId,next);
+  await send({type:'pdf-display-settings',enabled:false});assert.deepEqual(routingUpdates.at(-1).addRules,[]);
 });
