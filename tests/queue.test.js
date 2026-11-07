@@ -605,15 +605,12 @@ test('native printing opens and reuses a local PDF snapshot without changing dar
   await send({type:'stop'});
   const source={id:nextId++,url:runtime.getURL('reader.html?dark=1&pdf=1&id=print-source#'+PDF_URL),status:'complete',windowId:1,active:true,documentId:'print-source'};tabs.set(source.id,source);
   session[`pdf:${source.id}`]={text:driverReport,capturedAt:100,documentId:'print-source'};session.pdfViewSources={...session.pdfViewSources,[source.id]:true};session.pdfCreated[source.id]=100;
-  const fromReader=(message,overrides={})=>new Promise((resolve,reject)=>runtime.onMessage.listeners[0](message,{id:runtime.id,tab:{id:source.id},url:source.url,frameId:0,documentId:'print-source',...overrides},r=>r.ok?resolve(r.value):reject(new Error(r.error))));
+  const fromReader=(message,overrides={})=>new Promise((resolve,reject)=>runtime.onMessage.listeners[0]({text:driverReport,...message},{id:runtime.id,tab:{id:source.id},url:source.url,frameId:0,documentId:'print-source',...overrides},r=>r.ok?resolve(r.value):reject(new Error(r.error))));
   const url='blob:'+runtime.getURL('12345678-1234-1234-1234-123456789abc'),before=nextId,preference=local.pdfDarkMode,rules=routingUpdates.length;
-  await assert.rejects(send({type:'pdf-native-print',url}),/Unknown PDF print request/);
-  await assert.rejects(fromReader({type:'pdf-native-print',url:PDF_URL}),/Unknown PDF print request/);
-  await assert.rejects(fromReader({type:'pdf-native-print',url},{documentId:'wrong-document'}),/captured report is no longer available/);
+  await assert.rejects(send({type:'pdf-native-print',url}),/Open the report in the PDF viewer/);
+  await assert.rejects(fromReader({type:'pdf-native-print',url:PDF_URL}),/original PDF file could not be prepared/);
   // MessageSender can retain the document's original URL after replaceState adds its job ID.
   const originalUrl=source.url.replace('&id=print-source','');
-  await assert.rejects(fromReader({type:'pdf-native-print',url},{url:originalUrl+'?different-report=1'}),/captured report is no longer available/);
-  source.documentId='replaced-document';await assert.rejects(fromReader({type:'pdf-native-print',url}),/captured report is no longer available/);source.documentId='print-source';
   await fromReader({type:'pdf-native-print',url},{url:originalUrl});const native=tabs.get(before);
   assert.equal(native.url,url);assert.equal(nextId,before+1);assert.equal(local.pdfDarkMode,preference);assert.equal(routingUpdates.length,rules);
   assert.equal(session[`pdf:${native.id}`].text,driverReport);assert.equal(session[`pdf:${native.id}`].documentId,undefined);
@@ -626,5 +623,28 @@ test('native printing opens and reuses a local PDF snapshot without changing dar
   await send({type:'run',command:'barcode'});await wait(barcodeData);assert.match(barcodeData().payload,/DAQ123456789/);await send({type:'stop'});
   await chrome.tabs.onRemoved.listeners[0](replacement.id);assert.equal(session[`pdf:${replacement.id}`],undefined);assert.equal(session.pdfViewSources[replacement.id],undefined);
   const emptyUrl='blob:'+runtime.getURL('aaaaaaaa-1234-1234-1234-123456789abc'),emptyId=nextId;
-  await fromReader({type:'pdf-native-print',url:emptyUrl});assert.equal(session[`pdf:${emptyId}`].text,'');
+  await fromReader({type:'pdf-native-print',url:emptyUrl,text:undefined});assert.equal(session[`pdf:${emptyId}`].text,'');
+});
+
+test('native printing uses the loaded PDF snapshot when background report metadata is stale or unavailable',async()=>{
+  await send({type:'stop'});
+  const source={id:nextId++,url:runtime.getURL('reader.html?dark=1&pdf=1&id=loaded-file#'+PDF_URL),status:'complete',windowId:1,active:true};tabs.set(source.id,source);
+  session[`pdf:${source.id}`]={text:driverReport.replace('123456789','987654321'),documentId:'stale-cache-document'};
+  const originalUrl=source.url.replace('&id=loaded-file',''),url='blob:'+runtime.getURL('bbbbbbbb-1234-1234-1234-123456789abc'),nativeId=nextId;
+  const request={type:'pdf-native-print',url,text:driverReport};
+  await new Promise((resolve,reject)=>runtime.onMessage.listeners[0](request,{id:runtime.id,tab:{id:source.id},url:originalUrl,frameId:0,documentId:'loaded-document'},r=>r.ok?resolve(r.value):reject(new Error(r.error))));
+  assert.equal(tabs.get(nativeId).url,url);assert.equal(session[`pdf:${nativeId}`].text,driverReport);
+  assert.doesNotMatch(session[`pdf:${nativeId}`].text,/987654321/);
+});
+
+
+test('printing does not wait for a still-pending PDF capture',async()=>{
+  await send({type:'stop'});captureBlocked=false;
+  const tab={id:nextId++,url:runtime.getURL('reader.html?dark=1&pdf=1#'+PDF_URL),status:'complete',windowId:1};tabs.set(tab.id,tab);
+  const fromReader=message=>new Promise((resolve,reject)=>runtime.onMessage.listeners[0](message,{id:runtime.id,tab:{id:tab.id},url:tab.url,frameId:0,documentId:'pending-print-doc'},r=>r.ok?resolve(r.value):reject(new Error(r.error))));
+  await fromReader({type:'reader-direct-start'}); // Leave reader-result pending.
+  const url='blob:'+runtime.getURL('cccccccc-1234-1234-1234-123456789abc'),nativeId=nextId;
+  const result=fromReader({type:'pdf-native-print',url,text:driverReport});
+  await wait(()=>tabs.get(nativeId)?.url===url);await result;
+  assert.equal(session[`pdf:${nativeId}`].text,driverReport);await send({type:'stop'});
 });

@@ -8,13 +8,14 @@ export function installNativePrint(documentReady, signal) {
     if(opening||disposed)return;
     opening=true;button.disabled=true;status.classList.remove('error');status.setAttribute('role','status');status.textContent='Preparing original PDF for printing…';
     try {
-      const doc=await documentReady;signal.throwIfAborted();
+      const {doc,text}=await documentReady;signal.throwIfAborted();
       if(!blobUrl) {
         const bytes=await doc.getData();signal.throwIfAborted();
         if(disposed)return;
         blobUrl=URL.createObjectURL(new Blob([bytes],{type:'application/pdf'}));
       }
-      const response=await chrome.runtime.sendMessage({type:'pdf-native-print',url:blobUrl});
+      status.textContent='Opening original PDF in the native viewer…';
+      const response=await chrome.runtime.sendMessage({type:'pdf-native-print',url:blobUrl,text});
       if(!response?.ok)throw new Error(response?.error||'Could not open the original PDF.');
       status.textContent='Original PDF opened. Use its Print button or print shortcut.';
     } catch(error) {

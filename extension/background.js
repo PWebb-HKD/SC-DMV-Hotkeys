@@ -200,21 +200,17 @@ async function attachDarkReader(sender) {
   const reader = readers.get(job.id); reader.documentId = sender.documentId;
   return job;
 }
-/** Native printing uses a local Blob of this reader's bytes, never the shared DMV URL. */
-async function openNativePrint(sender,url) {
+/** A trusted reader owns the original Blob and its text; printing does not need
+ * background capture jobs, mutable tab URLs, or webNavigation frame metadata. */
+async function openNativePrint(sender,url,reportText) {
+  if(!sender.tab || !sender.url?.startsWith(chrome.runtime.getURL('reader.html')+'?') || sender.frameId!==0) throw new Error('Open the report in the PDF viewer before using Print.');
   const prefix=`blob:${chrome.runtime.getURL('')}`;
-  if(!sender.tab || !sender.url?.startsWith(chrome.runtime.getURL('reader.html')+'?') || sender.frameId!==0 || typeof url!=='string' || !url.startsWith(prefix) || !/^[a-f0-9-]{36}$/i.test(url.slice(prefix.length))) throw new Error('Unknown PDF print request.');
-  const capture=captures.get(sender.tab.id);
-  if(capture)await capture.promise.catch(error=>{if(isCancelled(error))throw error;});
+  if(typeof url!=='string' || !url.startsWith(prefix) || !/^[a-f0-9-]{36}$/i.test(url.slice(prefix.length))) throw new Error('The original PDF file could not be prepared. Reopen the report and try Print again.');
+  // The text comes from the same loaded document that created the immutable Blob.
+  // Never borrow a different report's text from the shared tab/session cache.
+  const text=typeof reportText==='string' && reportText.length<=1000000 ? reportText : '';
   return track(async()=>{
-    const key=`pdf:${sender.tab.id}`,data=await chrome.storage.session.get([key,'pdfCreated','pdfViewSources']);
-    const snapshot=data[key],source=await chrome.tabs.get(sender.tab.id),frame=await chrome.webNavigation.getFrame({tabId:sender.tab.id,frameId:0});
-    // MessageSender.url is captured when the extension document is created;
-    // history.replaceState changes tabs.get().url, not that sender URL. Compare
-    // the underlying report and the current document, not the mutable job query.
-    const readerUrl=chrome.runtime.getURL('reader.html'),reportUrl=darkResultSource(source.url,readerUrl);
-    if(!reportUrl || reportUrl!==darkResultSource(sender.url,readerUrl) || frame?.documentId!==sender.documentId || snapshot?.documentId && snapshot.documentId!==sender.documentId)throw new Error('The captured report is no longer available. Run its search again before printing.');
-    const pdfCreated=data.pdfCreated||{},pdfViewSources=data.pdfViewSources||{};
+    const {pdfCreated={},pdfViewSources={}}=await chrome.storage.session.get(['pdfCreated','pdfViewSources']);
     for(const [id,knownUrl] of Object.entries(pdfViewSources)) {
       if(knownUrl!==url)continue;
       const tab=await chrome.tabs.get(+id).catch(()=>null);
@@ -223,7 +219,7 @@ async function openNativePrint(sender,url) {
     const tab=await chrome.tabs.create({url,active:true,openerTabId:sender.tab.id});
     try {
       pdfViewSources[tab.id]=url;pdfCreated[tab.id]=pdfCreated[sender.tab.id]||Date.now();
-      await chrome.storage.session.set({pdfViewSources,pdfCreated,[`pdf:${tab.id}`]:{text:snapshot?.text||'',capturedAt:snapshot?.capturedAt||Date.now()}});
+      await chrome.storage.session.set({pdfViewSources,pdfCreated,[`pdf:${tab.id}`]:{text,capturedAt:Date.now()}});
       await focusTab(tab.id);return true;
     } catch(error) {await chrome.tabs.remove(tab.id).catch(()=>{});throw error;}
   });
@@ -562,7 +558,7 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
         return {base64: reader.base64, url: reader.url};
       }
       case 'reader-direct-start': return attachDarkReader(sender);
-      case 'pdf-native-print': return openNativePrint(sender,message.url);
+      case 'pdf-native-print': return openNativePrint(sender,message.url,message.text);
       case 'reader-result': {
         const reader = readers.get(message.id);
         if (!reader || sender.tab?.id !== reader.tabId || reader.documentId && reader.documentId !== sender.documentId) throw new Error('Unknown PDF reader.');

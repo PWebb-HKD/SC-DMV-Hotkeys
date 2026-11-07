@@ -799,8 +799,8 @@ try {
     const readerHtml=await readFile(join(root,'extension/reader.html'),'utf8');
     await page.route('**/reader.html?*',route=>route.fulfill({body:readerHtml,contentType:'text/html',headers:{'Content-Security-Policy':"script-src 'self'; object-src 'self'; worker-src 'self'"}}));
     page.on('request',request=>{if(request.url().startsWith('https://www.scdmvonline.com/'))dmvRequests++;});
-    await page.exposeFunction('nativePdfRequest',async url=>{
-      requests++;
+    await page.exposeFunction('nativePdfRequest',async (url,text)=>{
+      requests++;assert.match(text,/ORIGINAL PRINT SNAPSHOT/);assert.match(text,/ORIGINAL SECOND PAGE/);
       const actual=await page.evaluate(async url=>[...new Uint8Array(await(await fetch(url)).arrayBuffer())],url);assert.deepEqual(Buffer.from(actual),bytes);
       if(!native){native=await ui.newPage();await native.goto(url);}
       else await native.bringToFront();
@@ -809,15 +809,16 @@ try {
     await page.addInitScript(base64=>{window.htmlPrintCount=0;window.print=()=>window.htmlPrintCount++;addEventListener('beforeprint',()=>window.htmlPrintCount++);
       chrome.runtime.sendMessage=async message=>{
         if(message.type==='reader-direct-start')return {ok:true,value:{base64,id:'print-fixture'}};
-        if(message.type==='reader-result'){window.pdfResult=message;return {ok:true,value:true};}
-        if(message.type==='pdf-native-print'){await window.nativePdfRequest(message.url);return {ok:true,value:true};}
+        if(message.type==='reader-result'){window.pdfResult=message;return new Promise(resolve=>{window.releaseReaderAck=()=>{window.readerAcked=true;resolve({ok:true,value:true});};});}
+        if(message.type==='pdf-native-print'){await window.nativePdfRequest(message.url,message.text);return {ok:true,value:true};}
         return {ok:false};
       };
     },base64);
-    await page.goto(base+'/reader.html?dark=1&pdf=1#https://www.scdmvonline.com/SCTRNS/Member/Transactions/ViewAttachment.aspx');
+    await page.goto(base+'/reader.html?dark=1&pdf=1#https://www.scdmvonline.com/SCTRNS/Member/Transactions/ViewAttachment.aspx',{waitUntil:'commit'});
     await page.waitForFunction(()=>window.pdfResult?.viewReady===true&&!document.querySelector('#pdfPrint').disabled);
     await page.locator('#pdfPrint').click();await page.waitForFunction(()=>document.querySelector('#pdfPrintStatus').textContent.startsWith('Original PDF opened'));
     assert.equal(requests,1);assert.ok(native.url().startsWith('blob:'));
+    assert.equal(await page.evaluate(()=>window.readerAcked===true),false);await page.evaluate(()=>window.releaseReaderAck());
     const info=await native.evaluate(()=>({type:document.contentType,embed:!!document.querySelector('embed[type="application/pdf"]'),darkPages:document.querySelectorAll('.pdf-sheet').length}));
     assert.ok(info.type==='application/pdf'||info.embed,JSON.stringify(info));assert.equal(info.darkPages,0);
     await page.bringToFront();await page.keyboard.press('Control+p');await page.waitForFunction(()=>!document.querySelector('#pdfPrint').disabled);assert.equal(requests,2);
@@ -825,7 +826,7 @@ try {
     assert.equal(prevented,true);await page.waitForFunction(()=>!document.querySelector('#pdfPrint').disabled);assert.equal(requests,3);
     assert.equal(await page.evaluate(()=>window.htmlPrintCount),0);assert.equal(dmvRequests,0);assert.equal(await page.locator('.pdf-sheet').count(),2);
     // Failed handoffs must be visible, and the same button must remain usable for retry.
-    await page.bringToFront();await page.evaluate(()=>{window.successfulPrintSend=chrome.runtime.sendMessage;chrome.runtime.sendMessage=async message=>message.type==='pdf-native-print'?{ok:false,error:'The captured report is no longer available.'}:window.successfulPrintSend(message);});
+    await page.bringToFront();await page.evaluate(()=>{window.successfulPrintSend=chrome.runtime.sendMessage;chrome.runtime.sendMessage=async message=>message.type==='pdf-native-print'?{ok:false,error:'The browser could not open the native PDF tab.'}:window.successfulPrintSend(message);});
     await page.locator('#pdfPrint').click();await page.locator('#pdfPrintStatus.error[role=alert]').waitFor();
     assert.match(await page.locator('#pdfPrintStatus').textContent(),/Unable to open PDF for printing/);assert.equal(await page.locator('#pdfPrint').isDisabled(),false);
     await page.evaluate(()=>{chrome.runtime.sendMessage=window.successfulPrintSend;});await page.locator('#pdfPrint').click();

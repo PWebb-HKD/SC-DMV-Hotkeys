@@ -69,9 +69,10 @@ try {
   } finally { if (!viewReady) await doc.destroy(); }
   const text = lines.join('\n');
   if (text.length > 1000000) throw new Error('PDF text exceeds the extraction limit.');
+  // Printing owns this loaded document and must not depend on a live background capture.
+  if(viewReady)printReady.resolve({doc,text});else printReady.reject(new Error(viewerError||'The PDF viewer could not be opened.'));
   const result=await chrome.runtime.sendMessage({type: 'reader-result', id, text, viewReady, viewerError});
   if(!result?.ok)throw new Error(result?.error||'The captured report is no longer available.');
-  if(viewReady)printReady.resolve(doc);else printReady.reject(new Error(viewerError||'The PDF viewer could not be opened.'));
 } catch (error) {
   printReady.reject(error);
   document.getElementById('reading').hidden=false;
