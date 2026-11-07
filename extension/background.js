@@ -152,7 +152,7 @@ async function capturePdf(tab, portalId, forceDirect = false) {
       timer = setTimeout(() => reader.reject(new Error('PDF text extraction timed out.')), 45000);
       const text = await run.step(() => promise);
       if (!text.trim()) throw new Error('This PDF has no extractable text. Scanned PDFs require OCR; enter a number manually.');
-      await api.storage.session.set({[cacheKey]: {text, capturedAt: Date.now()}});
+      await api.storage.session.set({[cacheKey]: {text, capturedAt: Date.now(), ...(capture.documentId ? {documentId:capture.documentId} : {})}});
       if (capture.sameTab) await track(async () => {
         const {pdfViewSources = {}} = await api.storage.session.get('pdfViewSources');
         pdfViewSources[tab.id] = true; await api.storage.session.set({pdfViewSources});
@@ -463,13 +463,34 @@ chrome.tabs.onUpdated.addListener(async (id, change, tab) => {
     if (!pdfCreated[id] && tabCreated[id]) { pdfCreated[id] = tabCreated[id]; await chrome.storage.session.set({pdfCreated}); }
     pdfSources[id] = sourceUrl; await chrome.storage.session.set({pdfSources});
     if (change.status === 'loading') {
-      const capture = captures.get(id);
-      if (capture?.documentId) capture.run.cancel();
-      await chrome.storage.session.remove(`pdf:${id}`);
+      const capture = captures.get(id), cached = (await chrome.storage.session.get(`pdf:${id}`))[`pdf:${id}`];
+      // A reader can report loading after history.replaceState. Only committed
+      // document identity may invalidate/cancel a same-tab reader snapshot.
+      const darkDocument = capture?.sameTab || cached?.documentId || darkResultSource(tab.pendingUrl, chrome.runtime.getURL('reader.html')) || darkResultSource(tab.url, chrome.runtime.getURL('reader.html'));
+      if (!darkDocument) await chrome.storage.session.remove(`pdf:${id}`);
     }
   });
   const {pdfCreated = {}} = await chrome.storage.session.get('pdfCreated');
   if (change.status === 'complete' && pdfCreated[id] && !darkResultSource(tab.url, chrome.runtime.getURL('reader.html'))) await capturePdf(tab).catch(() => {});
+});
+// tabs.onUpdated has no document ID: a loading notification can belong to the
+// current reader, not a replacement. Invalidate direct snapshots only when a
+// different top-level document actually commits. Check the current frame too,
+// because a delayed event from an older navigation must not cancel a newer reader.
+chrome.webNavigation.onCommitted.addListener(async details => {
+  if (details.frameId !== 0) return;
+  await boot;
+  await track(async () => {
+    const id = details.tabId, key = `pdf:${id}`, capture = captures.get(id);
+    const cached = (await chrome.storage.session.get(key))[key];
+    const direct = darkResultSource(details.url, chrome.runtime.getURL('reader.html'));
+    if (!capture?.sameTab && !cached?.documentId && !direct) return;
+    if (capture?.documentId === details.documentId || cached?.documentId === details.documentId) return;
+    const frame = await chrome.webNavigation.getFrame({tabId:id,frameId:0}).catch(() => null);
+    if (!frame || frame.documentId !== details.documentId) return;
+    if (capture?.sameTab && capture.documentId) capture.run.cancel();
+    await chrome.storage.session.remove(key);
+  });
 });
 chrome.tabs.onRemoved.addListener(async id => {
   captures.get(id)?.run.cancel();

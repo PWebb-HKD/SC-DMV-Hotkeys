@@ -16,7 +16,7 @@ const store=data=>({clear:async()=>{for(const key of Object.keys(data))delete da
 const runtimeMessages=[],routingUpdates=[];
 const runtime={sendMessage:async message=>{runtimeMessages.push(message);},id:'a'.repeat(32),getURL:path=>`chrome-extension://${'a'.repeat(32)}/${path}`,onMessage:event(),onConnect:event(),onStartup:event(),onInstalled:event()};
 globalThis.chrome={
-  runtime,declarativeNetRequest:{updateDynamicRules:async rules=>{routingUpdates.push(rules);}},storage:{local:store(local),session:store(session)},
+  runtime,webNavigation:{onCommitted:event(),getFrame:async({tabId})=>({documentId:tabs.get(tabId)?.documentId})},declarativeNetRequest:{updateDynamicRules:async rules=>{routingUpdates.push(rules);}},storage:{local:store(local),session:store(session)},
   tabs:{
     query:async opts=>[...tabs.values()].filter(t=>!opts.active||t.active).map(t=>({...t})),
     get:async id=>({...tabs.get(id)}),
@@ -554,14 +554,19 @@ test('redirected PDF captures in the DMV results tab, rejects other documents, s
   await assert.rejects(fromReader({type:'reader-direct-start'},{frameId:1}),/Unknown PDF results/);
   let job=await fromReader({type:'reader-direct-start'});assert.equal(job.url,PDF_URL+'?a=1&b=2');assert.equal(job.sameTab,true);
   assert.equal(nextId,next);assert.equal(removedTabs.includes(tab.id),false);
+  // Chrome can report loading again after the reader replaces its own URL with the job ID.
+  const ownUrl=new URL(tab.url);ownUrl.searchParams.set('id',job.id);tab.url=ownUrl.href;
+  await chrome.tabs.onUpdated.listeners[0](tab.id,{url:tab.url,status:'loading'},tab);
+  assert.equal(runtimeMessages.some(m=>m.type==='reader-cancel'&&m.id===job.id),false,'same-document loading must not destroy the PDF worker');
   await assert.rejects(fromReader({type:'reader-result',id:job.id,text:'wrong document'},{documentId:'different-document'}),/Unknown PDF reader/);
   await fromReader({type:'reader-result',id:job.id,text:driverReport,viewReady:true});await wait(()=>session.pdfViewSources?.[tab.id]&&session[`pdf:${tab.id}`]);
+  await chrome.tabs.onUpdated.listeners[0](tab.id,{status:'loading'},tab);assert.equal(session[`pdf:${tab.id}`].text,driverReport);
   await send({type:'run',command:'barcode'});await wait(barcodeData);assert.match(barcodeData().payload,/DAQ123456789/);await send({type:'stop'});
   const url=new URL(tab.url);url.searchParams.set('id',job.id);tab.url=url.href;
   await assert.rejects(fromReader({type:'reader-direct-start'}),/Unknown PDF results/);
   // A newly redirected report reusing the same named tab must discard the previous person's text.
   tab.url=runtime.getURL(`reader.html?dark=1&pdf=1#${PDF_URL}`);documentId='direct-second';
-  await chrome.tabs.onUpdated.listeners[0](tab.id,{status:'loading'},tab);assert.equal(session[`pdf:${tab.id}`],undefined);
+  tab.documentId=documentId;await chrome.webNavigation.onCommitted.listeners[0]({tabId:tab.id,frameId:0,documentId,url:tab.url});assert.equal(session[`pdf:${tab.id}`],undefined);
   job=await fromReader({type:'reader-direct-start'});
   await fromReader({type:'reader-result',id:job.id,text:driverReport.replace('123456789','987654321'),viewReady:true});await wait(()=>session[`pdf:${tab.id}`]);
   assert.match(session[`pdf:${tab.id}`].text,/987654321/);assert.equal(nextId,next);
@@ -577,4 +582,20 @@ test('redirected PDF captures in the DMV results tab, rejects other documents, s
   delete session[`pdf:${tab.id}`];delete session.pdfViewSources[tab.id];
   await send({type:'run',command:'barcode'});await wait(()=>panel('notice'));assert.match(session.status,/captured text.*no longer available/);assert.equal(nextId,next);
   await send({type:'pdf-display-settings',enabled:false});assert.deepEqual(routingUpdates.at(-1).addRules,[]);
+});
+
+
+test('committed document IDs protect a current PDF worker but cancel a replaced reader',async()=>{
+  runtime.sendMessage=async message=>{runtimeMessages.push(message);return {ok:true};};captureBlocked=false;
+  const tab={id:nextId++,url:runtime.getURL(`reader.html?dark=1&pdf=1#${PDF_URL}`),windowId:1,status:'loading',documentId:'current-reader'};tabs.set(tab.id,tab);
+  const fromReader=message=>new Promise((resolve,reject)=>runtime.onMessage.listeners[0](message,{id:runtime.id,tab:{id:tab.id},url:tab.url,frameId:0,documentId:tab.documentId},r=>r.ok?resolve(r.value):reject(new Error(r.error))));
+  const job=await fromReader({type:'reader-direct-start'});
+  const committed=documentId=>chrome.webNavigation.onCommitted.listeners[0]({tabId:tab.id,frameId:0,documentId,url:tab.url});
+  await committed('current-reader'); // A late commit notification from this document is harmless.
+  await committed('older-reader'); // A delayed event must be checked against the actual current frame.
+  assert.equal(runtimeMessages.some(m=>m.type==='reader-cancel'&&m.id===job.id),false);
+  tab.documentId='replacement-reader';await committed(tab.documentId);
+  await wait(()=>runtimeMessages.some(m=>m.type==='reader-cancel'&&m.id===job.id));
+  await assert.rejects(fromReader({type:'reader-result',id:job.id,text:driverReport}),/Unknown PDF reader/);
+  assert.equal(session[`pdf:${tab.id}`],undefined);assert.equal(removedTabs.includes(tab.id),false);
 });

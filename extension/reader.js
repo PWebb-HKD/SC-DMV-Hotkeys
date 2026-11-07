@@ -69,6 +69,6 @@ try {
   await chrome.runtime.sendMessage({type: 'reader-result', id, text, viewReady, viewerError});
 } catch (error) {
   document.getElementById('reading').hidden=false;
-  document.getElementById('readingNote').textContent=error.name==='AbortError'?'Report loading stopped. Run the search again to reopen it.':error.message;
-  await chrome.runtime.sendMessage({type: 'reader-result', id, error: error.name === 'PasswordException' ? 'This PDF requires a document password. Open an accessible report or enter the number manually.' : error.message});
+  document.getElementById('readingNote').textContent=controller.signal.aborted || error.name==='AbortError'?'Report loading stopped. Run the search again to reopen it.':error.message;
+  await chrome.runtime.sendMessage({type: 'reader-result', id, error: controller.signal.aborted ? 'Report loading stopped. Run the search again to reopen it.' : error.name === 'PasswordException' ? 'This PDF requires a document password. Open an accessible report or enter the number manually.' : error.message});
 } finally { clearInterval(heartbeat); }

@@ -307,14 +307,14 @@ try {
   const base = `http://127.0.0.1:${server.address().port}`;
   const ui = await browser.newContext({viewport:{width:540,height:900},deviceScaleFactor:1});
   await ui.addInitScript(() => {
-    window.requests=[];
+    window.requests=[];window.runtimeListeners=[];
     window.panelClosed=false;window.close=()=>{window.panelClosed=true;};
     window.openedTabs=[];
     window.sessionAlerts=false;window.pdfDarkMode=false;window.blacklistData={hasVault:false,unlocked:false,entries:[]};window.historyErrors=[];window.storageListeners=[];
     window.audioSettings={};
     window.commandShortcuts=[{name:'plate',shortcut:'Ctrl+Shift+7'},{name:'next',shortcut:'Alt+N'},{name:'_execute_action',shortcut:'Alt+Period'}];
     window.chrome = {
-      runtime:{onMessage:{addListener:()=>{}},getURL:path=>`${location.origin}/${path}`,connect:()=>({postMessage:()=>{}}),sendMessage:async message=>{
+      runtime:{onMessage:{addListener:fn=>window.runtimeListeners.push(fn)},getURL:path=>`${location.origin}/${path}`,connect:()=>({postMessage:()=>{}}),sendMessage:async message=>{
         window.requests.push(message);
         if(message.type==='state')return {ok:true,value:{pdfDarkMode:window.pdfDarkMode,blacklist:window.blacklistData,history:[...window.historyErrors,{kind:'plate',value:'ABC12345',at:Date.now()},{kind:'license',value:'123456789',at:Date.now()}],queue:{values:['123','456'],index:1},commands:window.commandShortcuts,alertsEnabled:window.sessionAlerts,...window.audioSettings,voices:[{voiceName:'Microsoft David Desktop',lang:'en-US'},{voiceName:'Microsoft Zira Desktop',lang:'en-US'}]}};
         if(message.type==='blacklist-unlock'){
@@ -752,6 +752,24 @@ try {
     await page.waitForFunction(()=>!document.querySelector('.pdf-sheet:first-child canvas'));assert.ok(await page.locator('.pdf-page').count()<=5);
     const paper=await page.locator('.pdf-sheet:last-child canvas').evaluate(c=>[...c.getContext('2d').getImageData(5,5,1,1).data]);assert.deepEqual(paper,[24,26,27,255]);
     assert.match((await page.evaluate(()=>window.pdfResult.text)),/SYNTHETIC PAGE 30/);await page.close();
+  });
+  await tests('cancelling PDF worker startup reports a deliberate stop instead of Worker was destroyed',async()=>{
+    const doc=await PDFDocument.create();doc.addPage().drawText('SYNTHETIC CANCELLATION FIXTURE');
+    const base64=Buffer.from(await doc.save()).toString('base64'),page=await ui.newPage();
+    await page.addInitScript(base64=>{chrome.runtime.sendMessage=async message=>{
+      if(message.type==='reader-direct-start')return {ok:true,value:{base64,id:'cancel-fixture'}};
+      if(message.type==='reader-result'){window.pdfResult=message;return {ok:true,value:true};}
+      return {ok:false};
+    };},base64);
+    // Hold worker startup so cancellation lands after getDocument creates its loading task.
+    await page.route('**/vendor/pdf.worker.mjs',async route=>{
+      await page.evaluate(()=>window.runtimeListeners.forEach(fn=>fn({target:'pdf-reader',type:'reader-cancel',id:'cancel-fixture'})));
+      await route.continue().catch(()=>{});
+    });
+    await page.goto(base+'/reader.html?dark=1&pdf=1#https://www.scdmvonline.com/SCTRNS/Member/Transactions/ViewAttachment.aspx');
+    await page.waitForFunction(()=>window.pdfResult?.error);
+    assert.equal(await page.locator('#readingNote').textContent(),'Report loading stopped. Run the search again to reopen it.');
+    assert.doesNotMatch((await page.evaluate(()=>window.pdfResult.error)),/Worker was destroyed/);await page.close();
   });
   await tests('bundled PDF.js extracts owner and driver text in a real browser worker',async()=>{
     for (const text of ['Owner Number: 00001234\nCustomer Number: 87654321','Driver License No: 123456789 Name: DE LA CRUZ, JANE\nDOB: 01/02/2000']) {
