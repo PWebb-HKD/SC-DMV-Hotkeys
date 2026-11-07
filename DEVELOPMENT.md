@@ -22,7 +22,7 @@ This guide describes first-party source. Read it alongside the module/function c
 - **automation.js:** Portal transactions. Receives a context containing a SearchRun and worker callbacks. The table of transactions shares the same Page1 -> submit -> Page2 -> Download workflow.
 - **page.js:** A single serialized function injected into the website MAIN world. It cannot close over extension imports or variables. Its DOM setters and bubbling events notify website frameworks. Credential and PDF origin checks deliberately live inside this function as well as in the caller.
 - **popup/panel/barcode/shortcut-setup pages:** Extension-owned UI. Render report text with textContent, not HTML. Panels use unpredictable IDs to associate replies with worker jobs. Permission prompts request destination access from a user gesture.
-- **reader.js:** A temporary inactive extension tab using bundled PDF.js. This reads PDF bytes rather than attempting to inspect Chromium's internal PDF viewer. Text-only extraction cannot recover image-only scans.
+- **reader.js:** Bundled PDF.js in either a temporary inactive extraction tab or the same results tab redirected by pdf-routing.js when dark mode is enabled. The redirected document joins a capture bound to its tab ID and document ID; it replaces its URL with a job ID so reload cannot refetch a historical report. Nearby pages render on a continuous scrolling surface; image regions retain original pixels. This reads PDF bytes rather than attempting to inspect Chromium's internal PDF viewer. Text-only extraction cannot recover image-only scans.
 - **audio-player.js:** An offscreen document, because service workers have no Audio DOM. Only catalogued packaged recordings are accepted.
 
 ## A search from start to finish
@@ -43,7 +43,7 @@ The worker's panels/readers/captures Maps are live jobs, not durable job storage
 
 | Location | Keys / lifetime |
 | --- | --- |
-| local | vault (salt/IV/ciphertext) |
+| local | vault (salt/IV/ciphertext), pdfDarkMode |
 | session | history (last 20 attempts), credentials and blacklist (unlocked values), unlockedVault (ciphertext identity), portalId, lastQuery, queue, status |
 | session alert preferences | alertsEnabled, speechEnabled, suspendedClipEnabled, repeatSpeech; voiceSource/voiceGender/voiceName |
 | session report bookkeeping | tabCreated, pdfCreated, pdfSources, pdf:TAB_ID with text and capture timestamp |
@@ -57,7 +57,7 @@ The queue contains {values, index, sourceTabId}. Values are canonical unique cus
 
 ## Report parsing invariants
 
-The attachment URL is fixed while its contents change with the server session. Do not fetch an old tab's URL and assume its bytes still identify that tab's subject. Use captured text; when it is unavailable and a newer report exists, ask for the search to be rerun. Reused result tabs invalidate the older snapshot.
+The attachment URL is fixed while its contents change with the server session. Do not fetch an old tab's URL and assume its bytes still identify that tab's subject. Use captured text; when it is unavailable and a newer report exists, ask for the search to be rerun. Reused result tabs invalidate the older snapshot. Native printing is handled by pdf-print.js: doc.getData() supplies the original bytes to an in-memory Blob, and the pdf-native-print worker message accepts only a trusted reader frame and an extension-owned Blob URL, then opens it in a native PDF tab. The viewer supplies the text from that same document; printing must not depend on live capture callbacks, frame lookups, or the tab text cache. pdfViewSources values are true for dark readers or the exact Blob URL for native printing tabs; printing tabs receive their own text snapshot, without inheriting the reader documentId. Never reopen the shared DMV attachment URL to print an older report. Chromium MessageSender.url retains the document's original URL after history.replaceState; do not reintroduce equality checks against mutable tab URLs for local printing. For same-tab dark readers, cache entries include documentId; webNavigation.onCommitted checks the current top-level frame before cancelling a replaced reader or clearing its text. tabs.onUpdated loading notifications do not prove a new document: history.replaceState and late loading events must not cancel a reader for the current document.
 
 Owner extraction preserves line boundaries to avoid merging adjacent numeric columns. Other parsers flatten whitespace for label matching. These approaches serve different layouts and should not be merged indiscriminately. Fixture changes must use invented/deidentified data, never checked-in personal records.
 

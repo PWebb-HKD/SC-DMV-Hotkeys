@@ -12,6 +12,16 @@ A Manifest V3 extension for SCDMV member searches, PDF follow-ups, and SCUTTIES 
 
 No build, npm installation, or external script download is required to run the packaged extension. PDF.js 5.6.205 is bundled locally, including its license and supporting assets.
 
+## PDF results dark mode (1.7.6)
+
+Enable **Settings → PDF results → Dark PDF results (keep photos unchanged)**, then run a new DMV search. The report opens dark in the same results tab DMV opens, with continuous scrolling through all pages. There is no second viewer tab and no Next/Previous page button. Select text and copy it normally with Ctrl+C (Command+C on macOS) or the browser context menu. Version 1.7.3 adds a transparent PDF.js text layer aligned with each page, including rotated pages and resized windows. Text layers remain available when distant page canvases are released. Image-only scans still require OCR. Nearby pages render as you scroll; distant page canvases are released to limit memory use.
+
+Chromium's native PDF viewer can be darkened with a whole-view filter, as Dark Reader does, but that also changes embedded photos. This feature routes the top-level DMV PDF request to the bundled renderer before the native viewer loads. Version 1.7.2 fixes a startup cancellation race by checking committed document IDs instead of treating a same-document loading notification as navigation away. The viewer starts with a dark loading background and does not display a canvas until recoloring finishes. Its address is an extension URL in the same tab. Portal pages keep their normal behavior, including Dark Reader styling.
+
+The renderer darkens neutral paper and text while protecting embedded image areas, including grayscale photographs. Scanned/image-only areas retain their original colors; pages with image operations whose boundaries cannot be safely protected retain original colors as well. **Use original PDF colors** changes the captured report without another request. The setting is off by default; turning it off restores native handling for future PDF openings.
+
+Barcode generation, customer collection, and SCUTTIES follow-ups use that tab's captured report text. Reusing a named results tab discards the old snapshot. PDF bytes stay in the viewer's memory; closing it releases the document and its cached text. Reloading the viewer requires running the search again, so it cannot silently fetch another person's report from the portal's shared attachment URL. **Print** in the dark viewer, **Ctrl+P**, or **Command+P** opens the original captured PDF in Chromium’s native PDF viewer in a separate printing tab. Use its Print button or print shortcut to print. This uses the exact PDF bytes already captured in memory, without revisiting the session-dependent DMV attachment URL or changing dark mode settings. Repeated print requests reuse that printing tab while it still shows the same PDF. Version 1.7.6 makes printing independent of background capture jobs, tab URL changes, and browser frame lookups. The loaded viewer supplies both the original PDF Blob and its matching text snapshot; stale or missing background report metadata cannot block printing or substitute another report. Print failures appear as a prominent error in the viewer header. Keep the dark viewer open until the native PDF has loaded; barcode and report follow-ups also use the captured snapshot from the printing tab.
+
 ## Blacklist (1.6.0)
 
 Open **Settings → Blacklist**, immediately below Voice status alerts. Select **Create encrypted vault** to save your DMV login and a vault passphrase of at least 12 characters without running a DMV search. Existing credential vaults are supported. At the beginning of each browser session, unlock the vault in Settings or when prompted before the first search. A locked vault blocks searches even when the DMV session is still active.
@@ -93,7 +103,7 @@ It uses native input value setters, then explicitly dispatches bubbling input/ch
 - Saved login: AES-256-GCM encryption, PBKDF2-SHA256 with a random salt and 310,000 iterations; unlocked credentials and blacklist entries stay in trusted session storage.
 - PDF text and queued identifiers: session storage, accessible only to trusted extension contexts. Closing a PDF tab removes its cached text. The browser's session-storage quota limits the total cached text; large reports can fail with an error.
 - Network traffic: the authenticated DMV attachment and normal site navigation. No analytics, telemetry, external AI service, or third-party backend.
-- Site access: SCDMV by default. Other HTTP(S) origins are optional and requested only when needed for SCUTTIES navigation. The `tabs` permission exposes tab URLs/pending URLs so PDF viewer wrappers and attachments in other windows can be identified; it does not grant access to arbitrary page contents.
+- Site access: SCDMV by default. Other HTTP(S) origins are optional and requested only when needed for SCUTTIES navigation. The `webNavigation` permission distinguishes actual document replacements from same-document loading notifications so PDF workers and snapshots are not cancelled during startup. The `declarativeNetRequestWithHostAccess` permission redirects only top-level SCDMV attachment requests while PDF dark mode is enabled; attachment fetches and portal pages are unaffected. The `tabs` permission exposes tab URLs/pending URLs so PDF viewer wrappers and attachments in other windows can be identified; it does not grant access to arbitrary page contents.
 
 ## Validation
 
@@ -112,7 +122,7 @@ The optional browser/worker tests use Playwright and pdf-lib. They can use Codex
 node tests\browser.mjs
 ```
 
-Browser tests cover all four DMV form flows, login timing/errors, inactive-tab behavior, SCUTTIES destination permission and framework events, popup UI, plate validation, and real PDF.js worker extraction. Screenshots are written to `test-results`.
+Browser tests cover all four DMV form flows, login timing/errors, inactive-tab behavior, SCUTTIES destination permission and framework events, popup UI, plate validation, real PDF.js worker extraction, and dark PDF rendering with pixel-for-pixel photo preservation. Screenshots are written to `test-results`.
 
 To verify a local residence report without embedding its data in the test suite, optionally run `node tests\browser.mjs --sample-pdf "C:\path\to\report.pdf"`. This checks the twelve-customer sample used for the 1.0.2 regression. The report stays local and is not included in the distribution package.
 

@@ -43,3 +43,10 @@ test('cancelled results watchers stop immediately',async()=>{
   fixture();const run=new SearchRun(),watcher=await watchResults(1,{run});watcher.arm();run.cancel();
   await assert.rejects(watcher.find(),{name:'AbortError'});watcher.dispose();
 });
+
+test('a redirected dark reader in a new or reused results tab is discovered with its complete source URL',async()=>{
+  const {tabs,onUpdated}=fixture(),watcher=await watchResults(1);watcher.arm();
+  const tab=tabs.get(2);tab.url=`chrome-extension://${'a'.repeat(32)}/reader.html?dark=1&pdf=1#${PDF_URL}?record=1&format=2`;
+  onUpdated.emit(2,{url:tab.url,status:'loading'},tab);
+  const result=await watcher.find();assert.equal(result.tab.id,2);assert.equal(result.sourceUrl,PDF_URL+'?record=1&format=2');assert.equal(result.reused,true);watcher.dispose();
+});

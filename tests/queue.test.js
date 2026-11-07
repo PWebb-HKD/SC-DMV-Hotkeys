@@ -11,17 +11,18 @@ const windows=[], submissions=[], navigations=[], submittedQueries=[];
 let nextId=3, invalid=false, invalidAfterSubmit=false, technicalFailure=false, loginRejected=false, blockSubmitted=false, captureBlocked=false, onResultFocus=null;
 let reportText='Driver License No: 123456789 Name: TEST, PERSON\nDOB: 01/01/2000';
 let pauseAlertWindow=false,alertWindowRelease;
-const removedWindows=[];
+const removedWindows=[],removedTabs=[];
 const store=data=>({clear:async()=>{for(const key of Object.keys(data))delete data[key];},get:async keys=>typeof keys==='string'?{[keys]:data[keys]}:Array.isArray(keys)?Object.fromEntries(keys.map(k=>[k,data[k]])):{...data},set:async values=>Object.assign(data,values),remove:async keys=>{for(const k of Array.isArray(keys)?keys:[keys])delete data[k];},setAccessLevel:async()=>{}});
-const runtime={id:'a'.repeat(32),getURL:path=>`chrome-extension://${'a'.repeat(32)}/${path}`,onMessage:event(),onConnect:event(),onStartup:event(),onInstalled:event()};
+const runtimeMessages=[],routingUpdates=[];
+const runtime={sendMessage:async message=>{runtimeMessages.push(message);},id:'a'.repeat(32),getURL:path=>`chrome-extension://${'a'.repeat(32)}/${path}`,onMessage:event(),onConnect:event(),onStartup:event(),onInstalled:event()};
 globalThis.chrome={
-  runtime,storage:{local:store(local),session:store(session)},
+  runtime,webNavigation:{onCommitted:event(),getFrame:async({tabId})=>({documentId:tabs.get(tabId)?.documentId})},declarativeNetRequest:{updateDynamicRules:async rules=>{routingUpdates.push(rules);}},storage:{local:store(local),session:store(session)},
   tabs:{
     query:async opts=>[...tabs.values()].filter(t=>!opts.active||t.active).map(t=>({...t})),
     get:async id=>({...tabs.get(id)}),
     create:async opts=>{const tab={id:nextId++,url:opts.url,status:'complete',windowId:1,active:!!opts.active};tabs.set(tab.id,tab);return {...tab};},
     update:async(id,update)=>{if(update.url)navigations.push(update.url);const tab=tabs.get(id);Object.assign(tab,update);if(update.active){for(const t of tabs.values())if(t.id!==id)t.active=false;if(onResultFocus&&isPdf(tab.url)){const hook=onResultFocus;onResultFocus=null;queueMicrotask(hook);}}return {...tab};},
-    remove:async()=>{},onCreated:event(),onUpdated:event(),onRemoved:event()
+    remove:async id=>{removedTabs.push(id);},onCreated:event(),onUpdated:event(),onRemoved:event()
   },
   windows:{get:async()=>({id:1,state:'normal'}),update:async()=>{},onRemoved:event(),create:async data=>{const win={id:windows.length+10,...data};windows.push(win);if(pauseAlertWindow&&session[`panel:${new URL(data.url).searchParams.get('id')}`]?.type==='record-alert')await new Promise(resolve=>{alertWindowRelease=resolve;});return win;},remove:async id=>{removedWindows.push(id);}},
   scripting:{executeScript:async({target,args:[op,args]})=>{
@@ -511,4 +512,139 @@ test('cancelling or replacing an incomplete-owner prompt never generates a barco
   await send({type:'panel-submit',id,value:false});await wait(()=>/Barcode generation cancelled/.test(session.status));assert.equal(barcodeData(),undefined);
   barcodeSource(text);await send({type:'run',command:'barcode'});await wait(()=>panel('barcode-owner-incomplete'));
   await send({type:'stop'});assert.equal(panel('barcode-owner-incomplete'),undefined);assert.equal(barcodeData(),undefined);
+});
+
+test('dark-view preference persists independently and an active dark snapshot never reads a newer native PDF',async()=>{
+  assert.equal(await send({type:'pdf-display-settings',enabled:true}),true);assert.equal(local.pdfDarkMode,true);
+  const id=nextId++;tabs.set(id,{id,url:runtime.getURL('reader.html?id=dark-fixture&dark=1'),active:true,status:'complete',windowId:1});
+  for(const tab of tabs.values())tab.active=tab.id===id;
+  session.pdfViewSources={[id]:true};session.pdfCreated={...session.pdfCreated,[id]:100};session[`pdf:${id}`]={text:driverReport};
+  session['pdf:2']={text:driverReport.replace('123456789','987654321')};
+  await send({type:'run',command:'barcode'});await wait(barcodeData);
+  assert.match(barcodeData().payload,/DAQ123456789/);assert.doesNotMatch(barcodeData().payload,/DAQ987654321/);
+  await send({type:'stop'});delete session[`pdf:${id}`];
+  await send({type:'run',command:'barcode'});await wait(()=>panel('notice'));assert.match(session.status,/captured text.*no longer available/);
+  await send({type:'pdf-display-settings',enabled:false});assert.equal(local.pdfDarkMode,false);
+});
+
+
+test('normal PDF text extraction removes its temporary reader and never requests a dark view',async()=>{
+  await send({type:'stop'});captureBlocked=false;await send({type:'pdf-display-settings',enabled:false});
+  const native={id:nextId++,url:PDF_URL,status:'complete',windowId:1,active:true};tabs.set(native.id,native);session.pdfCreated[native.id]=Date.now();
+  const start=nextId,done=chrome.tabs.onUpdated.listeners[0](native.id,{status:'complete'},native);
+  await wait(()=>[...tabs.values()].some(t=>t.id>=start&&t.url.includes('reader.html?id=')));
+  const reader=[...tabs.values()].find(t=>t.id>=start&&t.url.includes('reader.html?id=')),id=new URL(reader.url).searchParams.get('id');
+  assert.equal(new URL(reader.url).searchParams.get('dark'),null);
+  const fromReader=message=>new Promise((resolve,reject)=>runtime.onMessage.listeners[0](message,{id:runtime.id,tab:{id:reader.id},url:reader.url},r=>r.ok?resolve(r.value):reject(new Error(r.error))));
+  await assert.rejects(send({type:'reader-result',id,text:'spoofed'}),/Unknown PDF reader/);
+  assert.equal((await fromReader({type:'reader-start',id})).url,PDF_URL);
+  await fromReader({type:'reader-result',id,text:driverReport});await done;
+  assert.equal(session[`pdf:${native.id}`].text,driverReport);assert.equal(removedTabs.includes(reader.id),true);
+});
+
+test('redirected PDF captures in the DMV results tab, rejects other documents, supports reuse, and never opens or closes a results tab',async()=>{
+  runtime.sendMessage=async message=>{runtimeMessages.push(message);return {ok:true};};
+  await send({type:'pdf-display-settings',enabled:true});assert.equal(routingUpdates.at(-1).addRules[0].condition.resourceTypes[0],'main_frame');
+  const tab={id:nextId++,url:runtime.getURL(`reader.html?dark=1&pdf=1#${PDF_URL}?a=1&b=2`),status:'complete',windowId:1,active:true};tabs.set(tab.id,tab);
+  for(const t of tabs.values())t.active=t.id===tab.id;
+  const next=nextId;
+  let documentId='direct-first';
+  const fromReader=(message,overrides={})=>new Promise((resolve,reject)=>runtime.onMessage.listeners[0](message,{id:runtime.id,tab:{id:tab.id},url:tab.url,frameId:0,documentId,...overrides},r=>r.ok?resolve(r.value):reject(new Error(r.error))));
+  await assert.rejects(send({type:'reader-direct-start'}),/Unknown PDF results/);
+  await assert.rejects(fromReader({type:'reader-direct-start'},{frameId:1}),/Unknown PDF results/);
+  let job=await fromReader({type:'reader-direct-start'});assert.equal(job.url,PDF_URL+'?a=1&b=2');assert.equal(job.sameTab,true);
+  assert.equal(nextId,next);assert.equal(removedTabs.includes(tab.id),false);
+  // Chrome can report loading again after the reader replaces its own URL with the job ID.
+  const ownUrl=new URL(tab.url);ownUrl.searchParams.set('id',job.id);tab.url=ownUrl.href;
+  await chrome.tabs.onUpdated.listeners[0](tab.id,{url:tab.url,status:'loading'},tab);
+  assert.equal(runtimeMessages.some(m=>m.type==='reader-cancel'&&m.id===job.id),false,'same-document loading must not destroy the PDF worker');
+  await assert.rejects(fromReader({type:'reader-result',id:job.id,text:'wrong document'},{documentId:'different-document'}),/Unknown PDF reader/);
+  await fromReader({type:'reader-result',id:job.id,text:driverReport,viewReady:true});await wait(()=>session.pdfViewSources?.[tab.id]&&session[`pdf:${tab.id}`]);
+  await chrome.tabs.onUpdated.listeners[0](tab.id,{status:'loading'},tab);assert.equal(session[`pdf:${tab.id}`].text,driverReport);
+  await send({type:'run',command:'barcode'});await wait(barcodeData);assert.match(barcodeData().payload,/DAQ123456789/);await send({type:'stop'});
+  const url=new URL(tab.url);url.searchParams.set('id',job.id);tab.url=url.href;
+  await assert.rejects(fromReader({type:'reader-direct-start'}),/Unknown PDF results/);
+  // A newly redirected report reusing the same named tab must discard the previous person's text.
+  tab.url=runtime.getURL(`reader.html?dark=1&pdf=1#${PDF_URL}`);documentId='direct-second';
+  tab.documentId=documentId;await chrome.webNavigation.onCommitted.listeners[0]({tabId:tab.id,frameId:0,documentId,url:tab.url});assert.equal(session[`pdf:${tab.id}`],undefined);
+  job=await fromReader({type:'reader-direct-start'});
+  await fromReader({type:'reader-result',id:job.id,text:driverReport.replace('123456789','987654321'),viewReady:true});await wait(()=>session[`pdf:${tab.id}`]);
+  assert.match(session[`pdf:${tab.id}`].text,/987654321/);assert.equal(nextId,next);
+  await chrome.tabs.onRemoved.listeners[0](tab.id);assert.equal(session[`pdf:${tab.id}`],undefined);assert.equal(session.pdfViewSources[tab.id],undefined);
+  // Stopping a pending read notifies that document without removing the user's results tab.
+  documentId='direct-third';job=await fromReader({type:'reader-direct-start'});await send({type:'stop'});
+  await wait(()=>runtimeMessages.some(m=>m.type==='reader-cancel'&&m.id===job.id));
+  assert.equal(removedTabs.includes(tab.id),false);await assert.rejects(fromReader({type:'reader-result',id:job.id,text:driverReport}),/Unknown PDF reader/);
+  // A rendering failure keeps extracted text and the user's results tab available.
+  documentId='direct-fourth';job=await fromReader({type:'reader-direct-start'});
+  await fromReader({type:'reader-result',id:job.id,text:driverReport,viewReady:false,viewerError:'Synthetic rendering failure'});
+  await wait(()=>session.status==='PDF dark view unavailable: Synthetic rendering failure');assert.equal(session[`pdf:${tab.id}`].text,driverReport);assert.equal(removedTabs.includes(tab.id),false);
+  delete session[`pdf:${tab.id}`];delete session.pdfViewSources[tab.id];
+  await send({type:'run',command:'barcode'});await wait(()=>panel('notice'));assert.match(session.status,/captured text.*no longer available/);assert.equal(nextId,next);
+  await send({type:'pdf-display-settings',enabled:false});assert.deepEqual(routingUpdates.at(-1).addRules,[]);
+});
+
+
+test('committed document IDs protect a current PDF worker but cancel a replaced reader',async()=>{
+  runtime.sendMessage=async message=>{runtimeMessages.push(message);return {ok:true};};captureBlocked=false;
+  const tab={id:nextId++,url:runtime.getURL(`reader.html?dark=1&pdf=1#${PDF_URL}`),windowId:1,status:'loading',documentId:'current-reader'};tabs.set(tab.id,tab);
+  const fromReader=message=>new Promise((resolve,reject)=>runtime.onMessage.listeners[0](message,{id:runtime.id,tab:{id:tab.id},url:tab.url,frameId:0,documentId:tab.documentId},r=>r.ok?resolve(r.value):reject(new Error(r.error))));
+  const job=await fromReader({type:'reader-direct-start'});
+  const committed=documentId=>chrome.webNavigation.onCommitted.listeners[0]({tabId:tab.id,frameId:0,documentId,url:tab.url});
+  await committed('current-reader'); // A late commit notification from this document is harmless.
+  await committed('older-reader'); // A delayed event must be checked against the actual current frame.
+  assert.equal(runtimeMessages.some(m=>m.type==='reader-cancel'&&m.id===job.id),false);
+  tab.documentId='replacement-reader';await committed(tab.documentId);
+  await wait(()=>runtimeMessages.some(m=>m.type==='reader-cancel'&&m.id===job.id));
+  await assert.rejects(fromReader({type:'reader-result',id:job.id,text:driverReport}),/Unknown PDF reader/);
+  assert.equal(session[`pdf:${tab.id}`],undefined);assert.equal(removedTabs.includes(tab.id),false);
+});
+
+
+test('native printing opens and reuses a local PDF snapshot without changing dark mode or mixing report identities',async()=>{
+  await send({type:'stop'});
+  const source={id:nextId++,url:runtime.getURL('reader.html?dark=1&pdf=1&id=print-source#'+PDF_URL),status:'complete',windowId:1,active:true,documentId:'print-source'};tabs.set(source.id,source);
+  session[`pdf:${source.id}`]={text:driverReport,capturedAt:100,documentId:'print-source'};session.pdfViewSources={...session.pdfViewSources,[source.id]:true};session.pdfCreated[source.id]=100;
+  const fromReader=(message,overrides={})=>new Promise((resolve,reject)=>runtime.onMessage.listeners[0]({text:driverReport,...message},{id:runtime.id,tab:{id:source.id},url:source.url,frameId:0,documentId:'print-source',...overrides},r=>r.ok?resolve(r.value):reject(new Error(r.error))));
+  const url='blob:'+runtime.getURL('12345678-1234-1234-1234-123456789abc'),before=nextId,preference=local.pdfDarkMode,rules=routingUpdates.length;
+  await assert.rejects(send({type:'pdf-native-print',url}),/Open the report in the PDF viewer/);
+  await assert.rejects(fromReader({type:'pdf-native-print',url:PDF_URL}),/original PDF file could not be prepared/);
+  // MessageSender can retain the document's original URL after replaceState adds its job ID.
+  const originalUrl=source.url.replace('&id=print-source','');
+  await fromReader({type:'pdf-native-print',url},{url:originalUrl});const native=tabs.get(before);
+  assert.equal(native.url,url);assert.equal(nextId,before+1);assert.equal(local.pdfDarkMode,preference);assert.equal(routingUpdates.length,rules);
+  assert.equal(session[`pdf:${native.id}`].text,driverReport);assert.equal(session[`pdf:${native.id}`].documentId,undefined);
+  await fromReader({type:'pdf-native-print',url});assert.equal(nextId,before+1);
+  session['pdf:2']={text:driverReport.replace('123456789','987654321')};session.pdfCreated[2]=Date.now()+1000;
+  await send({type:'run',command:'barcode'});await wait(barcodeData);assert.match(barcodeData().payload,/DAQ123456789/);assert.doesNotMatch(barcodeData().payload,/DAQ987654321/);await send({type:'stop'});
+  // A navigated printing tab cannot be reused or mistaken for its previous PDF.
+  native.url='https://unrelated.test/';await fromReader({type:'pdf-native-print',url});assert.equal(nextId,before+2);
+  const replacement=tabs.get(before+1);await chrome.tabs.onRemoved.listeners[0](source.id);
+  await send({type:'run',command:'barcode'});await wait(barcodeData);assert.match(barcodeData().payload,/DAQ123456789/);await send({type:'stop'});
+  await chrome.tabs.onRemoved.listeners[0](replacement.id);assert.equal(session[`pdf:${replacement.id}`],undefined);assert.equal(session.pdfViewSources[replacement.id],undefined);
+  const emptyUrl='blob:'+runtime.getURL('aaaaaaaa-1234-1234-1234-123456789abc'),emptyId=nextId;
+  await fromReader({type:'pdf-native-print',url:emptyUrl,text:undefined});assert.equal(session[`pdf:${emptyId}`].text,'');
+});
+
+test('native printing uses the loaded PDF snapshot when background report metadata is stale or unavailable',async()=>{
+  await send({type:'stop'});
+  const source={id:nextId++,url:runtime.getURL('reader.html?dark=1&pdf=1&id=loaded-file#'+PDF_URL),status:'complete',windowId:1,active:true};tabs.set(source.id,source);
+  session[`pdf:${source.id}`]={text:driverReport.replace('123456789','987654321'),documentId:'stale-cache-document'};
+  const originalUrl=source.url.replace('&id=loaded-file',''),url='blob:'+runtime.getURL('bbbbbbbb-1234-1234-1234-123456789abc'),nativeId=nextId;
+  const request={type:'pdf-native-print',url,text:driverReport};
+  await new Promise((resolve,reject)=>runtime.onMessage.listeners[0](request,{id:runtime.id,tab:{id:source.id},url:originalUrl,frameId:0,documentId:'loaded-document'},r=>r.ok?resolve(r.value):reject(new Error(r.error))));
+  assert.equal(tabs.get(nativeId).url,url);assert.equal(session[`pdf:${nativeId}`].text,driverReport);
+  assert.doesNotMatch(session[`pdf:${nativeId}`].text,/987654321/);
+});
+
+
+test('printing does not wait for a still-pending PDF capture',async()=>{
+  await send({type:'stop'});captureBlocked=false;
+  const tab={id:nextId++,url:runtime.getURL('reader.html?dark=1&pdf=1#'+PDF_URL),status:'complete',windowId:1};tabs.set(tab.id,tab);
+  const fromReader=message=>new Promise((resolve,reject)=>runtime.onMessage.listeners[0](message,{id:runtime.id,tab:{id:tab.id},url:tab.url,frameId:0,documentId:'pending-print-doc'},r=>r.ok?resolve(r.value):reject(new Error(r.error))));
+  await fromReader({type:'reader-direct-start'}); // Leave reader-result pending.
+  const url='blob:'+runtime.getURL('cccccccc-1234-1234-1234-123456789abc'),nativeId=nextId;
+  const result=fromReader({type:'pdf-native-print',url,text:driverReport});
+  await wait(()=>tabs.get(nativeId)?.url===url);await result;
+  assert.equal(session[`pdf:${nativeId}`].text,driverReport);await send({type:'stop'});
 });

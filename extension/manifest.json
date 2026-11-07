@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "SC DMV Hotkeys",
-  "version": "1.6.3",
+  "version": "1.7.6",
   "minimum_chrome_version": "120",
   "description": "Keyboard shortcut keys for automating searches through the SCDMV online portal.",
   "permissions": [
@@ -9,7 +9,9 @@
     "tts",
     "offscreen",
     "scripting",
-    "tabs"
+    "tabs",
+    "declarativeNetRequestWithHostAccess",
+    "webNavigation"
   ],
   "host_permissions": [
     "https://www.scdmvonline.com/*"
@@ -72,5 +74,15 @@
       "global": true,
       "description": "Search previous queued customer (preferred Alt+M)"
     }
-  }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "reader.html"
+      ],
+      "matches": [
+        "https://www.scdmvonline.com/*"
+      ]
+    }
+  ]
 }
