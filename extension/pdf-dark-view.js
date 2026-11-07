@@ -1,5 +1,5 @@
 /** Recolor neutral paper/ink outside PDF.js-recorded image footprints. */
-import {OPS} from './vendor/pdf.mjs';
+import {OPS, TextLayer} from './vendor/pdf.mjs';
 const unsafeImageOps = new Set(Object.entries(OPS).filter(([name]) => /paint.*Image/i.test(name) && !['paintImageXObject','paintInlineImageXObject'].includes(name)).map(([,value]) => value));
 export function darkenPaper(context, coordinates) {
   const {width,height} = context.canvas, protectedPixels = new Uint8Array(width*height);
@@ -37,11 +37,46 @@ export async function openDarkViewer(doc, signal) {
     const label = document.createElement('span'); label.className = 'pdf-page-label'; label.textContent = `Page ${index+1}`;element.append(label);
     pages.append(element);return {number:index+1,element,near:index===0,ready:false};
   });
+  // Keep lightweight text layers in the document even when distant raster pages
+  // are released, so selections across pages and Select All do not lose text.
+  const pendingText = new Set();
+  const resizeText = sheet => {
+    if(sheet.textSurface)sheet.textSurface.style.transform=`scale(${sheet.element.getBoundingClientRect().width/sheet.viewportWidth})`;
+  };
+  const resizeObserver = new ResizeObserver(entries => {
+    for(const entry of entries)resizeText(sheets.find(sheet=>sheet.element===entry.target));
+  });
+  const prepareText = (sheet,page,viewport) => {
+    if(sheet.textPromise)return sheet.textPromise;
+    sheet.textPromise=(async()=>{
+      const content=await page.getTextContent();
+      if(stopped)return;
+      const surface=document.createElement('div');surface.className='pdf-text-surface';
+      surface.style.width=`${viewport.width}px`;surface.style.height=`${viewport.height}px`;
+      const layer=document.createElement('div');layer.className='textLayer';
+      layer.style.setProperty('--total-scale-factor',viewport.scale);
+      layer.style.setProperty('--scale-round-x','1px');layer.style.setProperty('--scale-round-y','1px');
+      surface.append(layer);
+      const task=new TextLayer({textContentSource:content,container:layer,viewport});pendingText.add(task);
+      try {await task.render();} finally {pendingText.delete(task);}
+      if(stopped)return;
+      sheet.viewportWidth=viewport.width;sheet.textSurface=surface;
+      sheet.element.style.width=`${viewport.width}px`;sheet.element.style.aspectRatio=`${viewport.width}/${viewport.height}`;
+      sheet.element.append(surface);resizeText(sheet);resizeObserver.observe(sheet.element);
+    })();
+    return sheet.textPromise;
+  };
+  const textError = (sheet,error) => {
+    if(!stopped)sheet.element.querySelector('.pdf-page-label').textContent=`Page ${sheet.number}: text selection unavailable (${error.message})`;
+  };
+  const viewportFor = page => {
+    const initial=page.getViewport({scale:1});return page.getViewport({scale:Math.min(1.5,1600/initial.width,2400/initial.height)});
+  };
   const status = () => {progress.textContent = `${doc.numPages} ${doc.numPages===1?'page':'pages'} · ${dark?'Dark':'Original'} colors`;};
   const render = async (sheet, token) => {
     const page = await doc.getPage(sheet.number);
     if (stopped || token !== generation) return;
-    const initial = page.getViewport({scale:1}), scale = Math.min(1.5,1600/initial.width,2400/initial.height), viewport = page.getViewport({scale});
+    const viewport = viewportFor(page);
     sheet.element.style.width = `${viewport.width}px`;sheet.element.style.aspectRatio = `${viewport.width}/${viewport.height}`;
     // Keep the actual canvas detached until rendering and recoloring both finish.
     const canvas = document.createElement('canvas');canvas.className = 'pdf-page';
@@ -61,7 +96,10 @@ export async function openDarkViewer(doc, signal) {
         if(!originalOnly)darkenPaper(canvas.getContext('2d'),coordinates||[]);
       }
       if(stopped || token !== generation || !sheet.near)return;
-      canvas.dataset.ready = 'true';sheet.element.append(canvas);sheet.ready = true;
+      sheet.element.append(canvas);
+      await prepareText(sheet,page,viewport).catch(error=>textError(sheet,error));
+      if(stopped || token !== generation || !sheet.near){canvas.remove();return;}
+      canvas.dataset.ready = 'true';sheet.ready = true;
       if(originalOnly)sheet.element.querySelector('.pdf-page-label').textContent = `Page ${sheet.number} — original colors retained to protect images`;
     } catch(error) {
       if(!stopped && token === generation) {sheet.ready=true;sheet.element.querySelector('.pdf-page-label').textContent=`Page ${sheet.number}: ${error.message}`;}
@@ -76,13 +114,21 @@ export async function openDarkViewer(doc, signal) {
     } finally {pumping=false;}
   };
   let observer;
-  const stop = () => {stopped=true;generation++;observer?.disconnect();currentTask?.cancel();doc.destroy();};
+  const stop = () => {stopped=true;generation++;observer?.disconnect();resizeObserver.disconnect();currentTask?.cancel();for(const task of pendingText)task.cancel();doc.destroy();};
   signal?.addEventListener('abort',stop,{once:true});
   window.addEventListener('beforeunload',stop,{once:true});
   toggle.disabled=true;
   await render(sheets[0],generation);
   if(stopped)throw new DOMException('Report loading stopped.','AbortError');
   status();toggle.disabled=false;
+  const prepareRemainingText=async()=>{
+    for(const sheet of sheets.slice(1)) {
+      if(stopped)return;
+      const page=await doc.getPage(sheet.number);
+      try {await prepareText(sheet,page,viewportFor(page)).catch(error=>textError(sheet,error));} finally {page.cleanup();}
+    }
+  };
+  prepareRemainingText().catch(error=>{if(!stopped)progress.textContent=`Text selection unavailable: ${error.message}`;});
   observer = new IntersectionObserver(entries => {
     for(const entry of entries) {
       const sheet = sheets.find(item=>item.element===entry.target);sheet.near=entry.isIntersecting;

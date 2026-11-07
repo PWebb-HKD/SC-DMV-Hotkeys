@@ -10,7 +10,7 @@ import {ROOT, MEMBER, LOGIN, DISCLAIMER, PDF_URL, ownerNumbers} from '../extensi
 import {plateStatus, licenseStatus} from '../extension/status-alerts.js';
 import {RECORDING_PATHS} from '../extension/voice-recordings.js';
 const {chromium} = dependency('playwright');
-const {PDFDocument, StandardFonts} = dependency('pdf-lib');
+const {PDFDocument, StandardFonts, degrees} = dependency('pdf-lib');
 const root = fileURLToPath(new URL('../', import.meta.url));
 const browser = await chromium.launch({executablePath: process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true});
 const screenshots = join(root, 'test-results'); await mkdir(screenshots, {recursive: true});
@@ -752,6 +752,46 @@ try {
     await page.waitForFunction(()=>!document.querySelector('.pdf-sheet:first-child canvas'));assert.ok(await page.locator('.pdf-page').count()<=5);
     const paper=await page.locator('.pdf-sheet:last-child canvas').evaluate(c=>[...c.getContext('2d').getImageData(5,5,1,1).data]);assert.deepEqual(paper,[24,26,27,255]);
     assert.match((await page.evaluate(()=>window.pdfResult.text)),/SYNTHETIC PAGE 30/);await page.close();
+  });
+  await tests('PDF text can be selected and copied after resize, rotation, color toggles, and canvas eviction',async()=>{
+    const doc=await PDFDocument.create(),font=await doc.embedFont(StandardFonts.Helvetica),text='CUSTOMER NUMBER: 12345678';
+    doc.addPage([400,400]).drawText(text,{x:50,y:300,font,size:16});
+    const rotated=doc.addPage([400,500]);rotated.drawText('ROTATED COPY TEXT',{x:40,y:200,font,size:16});rotated.setRotation(degrees(90));
+    for(let n=3;n<=12;n++)doc.addPage([400,400]).drawText(`SYNTHETIC PAGE ${n}`,{x:30,y:300,font,size:16});
+    const base64=Buffer.from(await doc.save()).toString('base64'),page=await ui.newPage();
+    await ui.grantPermissions(['clipboard-read','clipboard-write']);
+    await page.addInitScript(base64=>{chrome.runtime.sendMessage=async message=>{
+      if(message.type==='reader-direct-start')return {ok:true,value:{base64,id:'selection-fixture'}};
+      if(message.type==='reader-result'){window.pdfResult=message;return {ok:true,value:true};}
+      return {ok:false};
+    };},base64);
+    await page.goto(base+'/reader.html?dark=1&pdf=1#https://www.scdmvonline.com/SCTRNS/Member/Transactions/ViewAttachment.aspx');
+    await page.waitForFunction(()=>window.pdfResult?.viewReady===true);await page.waitForFunction(()=>document.querySelectorAll('.pdf-text-surface').length===12);
+    const first=page.locator('.pdf-sheet:first-child .textLayer span').filter({hasText:text});
+    const copy=async(locator,vertical=false)=>{
+      await locator.scrollIntoViewIfNeeded();const box=await locator.boundingBox();assert.ok(box.width>0&&box.height>0);
+      await page.evaluate(()=>getSelection().removeAllRanges());
+      await page.mouse.move(vertical?box.x+box.width/2:box.x+1,vertical?box.y+1:box.y+box.height/2);await page.mouse.down();
+      await page.mouse.move(vertical?box.x+box.width/2:box.x+box.width-1,vertical?box.y+box.height-1:box.y+box.height/2,{steps:20});await page.mouse.up();
+      const selected=await page.evaluate(()=>getSelection().toString());
+      await page.evaluate(()=>navigator.clipboard.writeText('fixture empty'));await page.keyboard.press('Control+c');
+      assert.equal(await page.evaluate(()=>navigator.clipboard.readText()),selected);return selected;
+    };
+    for(const width of [540,920,360]){
+      await page.setViewportSize({width,height:900});
+      await page.waitForFunction(()=>{const sheet=document.querySelector('.pdf-sheet'),surface=sheet.querySelector('.pdf-text-surface');return Math.abs(surface.getBoundingClientRect().width-sheet.getBoundingClientRect().width)<1;});
+      assert.equal(await copy(first),text);
+      const box=await first.boundingBox(),sheet=await page.locator('.pdf-sheet:first-child').boundingBox();assert.ok(Math.abs(box.x-sheet.x-sheet.width*50/400)<2);
+    }
+    await page.setViewportSize({width:540,height:900});assert.equal(await copy(page.locator('.pdf-sheet:nth-child(2) .textLayer span').filter({hasText:'ROTATED COPY TEXT'}),true),'ROTATED COPY TEXT');
+    await page.locator('#pdfColors').click();assert.equal(await copy(first),text);
+    await page.locator('.pdf-sheet:last-child').scrollIntoViewIfNeeded();await page.waitForFunction(()=>!document.querySelector('.pdf-sheet:first-child canvas'));
+    assert.equal(await page.locator('.pdf-sheet:first-child .pdf-text-surface').count(),1);
+    assert.equal(await copy(first),text);
+    // Native Select All includes unvisited report pages, without toolbar/page-label text.
+    await page.keyboard.press('Control+a');await page.keyboard.press('Control+c');const all=await page.evaluate(()=>navigator.clipboard.readText());
+    assert.match(all,/CUSTOMER NUMBER: 12345678/);assert.match(all,/SYNTHETIC PAGE 12/);assert.doesNotMatch(all,/Use original PDF colors|Use dark PDF colors|DMV PDF results/);
+    await page.close();
   });
   await tests('cancelling PDF worker startup reports a deliberate stop instead of Worker was destroyed',async()=>{
     const doc=await PDFDocument.create();doc.addPage().drawText('SYNTHETIC CANCELLATION FIXTURE');

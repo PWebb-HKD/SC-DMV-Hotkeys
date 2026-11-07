@@ -12,9 +12,9 @@ A Manifest V3 extension for SCDMV member searches, PDF follow-ups, and SCUTTIES 
 
 No build, npm installation, or external script download is required to run the packaged extension. PDF.js 5.6.205 is bundled locally, including its license and supporting assets.
 
-## PDF results dark mode (1.7.2 test build)
+## PDF results dark mode (1.7.3 test build)
 
-Enable **Settings → PDF results → Dark PDF results (keep photos unchanged)**, then run a new DMV search. The report opens dark in the same results tab DMV opens, with continuous scrolling through all pages. There is no second viewer tab and no Next/Previous page button. Nearby pages render as you scroll; distant page canvases are released to limit memory use.
+Enable **Settings → PDF results → Dark PDF results (keep photos unchanged)**, then run a new DMV search. The report opens dark in the same results tab DMV opens, with continuous scrolling through all pages. There is no second viewer tab and no Next/Previous page button. Select text and copy it normally with Ctrl+C (Command+C on macOS) or the browser context menu. Version 1.7.3 adds a transparent PDF.js text layer aligned with each page, including rotated pages and resized windows. Text layers remain available when distant page canvases are released. Image-only scans still require OCR. Nearby pages render as you scroll; distant page canvases are released to limit memory use.
 
 Chromium's native PDF viewer can be darkened with a whole-view filter, as Dark Reader does, but that also changes embedded photos. This feature routes the top-level DMV PDF request to the bundled renderer before the native viewer loads. Version 1.7.2 fixes a startup cancellation race by checking committed document IDs instead of treating a same-document loading notification as navigation away. The viewer starts with a dark loading background and does not display a canvas until recoloring finishes. Its address is an extension URL in the same tab. Portal pages keep their normal behavior, including Dark Reader styling.
 
