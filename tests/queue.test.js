@@ -599,3 +599,28 @@ test('committed document IDs protect a current PDF worker but cancel a replaced 
   await assert.rejects(fromReader({type:'reader-result',id:job.id,text:driverReport}),/Unknown PDF reader/);
   assert.equal(session[`pdf:${tab.id}`],undefined);assert.equal(removedTabs.includes(tab.id),false);
 });
+
+
+test('native printing opens and reuses a local PDF snapshot without changing dark mode or mixing report identities',async()=>{
+  await send({type:'stop'});
+  const source={id:nextId++,url:runtime.getURL('reader.html?dark=1&pdf=1&id=print-source#'+PDF_URL),status:'complete',windowId:1,active:true,documentId:'print-source'};tabs.set(source.id,source);
+  session[`pdf:${source.id}`]={text:driverReport,capturedAt:100,documentId:'print-source'};session.pdfViewSources={...session.pdfViewSources,[source.id]:true};session.pdfCreated[source.id]=100;
+  const fromReader=(message,overrides={})=>new Promise((resolve,reject)=>runtime.onMessage.listeners[0](message,{id:runtime.id,tab:{id:source.id},url:source.url,frameId:0,documentId:'print-source',...overrides},r=>r.ok?resolve(r.value):reject(new Error(r.error))));
+  const url='blob:'+runtime.getURL('12345678-1234-1234-1234-123456789abc'),before=nextId,preference=local.pdfDarkMode,rules=routingUpdates.length;
+  await assert.rejects(send({type:'pdf-native-print',url}),/Unknown PDF print request/);
+  await assert.rejects(fromReader({type:'pdf-native-print',url:PDF_URL}),/Unknown PDF print request/);
+  await assert.rejects(fromReader({type:'pdf-native-print',url},{documentId:'wrong-document'}),/captured report is no longer available/);
+  await fromReader({type:'pdf-native-print',url});const native=tabs.get(before);
+  assert.equal(native.url,url);assert.equal(nextId,before+1);assert.equal(local.pdfDarkMode,preference);assert.equal(routingUpdates.length,rules);
+  assert.equal(session[`pdf:${native.id}`].text,driverReport);assert.equal(session[`pdf:${native.id}`].documentId,undefined);
+  await fromReader({type:'pdf-native-print',url});assert.equal(nextId,before+1);
+  session['pdf:2']={text:driverReport.replace('123456789','987654321')};session.pdfCreated[2]=Date.now()+1000;
+  await send({type:'run',command:'barcode'});await wait(barcodeData);assert.match(barcodeData().payload,/DAQ123456789/);assert.doesNotMatch(barcodeData().payload,/DAQ987654321/);await send({type:'stop'});
+  // A navigated printing tab cannot be reused or mistaken for its previous PDF.
+  native.url='https://unrelated.test/';await fromReader({type:'pdf-native-print',url});assert.equal(nextId,before+2);
+  const replacement=tabs.get(before+1);await chrome.tabs.onRemoved.listeners[0](source.id);
+  await send({type:'run',command:'barcode'});await wait(barcodeData);assert.match(barcodeData().payload,/DAQ123456789/);await send({type:'stop'});
+  await chrome.tabs.onRemoved.listeners[0](replacement.id);assert.equal(session[`pdf:${replacement.id}`],undefined);assert.equal(session.pdfViewSources[replacement.id],undefined);
+  const emptyUrl='blob:'+runtime.getURL('aaaaaaaa-1234-1234-1234-123456789abc'),emptyId=nextId;
+  await fromReader({type:'pdf-native-print',url:emptyUrl});assert.equal(session[`pdf:${emptyId}`].text,'');
+});

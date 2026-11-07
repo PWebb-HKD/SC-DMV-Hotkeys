@@ -16,3 +16,14 @@ export function pdfDarkRule(readerUrl) {
 export async function setPdfRouting(enabled) {
   await chrome.declarativeNetRequest.updateDynamicRules({removeRuleIds: [PDF_DARK_RULE_ID], addRules: enabled ? [pdfDarkRule(chrome.runtime.getURL('reader.html'))] : []});
 }
+
+/** Match a known local print PDF, including Chromium's viewer wrappers. */
+export function isNativePrintUrl(candidate, expected, depth=0) {
+  if(!candidate||depth>3)return false;
+  if(candidate.split('#')[0]===expected)return true;
+  try {
+    const u=new URL(candidate);
+    if(!['chrome-extension:','chrome:','edge:','chrome-untrusted:'].includes(u.protocol))return false;
+    return ['src','file','url','originalUrl','streamUrl'].some(key=>isNativePrintUrl(u.searchParams.get(key),expected,depth+1));
+  } catch {return false;}
+}

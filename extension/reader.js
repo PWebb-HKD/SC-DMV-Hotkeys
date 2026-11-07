@@ -3,12 +3,15 @@
  * single authorized job from the worker and returns text/errors by job ID. Reading
  * PDF bytes avoids depending on the browser viewer DOM; this is not an OCR engine.
  */
+import {installNativePrint} from './pdf-print.js';
 import {openDarkViewer} from './pdf-dark-view.js';
 import {getDocument, GlobalWorkerOptions} from './vendor/pdf.mjs';
 GlobalWorkerOptions.workerSrc = chrome.runtime.getURL('vendor/pdf.worker.mjs');
 const params = new URL(location.href).searchParams;
 let id = params.get('id'), loadingTask;
 const controller = new AbortController(), cancelledIds = new Set();
+const printReady=Promise.withResolvers();printReady.promise.catch(()=>{});
+if(params.get('dark')==='1')installNativePrint(printReady.promise,controller.signal);
 chrome.runtime.onMessage.addListener(message => {
   if(message.target !== 'pdf-reader' || message.type !== 'reader-cancel')return;
   if(!id)cancelledIds.add(message.id);
@@ -66,8 +69,11 @@ try {
   } finally { if (!viewReady) await doc.destroy(); }
   const text = lines.join('\n');
   if (text.length > 1000000) throw new Error('PDF text exceeds the extraction limit.');
-  await chrome.runtime.sendMessage({type: 'reader-result', id, text, viewReady, viewerError});
+  const result=await chrome.runtime.sendMessage({type: 'reader-result', id, text, viewReady, viewerError});
+  if(!result?.ok)throw new Error(result?.error||'The captured report is no longer available.');
+  if(viewReady)printReady.resolve(doc);else printReady.reject(new Error(viewerError||'The PDF viewer could not be opened.'));
 } catch (error) {
+  printReady.reject(error);
   document.getElementById('reading').hidden=false;
   document.getElementById('readingNote').textContent=controller.signal.aborted || error.name==='AbortError'?'Report loading stopped. Run the search again to reopen it.':error.message;
   await chrome.runtime.sendMessage({type: 'reader-result', id, error: controller.signal.aborted ? 'Report loading stopped. Run the search again to reopen it.' : error.name === 'PasswordException' ? 'This PDF requires a document password. Open an accessible report or enter the number manually.' : error.message});

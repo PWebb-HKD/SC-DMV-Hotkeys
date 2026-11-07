@@ -793,6 +793,39 @@ try {
     assert.match(all,/CUSTOMER NUMBER: 12345678/);assert.match(all,/SYNTHETIC PAGE 12/);assert.doesNotMatch(all,/Use original PDF colors|Use dark PDF colors|DMV PDF results/);
     await page.close();
   });
+  await tests('Print button and print shortcuts open the exact captured PDF in Chromium without printing the dark HTML',async()=>{
+    const doc=await PDFDocument.create();doc.addPage().drawText('ORIGINAL PRINT SNAPSHOT');doc.addPage().drawText('ORIGINAL SECOND PAGE');
+    const bytes=Buffer.from(await doc.save()),base64=bytes.toString('base64'),page=await ui.newPage();let native,requests=0,dmvRequests=0;
+    const readerHtml=await readFile(join(root,'extension/reader.html'),'utf8');
+    await page.route('**/reader.html?*',route=>route.fulfill({body:readerHtml,contentType:'text/html',headers:{'Content-Security-Policy':"script-src 'self'; object-src 'self'; worker-src 'self'"}}));
+    page.on('request',request=>{if(request.url().startsWith('https://www.scdmvonline.com/'))dmvRequests++;});
+    await page.exposeFunction('nativePdfRequest',async url=>{
+      requests++;
+      const actual=await page.evaluate(async url=>[...new Uint8Array(await(await fetch(url)).arrayBuffer())],url);assert.deepEqual(Buffer.from(actual),bytes);
+      if(!native){native=await ui.newPage();await native.goto(url);}
+      else await native.bringToFront();
+      return true;
+    });
+    await page.addInitScript(base64=>{window.htmlPrintCount=0;window.print=()=>window.htmlPrintCount++;addEventListener('beforeprint',()=>window.htmlPrintCount++);
+      chrome.runtime.sendMessage=async message=>{
+        if(message.type==='reader-direct-start')return {ok:true,value:{base64,id:'print-fixture'}};
+        if(message.type==='reader-result'){window.pdfResult=message;return {ok:true,value:true};}
+        if(message.type==='pdf-native-print'){await window.nativePdfRequest(message.url);return {ok:true,value:true};}
+        return {ok:false};
+      };
+    },base64);
+    await page.goto(base+'/reader.html?dark=1&pdf=1#https://www.scdmvonline.com/SCTRNS/Member/Transactions/ViewAttachment.aspx');
+    await page.waitForFunction(()=>window.pdfResult?.viewReady===true&&!document.querySelector('#pdfPrint').disabled);
+    await page.locator('#pdfPrint').click();await page.waitForFunction(()=>document.querySelector('#pdfPrintStatus').textContent.startsWith('Original PDF opened'));
+    assert.equal(requests,1);assert.ok(native.url().startsWith('blob:'));
+    const info=await native.evaluate(()=>({type:document.contentType,embed:!!document.querySelector('embed[type="application/pdf"]'),darkPages:document.querySelectorAll('.pdf-sheet').length}));
+    assert.ok(info.type==='application/pdf'||info.embed,JSON.stringify(info));assert.equal(info.darkPages,0);
+    await page.bringToFront();await page.keyboard.press('Control+p');await page.waitForFunction(()=>!document.querySelector('#pdfPrint').disabled);assert.equal(requests,2);
+    const prevented=await page.evaluate(()=>{const event=new KeyboardEvent('keydown',{key:'p',metaKey:true,bubbles:true,cancelable:true});dispatchEvent(event);return event.defaultPrevented;});
+    assert.equal(prevented,true);await page.waitForFunction(()=>!document.querySelector('#pdfPrint').disabled);assert.equal(requests,3);
+    assert.equal(await page.evaluate(()=>window.htmlPrintCount),0);assert.equal(dmvRequests,0);assert.equal(await page.locator('.pdf-sheet').count(),2);
+    await native.close();await page.close();
+  });
   await tests('cancelling PDF worker startup reports a deliberate stop instead of Worker was destroyed',async()=>{
     const doc=await PDFDocument.create();doc.addPage().drawText('SYNTHETIC CANCELLATION FIXTURE');
     const base64=Buffer.from(await doc.save()).toString('base64'),page=await ui.newPage();

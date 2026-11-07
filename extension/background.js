@@ -11,7 +11,7 @@ import {checkBlacklist, driverIdentifiers, validateBlacklist, BlacklistedSearchE
 import {SearchRun, guardedApi, isCancelled} from './run.js';
 import {recordStatus, unavailableAlert} from './status-alerts.js';
 import {AudioAlerts, availableVoices} from './audio-alerts.js';
-import {darkResultSource, setPdfRouting} from './pdf-routing.js';
+import {darkResultSource, setPdfRouting, isNativePrintUrl} from './pdf-routing.js';
 import {reportBarcode, VehiclePartyError} from './barcode-data.js';
 const audioAlerts = new AudioAlerts();
 
@@ -103,7 +103,7 @@ async function sourceTab() {
 async function pdfTab(source, run) {
   run?.check();
   const {pdfViewSources = {}} = await guardedApi(chrome, run).storage.session.get('pdfViewSources');
-  const isView = tab => !!pdfViewSources[tab.id] && tab.url?.startsWith(chrome.runtime.getURL('reader.html') + '?');
+  const isView = tab => pdfViewSources[tab.id] === true ? tab.url?.startsWith(chrome.runtime.getURL('reader.html') + '?') : typeof pdfViewSources[tab.id] === 'string' && (isNativePrintUrl(tab.url,pdfViewSources[tab.id]) || isNativePrintUrl(tab.pendingUrl,pdfViewSources[tab.id]));
   if (source && isView(source)) return source;
   if (source && (isPdf(source.url) || isPdf(source.pendingUrl))) return source;
   const api = guardedApi(chrome, run);
@@ -199,6 +199,30 @@ async function attachDarkReader(sender) {
   capture.run.check(); capture.attached = true;
   const reader = readers.get(job.id); reader.documentId = sender.documentId;
   return job;
+}
+/** Native printing uses a local Blob of this reader's bytes, never the shared DMV URL. */
+async function openNativePrint(sender,url) {
+  const prefix=`blob:${chrome.runtime.getURL('')}`;
+  if(!sender.tab || !sender.url?.startsWith(chrome.runtime.getURL('reader.html')+'?') || sender.frameId!==0 || typeof url!=='string' || !url.startsWith(prefix) || !/^[a-f0-9-]{36}$/i.test(url.slice(prefix.length))) throw new Error('Unknown PDF print request.');
+  const capture=captures.get(sender.tab.id);
+  if(capture)await capture.promise.catch(error=>{if(isCancelled(error))throw error;});
+  return track(async()=>{
+    const key=`pdf:${sender.tab.id}`,data=await chrome.storage.session.get([key,'pdfCreated','pdfViewSources']);
+    const snapshot=data[key],source=await chrome.tabs.get(sender.tab.id),frame=await chrome.webNavigation.getFrame({tabId:sender.tab.id,frameId:0});
+    if(source.url!==sender.url || frame?.documentId!==sender.documentId || snapshot?.documentId && snapshot.documentId!==sender.documentId)throw new Error('The captured report is no longer available. Run its search again before printing.');
+    const pdfCreated=data.pdfCreated||{},pdfViewSources=data.pdfViewSources||{};
+    for(const [id,knownUrl] of Object.entries(pdfViewSources)) {
+      if(knownUrl!==url)continue;
+      const tab=await chrome.tabs.get(+id).catch(()=>null);
+      if(tab&&(isNativePrintUrl(tab.url,url)||isNativePrintUrl(tab.pendingUrl,url))) {await focusTab(tab.id);return true;}
+    }
+    const tab=await chrome.tabs.create({url,active:true,openerTabId:sender.tab.id});
+    try {
+      pdfViewSources[tab.id]=url;pdfCreated[tab.id]=pdfCreated[sender.tab.id]||Date.now();
+      await chrome.storage.session.set({pdfViewSources,pdfCreated,[`pdf:${tab.id}`]:{text:snapshot?.text||'',capturedAt:snapshot?.capturedAt||Date.now()}});
+      await focusTab(tab.id);return true;
+    } catch(error) {await chrome.tabs.remove(tab.id).catch(()=>{});throw error;}
+  });
 }
 /** Return the selected report snapshot, capturing only when it is safe to refetch. */
 async function pdfText(source, run) {
@@ -534,6 +558,7 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
         return {base64: reader.base64, url: reader.url};
       }
       case 'reader-direct-start': return attachDarkReader(sender);
+      case 'pdf-native-print': return openNativePrint(sender,message.url);
       case 'reader-result': {
         const reader = readers.get(message.id);
         if (!reader || sender.tab?.id !== reader.tabId || reader.documentId && reader.documentId !== sender.documentId) throw new Error('Unknown PDF reader.');

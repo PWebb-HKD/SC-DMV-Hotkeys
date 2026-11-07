@@ -7,3 +7,5 @@
 .pdf-sheet{isolation:isolate}.pdf-text-surface{position:absolute;inset:0 auto auto 0;transform-origin:0 0;z-index:1;user-select:text}.pdf-sheet .pdf-page{user-select:none}.pdf-viewer header{user-select:none}.pdf-page-label{position:absolute;top:0;left:0;z-index:2;background:#181a1bd9;opacity:0;pointer-events:none;user-select:none}.pdf-sheet:not(:has(canvas)) .pdf-page-label{opacity:1}.pdf-viewer .hiddenCanvasElement{display:none}
 .textLayer[data-main-rotation="90"]{transform:rotate(90deg) translateY(-100%)}.textLayer[data-main-rotation="180"]{transform:rotate(180deg) translate(-100%,-100%)}.textLayer[data-main-rotation="270"]{transform:rotate(270deg) translateX(-100%)}
 .textLayer ::selection{color:transparent;background:rgba(74,150,255,.4)}
+
+.pdf-viewer #pdfPrintStatus{font-size:12px}.pdf-viewer #pdfPrintStatus:empty{display:none}
