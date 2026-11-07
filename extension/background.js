@@ -209,7 +209,11 @@ async function openNativePrint(sender,url) {
   return track(async()=>{
     const key=`pdf:${sender.tab.id}`,data=await chrome.storage.session.get([key,'pdfCreated','pdfViewSources']);
     const snapshot=data[key],source=await chrome.tabs.get(sender.tab.id),frame=await chrome.webNavigation.getFrame({tabId:sender.tab.id,frameId:0});
-    if(source.url!==sender.url || frame?.documentId!==sender.documentId || snapshot?.documentId && snapshot.documentId!==sender.documentId)throw new Error('The captured report is no longer available. Run its search again before printing.');
+    // MessageSender.url is captured when the extension document is created;
+    // history.replaceState changes tabs.get().url, not that sender URL. Compare
+    // the underlying report and the current document, not the mutable job query.
+    const readerUrl=chrome.runtime.getURL('reader.html'),reportUrl=darkResultSource(source.url,readerUrl);
+    if(!reportUrl || reportUrl!==darkResultSource(sender.url,readerUrl) || frame?.documentId!==sender.documentId || snapshot?.documentId && snapshot.documentId!==sender.documentId)throw new Error('The captured report is no longer available. Run its search again before printing.');
     const pdfCreated=data.pdfCreated||{},pdfViewSources=data.pdfViewSources||{};
     for(const [id,knownUrl] of Object.entries(pdfViewSources)) {
       if(knownUrl!==url)continue;

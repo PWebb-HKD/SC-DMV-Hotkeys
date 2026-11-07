@@ -9,3 +9,5 @@
 .textLayer ::selection{color:transparent;background:rgba(74,150,255,.4)}
 
 .pdf-viewer #pdfPrintStatus{font-size:12px}.pdf-viewer #pdfPrintStatus:empty{display:none}
+
+.pdf-viewer #pdfPrintStatus.error{flex-basis:100%;font-size:14px;font-weight:600}

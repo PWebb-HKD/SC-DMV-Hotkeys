@@ -610,7 +610,11 @@ test('native printing opens and reuses a local PDF snapshot without changing dar
   await assert.rejects(send({type:'pdf-native-print',url}),/Unknown PDF print request/);
   await assert.rejects(fromReader({type:'pdf-native-print',url:PDF_URL}),/Unknown PDF print request/);
   await assert.rejects(fromReader({type:'pdf-native-print',url},{documentId:'wrong-document'}),/captured report is no longer available/);
-  await fromReader({type:'pdf-native-print',url});const native=tabs.get(before);
+  // MessageSender can retain the document's original URL after replaceState adds its job ID.
+  const originalUrl=source.url.replace('&id=print-source','');
+  await assert.rejects(fromReader({type:'pdf-native-print',url},{url:originalUrl+'?different-report=1'}),/captured report is no longer available/);
+  source.documentId='replaced-document';await assert.rejects(fromReader({type:'pdf-native-print',url}),/captured report is no longer available/);source.documentId='print-source';
+  await fromReader({type:'pdf-native-print',url},{url:originalUrl});const native=tabs.get(before);
   assert.equal(native.url,url);assert.equal(nextId,before+1);assert.equal(local.pdfDarkMode,preference);assert.equal(routingUpdates.length,rules);
   assert.equal(session[`pdf:${native.id}`].text,driverReport);assert.equal(session[`pdf:${native.id}`].documentId,undefined);
   await fromReader({type:'pdf-native-print',url});assert.equal(nextId,before+1);

@@ -6,7 +6,7 @@ export function installNativePrint(documentReady, signal) {
   documentReady.then(()=>{if(!disposed)button.disabled=false;},()=>{});
   const print=async()=>{
     if(opening||disposed)return;
-    opening=true;button.disabled=true;status.textContent='Preparing original PDF for printing…';
+    opening=true;button.disabled=true;status.classList.remove('error');status.setAttribute('role','status');status.textContent='Preparing original PDF for printing…';
     try {
       const doc=await documentReady;signal.throwIfAborted();
       if(!blobUrl) {
@@ -18,7 +18,7 @@ export function installNativePrint(documentReady, signal) {
       if(!response?.ok)throw new Error(response?.error||'Could not open the original PDF.');
       status.textContent='Original PDF opened. Use its Print button or print shortcut.';
     } catch(error) {
-      if(!disposed)status.textContent=signal.aborted?'Report loading stopped. Run the search again before printing.':`Unable to open PDF for printing: ${error.message}`;
+      if(!disposed){status.classList.add('error');status.setAttribute('role','alert');status.textContent=signal.aborted?'Report loading stopped. Run the search again before printing.':`Unable to open PDF for printing: ${error.message}`;}
     } finally {opening=false;if(!disposed)button.disabled=false;}
   };
   const keydown=event=>{

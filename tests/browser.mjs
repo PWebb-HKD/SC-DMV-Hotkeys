@@ -824,6 +824,12 @@ try {
     const prevented=await page.evaluate(()=>{const event=new KeyboardEvent('keydown',{key:'p',metaKey:true,bubbles:true,cancelable:true});dispatchEvent(event);return event.defaultPrevented;});
     assert.equal(prevented,true);await page.waitForFunction(()=>!document.querySelector('#pdfPrint').disabled);assert.equal(requests,3);
     assert.equal(await page.evaluate(()=>window.htmlPrintCount),0);assert.equal(dmvRequests,0);assert.equal(await page.locator('.pdf-sheet').count(),2);
+    // Failed handoffs must be visible, and the same button must remain usable for retry.
+    await page.bringToFront();await page.evaluate(()=>{window.successfulPrintSend=chrome.runtime.sendMessage;chrome.runtime.sendMessage=async message=>message.type==='pdf-native-print'?{ok:false,error:'The captured report is no longer available.'}:window.successfulPrintSend(message);});
+    await page.locator('#pdfPrint').click();await page.locator('#pdfPrintStatus.error[role=alert]').waitFor();
+    assert.match(await page.locator('#pdfPrintStatus').textContent(),/Unable to open PDF for printing/);assert.equal(await page.locator('#pdfPrint').isDisabled(),false);
+    await page.evaluate(()=>{chrome.runtime.sendMessage=window.successfulPrintSend;});await page.locator('#pdfPrint').click();
+    await page.waitForFunction(()=>document.querySelector('#pdfPrintStatus').textContent.startsWith('Original PDF opened'));assert.equal(requests,4);assert.equal(await page.locator('#pdfPrintStatus.error').count(),0);
     await native.close();await page.close();
   });
   await tests('cancelling PDF worker startup reports a deliberate stop instead of Worker was destroyed',async()=>{
