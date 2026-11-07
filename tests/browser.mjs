@@ -15,7 +15,7 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 const browser = await chromium.launch({executablePath: process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true});
 const screenshots = join(root, 'test-results'); await mkdir(screenshots, {recursive: true});
 let passed = 0;
-const tests = async (name, fn) => { await fn(); passed++; console.log(`PASS ${name}`); };
+const tests = async (name, fn) => { if(process.env.BROWSER_TEST_FILTER&&!name.includes(process.env.BROWSER_TEST_FILTER))return; await fn(); passed++; console.log(`PASS ${name}`); };
 const event=()=>({listeners:new Set(),addListener(fn){this.listeners.add(fn);},removeListener(fn){this.listeners.delete(fn);},emit(...args){for(const fn of this.listeners)fn(...args);}});
 try {
   const context = await browser.newContext();
@@ -310,13 +310,13 @@ try {
     window.requests=[];
     window.panelClosed=false;window.close=()=>{window.panelClosed=true;};
     window.openedTabs=[];
-    window.sessionAlerts=false;window.blacklistData={hasVault:false,unlocked:false,entries:[]};window.historyErrors=[];window.storageListeners=[];
+    window.sessionAlerts=false;window.pdfDarkMode=false;window.blacklistData={hasVault:false,unlocked:false,entries:[]};window.historyErrors=[];window.storageListeners=[];
     window.audioSettings={};
     window.commandShortcuts=[{name:'plate',shortcut:'Ctrl+Shift+7'},{name:'next',shortcut:'Alt+N'},{name:'_execute_action',shortcut:'Alt+Period'}];
     window.chrome = {
       runtime:{getURL:path=>`${location.origin}/${path}`,connect:()=>({postMessage:()=>{}}),sendMessage:async message=>{
         window.requests.push(message);
-        if(message.type==='state')return {ok:true,value:{blacklist:window.blacklistData,history:[...window.historyErrors,{kind:'plate',value:'ABC12345',at:Date.now()},{kind:'license',value:'123456789',at:Date.now()}],queue:{values:['123','456'],index:1},commands:window.commandShortcuts,alertsEnabled:window.sessionAlerts,...window.audioSettings,voices:[{voiceName:'Microsoft David Desktop',lang:'en-US'},{voiceName:'Microsoft Zira Desktop',lang:'en-US'}]}};
+        if(message.type==='state')return {ok:true,value:{pdfDarkMode:window.pdfDarkMode,blacklist:window.blacklistData,history:[...window.historyErrors,{kind:'plate',value:'ABC12345',at:Date.now()},{kind:'license',value:'123456789',at:Date.now()}],queue:{values:['123','456'],index:1},commands:window.commandShortcuts,alertsEnabled:window.sessionAlerts,...window.audioSettings,voices:[{voiceName:'Microsoft David Desktop',lang:'en-US'},{voiceName:'Microsoft Zira Desktop',lang:'en-US'}]}};
         if(message.type==='blacklist-unlock'){
           if(message.passphrase!=='fixture passphrase')return {ok:false,error:'Could not unlock the vault. Check the passphrase.'};
           window.blacklistData.unlocked=true;return {ok:true,value:window.blacklistData};
@@ -327,6 +327,7 @@ try {
         if(message.type==='blacklist-remove'){
           window.blacklistData.entries=window.blacklistData.entries.filter(x=>x.kind!==message.kind||x.value!==message.value);return {ok:true,value:window.blacklistData};
         }
+        if(message.type==='pdf-display-settings'){window.pdfDarkMode=message.enabled;return {ok:true,value:window.pdfDarkMode};}
         if(message.type==='audio-settings'){Object.assign(window.audioSettings,message);return {ok:true,value:true};}
         if(message.type==='alerts'){window.sessionAlerts=message.enabled;return {ok:true,value:message.enabled};}
         if(message.type==='panel-data')return {ok:true,value:window.location.search.includes('credentials')?{type:'credentials',hasVault:false}:{type:'input',command:'plate'}};
@@ -706,6 +707,32 @@ try {
   await tests('green plate and license alerts close after ten seconds',async()=>{
     const payloads=[plateStatus('Plate Class: ABC Decal Exp Date: 10/28/2026',fixedNow),licenseStatus(`Status - DL: NO SUSPENSION Driver License No:123456789 Name: FICTIONAL, PERSON ${currentHeader} DL Renewal 01/01/2020 10/28/2026 01/01/2020`,fixedNow)];
     for(const payload of payloads){const page=await statusPage(payload);assert.equal(await page.locator('.record-status-title').evaluate(el=>getComputedStyle(el).color),'rgb(67, 220, 121)');await page.clock.fastForward(9000);assert.equal(await page.evaluate(()=>window.closedByAlert),false);await page.clock.fastForward(1000);assert.equal(await page.evaluate(()=>window.closedByAlert),true);await page.close();}
+  });
+  await tests('PDF dark-view setting is opt-in and changes only the PDF preference',async()=>{
+    const page=await ui.newPage();await page.goto(`${base}/popup.html`);await page.locator('#history tr').first().waitFor();await page.locator('#settingsTab').click();
+    assert.equal(await page.locator('#pdfDarkMode').isChecked(),false);await page.locator('#pdfDarkMode').check();
+    assert.deepEqual(await page.evaluate(()=>window.requests.find(x=>x.type==='pdf-display-settings')),{type:'pdf-display-settings',enabled:true});
+    assert.equal(await page.evaluate(()=>window.requests.some(x=>x.type==='run')),false);await page.close();
+  });
+  await tests('PDF-only dark view changes paper/ink while embedded photo pixels exactly match original colors',async()=>{
+    const page=await ui.newPage();
+    await page.goto(base+'/reader.html');
+    const png=await page.evaluate(()=>{const c=document.createElement('canvas');c.width=c.height=60;const ctx=c.getContext('2d');for(const [x,y,color] of [[0,0,'#e83040'],[30,0,'#289c55'],[0,30,'#3060dc'],[30,30,'#c58c62']]){ctx.fillStyle=color;ctx.fillRect(x,y,30,30);}for(const [x,color] of [[0,'#000'],[20,'#888'],[40,'#fff']]){ctx.fillStyle=color;ctx.fillRect(x,50,20,10);}return c.toDataURL().split(',')[1];});
+    const doc=await PDFDocument.create(),font=await doc.embedFont(StandardFonts.Helvetica),photo=await doc.embedPng(Buffer.from(png,'base64'));
+    const pdf=doc.addPage([400,400]);pdf.drawText('SYNTHETIC DRIVER RECORD',{x:20,y:350,font,size:16});pdf.drawImage(photo,{x:100,y:150,width:120,height:120});
+    doc.addPage([400,400]).drawText('SECOND PAGE',{x:20,y:350,font,size:16});
+    const base64=Buffer.from(await doc.save()).toString('base64');
+    await page.addInitScript(base64=>{const original=chrome.runtime.sendMessage;chrome.runtime.sendMessage=async message=>{if(message.type==='reader-start')return {ok:true,value:{base64}};if(message.type==='reader-result'){window.pdfResult=message;return {ok:true,value:true};}return original(message);};},base64);
+    await page.goto(base+'/reader.html?id=photo-fixture&dark=1');await page.waitForFunction(()=>window.pdfResult?.viewReady===true);
+    const pixels=()=>page.locator('.pdf-page').evaluate(canvas=>{const ctx=canvas.getContext('2d');return {photo:[...ctx.getImageData(150,195,180,180).data],paper:[...ctx.getImageData(5,5,1,1).data],bright:[...ctx.getImageData(20,45,500,40).data].filter((v,i)=>i%4!==3&&v>200).length};});
+    const dark=await pixels();assert.deepEqual(dark.paper,[24,26,27,255]);assert.ok(dark.bright>100);
+    assert.equal(await page.locator('.pdf-page').evaluate(el=>getComputedStyle(el).filter),'none');
+    await page.screenshot({path:join(screenshots,'pdf-dark-photo.png'),fullPage:true});
+    await page.locator('#pdfColors').click();await page.locator('.pdf-page[data-ready=true]').waitFor();const light=await pixels();
+    assert.deepEqual(light.paper,[255,255,255,255]);assert.deepEqual(dark.photo,light.photo);
+    assert.equal(await page.locator('.pdf-page').count(),1);await page.locator('#pdfNext').click();await page.waitForFunction(()=>document.querySelector('#pdfProgress').textContent==='Page 2 of 2');
+    assert.equal(await page.locator('.pdf-page').count(),1);await page.locator('#pdfPrev').click();await page.waitForFunction(()=>document.querySelector('#pdfProgress').textContent==='Page 1 of 2');
+    assert.match((await page.evaluate(()=>window.pdfResult.text)),/SYNTHETIC DRIVER RECORD.*SECOND PAGE/s);await page.close();
   });
   await tests('bundled PDF.js extracts owner and driver text in a real browser worker',async()=>{
     for (const text of ['Owner Number: 00001234\nCustomer Number: 87654321','Driver License No: 123456789 Name: DE LA CRUZ, JANE\nDOB: 01/02/2000']) {

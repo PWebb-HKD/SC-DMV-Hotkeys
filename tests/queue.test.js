@@ -11,7 +11,7 @@ const windows=[], submissions=[], navigations=[], submittedQueries=[];
 let nextId=3, invalid=false, invalidAfterSubmit=false, technicalFailure=false, loginRejected=false, blockSubmitted=false, captureBlocked=false, onResultFocus=null;
 let reportText='Driver License No: 123456789 Name: TEST, PERSON\nDOB: 01/01/2000';
 let pauseAlertWindow=false,alertWindowRelease;
-const removedWindows=[];
+const removedWindows=[],removedTabs=[];
 const store=data=>({clear:async()=>{for(const key of Object.keys(data))delete data[key];},get:async keys=>typeof keys==='string'?{[keys]:data[keys]}:Array.isArray(keys)?Object.fromEntries(keys.map(k=>[k,data[k]])):{...data},set:async values=>Object.assign(data,values),remove:async keys=>{for(const k of Array.isArray(keys)?keys:[keys])delete data[k];},setAccessLevel:async()=>{}});
 const runtime={id:'a'.repeat(32),getURL:path=>`chrome-extension://${'a'.repeat(32)}/${path}`,onMessage:event(),onConnect:event(),onStartup:event(),onInstalled:event()};
 globalThis.chrome={
@@ -21,7 +21,7 @@ globalThis.chrome={
     get:async id=>({...tabs.get(id)}),
     create:async opts=>{const tab={id:nextId++,url:opts.url,status:'complete',windowId:1,active:!!opts.active};tabs.set(tab.id,tab);return {...tab};},
     update:async(id,update)=>{if(update.url)navigations.push(update.url);const tab=tabs.get(id);Object.assign(tab,update);if(update.active){for(const t of tabs.values())if(t.id!==id)t.active=false;if(onResultFocus&&isPdf(tab.url)){const hook=onResultFocus;onResultFocus=null;queueMicrotask(hook);}}return {...tab};},
-    remove:async()=>{},onCreated:event(),onUpdated:event(),onRemoved:event()
+    remove:async id=>{removedTabs.push(id);},onCreated:event(),onUpdated:event(),onRemoved:event()
   },
   windows:{get:async()=>({id:1,state:'normal'}),update:async()=>{},onRemoved:event(),create:async data=>{const win={id:windows.length+10,...data};windows.push(win);if(pauseAlertWindow&&session[`panel:${new URL(data.url).searchParams.get('id')}`]?.type==='record-alert')await new Promise(resolve=>{alertWindowRelease=resolve;});return win;},remove:async id=>{removedWindows.push(id);}},
   scripting:{executeScript:async({target,args:[op,args]})=>{
@@ -511,4 +511,47 @@ test('cancelling or replacing an incomplete-owner prompt never generates a barco
   await send({type:'panel-submit',id,value:false});await wait(()=>/Barcode generation cancelled/.test(session.status));assert.equal(barcodeData(),undefined);
   barcodeSource(text);await send({type:'run',command:'barcode'});await wait(()=>panel('barcode-owner-incomplete'));
   await send({type:'stop'});assert.equal(panel('barcode-owner-incomplete'),undefined);assert.equal(barcodeData(),undefined);
+});
+
+test('dark-view preference persists independently and an active dark snapshot never reads a newer native PDF',async()=>{
+  assert.equal(await send({type:'pdf-display-settings',enabled:true}),true);assert.equal(local.pdfDarkMode,true);
+  const id=nextId++;tabs.set(id,{id,url:runtime.getURL('reader.html?id=dark-fixture&dark=1'),active:true,status:'complete',windowId:1});
+  for(const tab of tabs.values())tab.active=tab.id===id;
+  session.pdfViewSources={[id]:true};session.pdfCreated={...session.pdfCreated,[id]:100};session[`pdf:${id}`]={text:driverReport};
+  session['pdf:2']={text:driverReport.replace('123456789','987654321')};
+  await send({type:'run',command:'barcode'});await wait(barcodeData);
+  assert.match(barcodeData().payload,/DAQ123456789/);assert.doesNotMatch(barcodeData().payload,/DAQ987654321/);
+  await send({type:'stop'});delete session[`pdf:${id}`];
+  await send({type:'run',command:'barcode'});await wait(()=>panel('notice'));assert.match(session.status,/captured text.*no longer available/);
+  await send({type:'pdf-display-settings',enabled:false});assert.equal(local.pdfDarkMode,false);
+});
+
+
+test('PDF capture retains only successful opted-in viewers, authorizes the reader, and cleans up snapshot caches',async()=>{
+  await send({type:'stop'});captureBlocked=false;
+  const capture=async(enabled,viewReady,viewerError)=>{
+    await send({type:'pdf-display-settings',enabled});
+    const native={id:nextId++,url:PDF_URL,status:'complete',windowId:1,active:true};tabs.set(native.id,native);
+    for(const tab of tabs.values())tab.active=tab.id===native.id;
+    session.pdfCreated[native.id]=Date.now();
+    const start=nextId,done=chrome.tabs.onUpdated.listeners[0](native.id,{status:'complete'},native);
+    await wait(()=>[...tabs.values()].some(t=>t.id>=start&&t.url.includes('reader.html?id=')));
+    const reader=[...tabs.values()].find(t=>t.id>=start&&t.url.includes('reader.html?id=')),id=new URL(reader.url).searchParams.get('id');
+    assert.equal(new URL(reader.url).searchParams.get('dark'),enabled?'1':null);
+    const fromReader=message=>new Promise((resolve,reject)=>runtime.onMessage.listeners[0](message,{id:runtime.id,tab:{id:reader.id},url:reader.url},r=>r.ok?resolve(r.value):reject(new Error(r.error))));
+    await assert.rejects(send({type:'reader-result',id,text:'spoofed'}),/Unknown PDF reader/);
+    assert.equal((await fromReader({type:'reader-start',id})).url,PDF_URL);
+    await fromReader({type:'reader-result',id,text:driverReport,viewReady,viewerError});await done;
+    assert.equal(session[`pdf:${native.id}`].text,driverReport);
+    if(viewReady){
+      assert.equal(removedTabs.includes(reader.id),false);assert.equal(session.pdfViewSources[reader.id],true);
+      assert.equal(session[`pdf:${reader.id}`].text,driverReport);assert.equal(tabs.get(reader.id).active,true);
+      await chrome.tabs.onRemoved.listeners[0](native.id);assert.equal(session[`pdf:${reader.id}`].text,driverReport);
+      await chrome.tabs.onRemoved.listeners[0](reader.id);assert.equal(session[`pdf:${reader.id}`],undefined);assert.equal(session.pdfViewSources[reader.id],undefined);
+    } else {assert.equal(removedTabs.includes(reader.id),true);assert.equal(session.pdfViewSources[reader.id],undefined);}
+  };
+  await capture(true,true);
+  await capture(false,false);
+  await capture(true,false,'Synthetic rendering failure');assert.match(session.status,/PDF dark view unavailable: Synthetic rendering failure/);
+  await send({type:'pdf-display-settings',enabled:false});
 });

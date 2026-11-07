@@ -100,9 +100,12 @@ async function sourceTab() {
 /** Prefer the focused report; otherwise select the newest tracked results tab. */
 async function pdfTab(source, run) {
   run?.check();
+  const {pdfViewSources = {}} = await guardedApi(chrome, run).storage.session.get('pdfViewSources');
+  const isView = tab => !!pdfViewSources[tab.id] && tab.url?.startsWith(chrome.runtime.getURL('reader.html') + '?');
+  if (source && isView(source)) return source;
   if (source && (isPdf(source.url) || isPdf(source.pendingUrl))) return source;
   const api = guardedApi(chrome, run);
-  const tabs = (await api.tabs.query({})).filter(t => isPdf(t.url) || isPdf(t.pendingUrl));
+  const tabs = (await api.tabs.query({})).filter(t => isPdf(t.url) || isPdf(t.pendingUrl) || isView(t));
   if (!tabs.length) throw new Error('No open SCDMV PDF results tab was found.');
   const {pdfCreated = {}} = await api.storage.session.get('pdfCreated');
   // Chromium tab IDs are used only as a fallback for tabs predating installation.
@@ -134,18 +137,29 @@ async function capturePdf(tab, portalId) {
     const promise = new Promise((resolve, reject) => {
       readers.set(id, {resolve, reject, base64, url: sourceUrl, pdfId: tab.id});
     });
-    let readerTab, timer;
+    const {pdfDarkMode = false} = await chrome.storage.local.get('pdfDarkMode');
+    let readerTab, timer, keepReader = false;
     try {
       run.check();
-      readerTab = await chrome.tabs.create({url: chrome.runtime.getURL(`reader.html?id=${id}`), active: false});
+      readerTab = await chrome.tabs.create({url: chrome.runtime.getURL(`reader.html?id=${id}${pdfDarkMode ? '&dark=1' : ''}`), active: false});
       const reader = readers.get(id); reader.tabId = readerTab.id;
       timer = setTimeout(() => reader.reject(new Error('PDF text extraction timed out.')), 45000);
       const text = await run.step(() => promise);
       if (!text.trim()) throw new Error('This PDF has no extractable text. Scanned PDFs require OCR; enter a number manually.');
       await api.storage.session.set({[cacheKey]: {text, capturedAt: Date.now()}});
+      if (reader.viewReady) {
+        await track(async () => {
+          const {pdfCreated = {}, pdfViewSources = {}} = await api.storage.session.get(['pdfCreated','pdfViewSources']);
+          pdfCreated[readerTab.id] = pdfCreated[tab.id] || Date.now(); pdfViewSources[readerTab.id] = true;
+          await api.storage.session.set({pdfCreated, pdfViewSources, [`pdf:${readerTab.id}`]: {text, capturedAt: Date.now()}});
+        });
+        keepReader = true;
+        const active = (await api.tabs.query({active:true,lastFocusedWindow:true}))[0];
+        if (active?.id === tab.id) await focusTab(readerTab.id, {run});
+      } else if (reader.viewerError) await api.storage.session.set({status: `PDF dark view unavailable: ${reader.viewerError}`});
     } finally {
       clearTimeout(timer); readers.delete(id);
-      if (readerTab) await chrome.tabs.remove(readerTab.id).catch(() => {});
+      if (readerTab && !keepReader) await chrome.tabs.remove(readerTab.id).catch(() => {});
     }
   });
   const capture = {run, promise: task}; captures.set(tab.id, capture);
@@ -157,6 +171,8 @@ async function pdfText(source, run) {
   const tab = await pdfTab(source, run), cacheKey = `pdf:${tab.id}`;
   let cached = (await api.storage.session.get(cacheKey))[cacheKey];
   if (!cached) {
+    const {pdfViewSources = {}} = await api.storage.session.get('pdfViewSources');
+    if (pdfViewSources[tab.id]) throw new Error('The captured text for this PDF view is no longer available. Run its search again.');
     // If a newer report exists, re-fetching the fixed URL could silently select the wrong person.
     const {pdfCreated = {}} = await api.storage.session.get('pdfCreated');
     const newest = Math.max(...Object.values(pdfCreated), 0);
@@ -414,9 +430,10 @@ chrome.tabs.onUpdated.addListener(async (id, change, tab) => {
 });
 chrome.tabs.onRemoved.addListener(async id => {
   await track(async () => {
-    const {pdfCreated = {}, tabCreated = {}, pdfSources = {}} = await chrome.storage.session.get(['pdfCreated', 'tabCreated', 'pdfSources']);
+    const {pdfCreated = {}, tabCreated = {}, pdfSources = {}, pdfViewSources = {}} = await chrome.storage.session.get(['pdfCreated', 'tabCreated', 'pdfSources', 'pdfViewSources']);
+    delete pdfViewSources[id];
     delete pdfCreated[id]; delete tabCreated[id]; delete pdfSources[id];
-    await chrome.storage.session.set({pdfCreated, tabCreated, pdfSources});
+    await chrome.storage.session.set({pdfCreated, tabCreated, pdfSources, pdfViewSources});
     await chrome.storage.session.remove(`pdf:${id}`);
   });
 });
@@ -454,6 +471,7 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
       case 'reader-result': {
         const reader = readers.get(message.id);
         if (!reader || sender.tab?.id !== reader.tabId) throw new Error('Unknown PDF reader.');
+        reader.viewReady = message.viewReady === true; reader.viewerError = message.viewerError;
         if (message.error) reader.reject(new Error(message.error)); else reader.resolve(message.text);
         return true;
       }
@@ -510,10 +528,11 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
         dispatch(query.kind, {...query, ...(entry.identifiers ? {identifiers: validateBlacklist(entry.identifiers)} : {}), replay: true}).catch(error => report(error));
         return true;
       }
-      case 'state': return {blacklist: await blacklistState(), ...await chrome.storage.local.get(['vault']), ...await chrome.storage.session.get(['history', 'queue', 'status', 'alertsEnabled', 'speechEnabled', 'repeatSpeech', 'suspendedClipEnabled', 'voiceSource', 'voiceGender', 'voiceName']), voices: await availableVoices().catch(() => []), commands: await chrome.commands.getAll(), extensionId: chrome.runtime.id};
+      case 'state': return {blacklist: await blacklistState(), ...await chrome.storage.local.get(['vault','pdfDarkMode']), ...await chrome.storage.session.get(['history', 'queue', 'status', 'alertsEnabled', 'speechEnabled', 'repeatSpeech', 'suspendedClipEnabled', 'voiceSource', 'voiceGender', 'voiceName']), voices: await availableVoices().catch(() => []), commands: await chrome.commands.getAll(), extensionId: chrome.runtime.id};
+      case 'pdf-display-settings': await chrome.storage.local.set({pdfDarkMode: message.enabled === true}); return message.enabled === true;
       case 'clear-saved-user-info': {
         if (message.confirmed !== true) throw new Error('Confirm deletion of saved user information and the vault.');
-        const reset = (async () => { const run = beginRun(); await run.cleanup; await tracking; await clearSavedUserInfo(true); })();
+        const reset = (async () => { const run = beginRun(); await run.cleanup; await tracking; const {pdfViewSources = {}} = await chrome.storage.session.get('pdfViewSources'); for (const id of Object.keys(pdfViewSources)) await chrome.tabs.remove(+id).catch(() => {}); await tracking; await clearSavedUserInfo(true); })();
         resettingUserInfo = reset;
         try { await reset; return true; } finally { if (resettingUserInfo === reset) resettingUserInfo = null; }
       }

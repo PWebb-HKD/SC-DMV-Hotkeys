@@ -1,2 +1,5 @@
 <!doctype html>
-<!-- reader extension view. Its same-named module owns behavior; static markup supplies stable IDs for that controller. --><html lang="en"><head><meta charset="utf-8"><title>Reading SCDMV PDF</title><link rel="stylesheet" href="style.css"></head><body><main><h1>Reading PDF text…</h1><p>This background tab closes when extraction finishes.</p></main><script type="module" src="reader.js"></script></body></html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Reading SCDMV PDF</title><link rel="stylesheet" href="style.css"><link rel="stylesheet" href="pdf-dark-view.css"></head><body>
+<main id="reading"><h1>Reading PDF text…</h1><p>This background tab closes when extraction finishes.</p></main>
+<div id="pdfViewer" hidden><header><h1>DMV PDF results</h1><p class="pdf-note">Dark PDF pages; embedded photos keep their original colors.</p><button id="pdfColors" type="button">Use original PDF colors</button><button id="pdfPrev" type="button">Previous page</button><button id="pdfNext" type="button">Next page</button><span id="pdfProgress" role="status"></span></header><main><div id="pdfPages"></div></main></div>
+<script type="module" src="reader.js"></script></body></html>

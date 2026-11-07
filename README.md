@@ -12,6 +12,14 @@ A Manifest V3 extension for SCDMV member searches, PDF follow-ups, and SCUTTIES 
 
 No build, npm installation, or external script download is required to run the packaged extension. PDF.js 5.6.205 is bundled locally, including its license and supporting assets.
 
+## PDF results dark mode (1.7.0)
+
+Enable **Settings → PDF results → Dark PDF results (keep photos unchanged)**, then run a new DMV search. The extension opens a separate dark viewer for the captured PDF. The original browser PDF tab stays available for printing, zooming, and normal PDF tools. This setting changes only PDF results; continue using Dark Reader for the portal pages.
+
+The viewer darkens neutral paper and text while protecting embedded image areas, including grayscale photographs. It does not invert the whole page. Scanned/image-only areas retain their original colors; pages with image operations whose boundaries cannot be safely protected retain original colors as well. Use **Use original PDF colors** to compare, and **Previous page / Next page** for longer reports. The setting is off by default and applies to newly captured reports.
+
+Barcode generation, customer collection, and SCUTTIES follow-ups work from the selected dark viewer using that report’s captured text. Each viewer retains its own snapshot even if the portal reuses the original PDF tab for another report. PDF bytes stay in the viewer’s memory; closing it releases the document and its cached text. Reloading a dark viewer requires running the search again.
+
 ## Blacklist (1.6.0)
 
 Open **Settings → Blacklist**, immediately below Voice status alerts. Select **Create encrypted vault** to save your DMV login and a vault passphrase of at least 12 characters without running a DMV search. Existing credential vaults are supported. At the beginning of each browser session, unlock the vault in Settings or when prompted before the first search. A locked vault blocks searches even when the DMV session is still active.
@@ -112,7 +120,7 @@ The optional browser/worker tests use Playwright and pdf-lib. They can use Codex
 node tests\browser.mjs
 ```
 
-Browser tests cover all four DMV form flows, login timing/errors, inactive-tab behavior, SCUTTIES destination permission and framework events, popup UI, plate validation, and real PDF.js worker extraction. Screenshots are written to `test-results`.
+Browser tests cover all four DMV form flows, login timing/errors, inactive-tab behavior, SCUTTIES destination permission and framework events, popup UI, plate validation, real PDF.js worker extraction, and dark PDF rendering with pixel-for-pixel photo preservation. Screenshots are written to `test-results`.
 
 To verify a local residence report without embedding its data in the test suite, optionally run `node tests\browser.mjs --sample-pdf "C:\path\to\report.pdf"`. This checks the twelve-customer sample used for the 1.0.2 regression. The report stays local and is not included in the distribution package.
 

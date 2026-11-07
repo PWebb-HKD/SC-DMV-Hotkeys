@@ -3,6 +3,7 @@
  * single authorized job from the worker and returns text/errors by job ID. Reading
  * PDF bytes avoids depending on the browser viewer DOM; this is not an OCR engine.
  */
+import {openDarkViewer} from './pdf-dark-view.js';
 import {getDocument, GlobalWorkerOptions} from './vendor/pdf.mjs';
 GlobalWorkerOptions.workerSrc = chrome.runtime.getURL('vendor/pdf.worker.mjs');
 const id = new URL(location.href).searchParams.get('id');
@@ -24,6 +25,7 @@ try {
   }
   const doc = await getDocument({data, isEvalSupported: false, disableFontFace: true, useSystemFonts: true, cMapUrl: chrome.runtime.getURL('vendor/cmaps/'), cMapPacked: true, standardFontDataUrl: chrome.runtime.getURL('vendor/standard_fonts/'), wasmUrl: chrome.runtime.getURL('vendor/wasm/')}).promise;
   const lines = [];
+  let viewReady = false, viewerError;
   try {
     if (doc.numPages > 300) throw new Error('This report exceeds the 300-page extraction limit.');
     for (let n = 1; n <= doc.numPages; n++) {
@@ -41,10 +43,14 @@ try {
       if (line) lines.push(line);
       page.cleanup();
     }
-  } finally { await doc.destroy(); }
+    if (new URL(location.href).searchParams.get('dark') === '1') {
+      try { document.body.classList.add('pdf-viewer'); await openDarkViewer(doc); viewReady = true; }
+      catch (error) { viewerError = error.message; }
+    }
+  } finally { if (!viewReady) await doc.destroy(); }
   const text = lines.join('\n');
   if (text.length > 1000000) throw new Error('PDF text exceeds the extraction limit.');
-  await chrome.runtime.sendMessage({type: 'reader-result', id, text});
+  await chrome.runtime.sendMessage({type: 'reader-result', id, text, viewReady, viewerError});
 } catch (error) {
   await chrome.runtime.sendMessage({type: 'reader-result', id, error: error.name === 'PasswordException' ? 'This PDF requires a document password. Open an accessible report or enter the number manually.' : error.message});
 } finally { clearInterval(heartbeat); }
