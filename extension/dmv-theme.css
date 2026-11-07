@@ -1,0 +1,101 @@
+/* Native DMV theme, using the neutral palette from the supplied Dark Reader sample.
+ * USER-origin !important rules take priority over page/extension author styles.
+ * An important cascade layer also outranks unlayered important user styles.
+ * Screen only: browser printing keeps the website's normal print styling. */
+@layer scdmv-native-theme {
+@media screen {
+  :root[data-scdmv-dark] {
+    color-scheme:dark!important;background-color:#181a1b!important;color:#e8e6e3!important;
+    filter:none!important;backdrop-filter:none!important;mix-blend-mode:normal!important;transition:none!important;scrollbar-color:#454a4d #202324!important;
+  }
+  :root[data-scdmv-dark] *, :root[data-scdmv-dark]::before, :root[data-scdmv-dark]::after,
+  :root[data-scdmv-dark] *::before, :root[data-scdmv-dark] *::after {filter:none!important;backdrop-filter:none!important;mix-blend-mode:normal!important;transition-property:opacity,transform!important;}
+  :root[data-scdmv-dark] body {background-color:#181a1b!important;color:#c8c3bc!important;filter:none!important;}
+  :root[data-scdmv-dark] :where(div,main,section,article,aside,header,footer,nav,form,fieldset) {background-color:transparent!important;color:inherit!important;border-color:#3e4446!important;}
+  :root[data-scdmv-dark] :where(p,span,label,h1,h2,h3,h4,h5,h6,ul,ol,li,dl,dt,dd,small,strong,b,em,i,font,legend,summary) {color:inherit!important;}
+  :root[data-scdmv-dark] :where(img,picture,video,canvas,svg) {filter:none!important;}
+  :root[data-scdmv-dark] a {color:#69a6d5!important;}
+  :root[data-scdmv-dark] a:hover,:root[data-scdmv-dark] a:focus {color:#8fbee5!important;}
+  :root[data-scdmv-dark] :where(hr,fieldset,legend,table,td,th) {border-color:#3e4446!important;}
+  :root[data-scdmv-dark] :where(.panel,.well,.jumbotron,.modal-content,.dropdown-menu,.list-group-item,.popover,.ui-widget-content,.ui-dialog,.card) {background-color:#181a1b!important;background-image:none!important;color:inherit!important;border-color:#3e4446!important;}
+  :root[data-scdmv-dark] :where(.panel-default>.panel-heading,.panel-footer,.modal-header,.modal-footer,.well,.breadcrumb,.input-group-addon,.ui-widget-header,.card-header) {background-color:#1e2021!important;background-image:none!important;color:#c8c3bc!important;border-color:#3e4446!important;}
+  :root[data-scdmv-dark] :where(.navbar,.navbar-inverse) {background-color:#181a1b!important;background-image:none!important;color:#e8e6e3!important;border-color:transparent!important;}
+  /* DMV's logo strip is separate from the blue top/title bands. */
+  :root[data-scdmv-dark] .topnav-color {background-color:#103e70!important;color:#e8e6e3!important;border-color:transparent!important;}
+  :root[data-scdmv-dark] .topnav-Logo {background-color:#181a1b!important;border-color:transparent!important;}
+  :root[data-scdmv-dark] .topnav-Logo #dmvHomeLink.globalLogo {background-color:transparent!important;filter:brightness(0) invert(1)!important;}
+  /* Footer roles are shared by login and transaction pages. Only the emblem is recolored. */
+  :root[data-scdmv-dark] .footer-Area {background-color:#222526!important;border-color:transparent!important;}
+  :root[data-scdmv-dark] .footer-Area :is(span,a,.footer-text-head) {color:#69a6d5!important;}
+  :root[data-scdmv-dark] .footer-Logo {filter:brightness(0) invert(1)!important;}
+  :root[data-scdmv-dark] .footer-copyright {background-color:#103e70!important;color:#e8e6e3!important;border-color:transparent!important;}
+  :root[data-scdmv-dark] .panel-primary {border-color:#246aa6!important;}
+  :root[data-scdmv-dark] .panel-primary>.panel-heading {background-color:#103e70!important;color:#e8e6e3!important;border-color:#246aa6!important;}
+  :root[data-scdmv-dark] #globalTopPanel {background-color:transparent!important;border-color:transparent!important;box-shadow:none!important;}
+  :root[data-scdmv-dark] #globalTopPanel_header {background-color:transparent!important;color:#b2aba1!important;border-color:transparent!important;}
+  :root[data-scdmv-dark] #globalTopPanel_header a {color:inherit!important;background-color:transparent!important;}
+  :root[data-scdmv-dark] #globalTopPanel_message {background-color:transparent!important;border-color:#454b4e!important;}
+  :root[data-scdmv-dark] :is(.navbar,.topnav-color) :where(a,.navbar-brand,.navbar-text,.navbar-toggle,.icon-bar) {color:#e8e6e3!important;}
+  :root[data-scdmv-dark] .navbar-toggle .icon-bar {background-color:#e8e6e3!important;}
+  :root[data-scdmv-dark] :where(.navbar,.topnav-color) a:hover {background-color:#123f60!important;color:#fff!important;}
+  :root[data-scdmv-dark] :where(.nav-tabs,.nav-tabs>li>a) {border-color:#3e4446!important;}
+  :root[data-scdmv-dark] :where(.nav-tabs>li.active>a,.nav-pills>li.active>a,.pagination>.active>a) {background-color:#234e70!important;color:#e8e6e3!important;border-color:#3e4446!important;}
+  :root[data-scdmv-dark] :where(.nav>li>a:hover,.dropdown-menu>li>a:hover,.dropdown-menu>li>a:focus,.list-group-item:hover,.pagination>li>a:hover) {background-color:#25282a!important;color:#e8e6e3!important;}
+  :root[data-scdmv-dark] :where(.dropdown-menu>li>a,.pagination>li>a,.pagination>li>span) {background-color:#181a1b!important;color:#69a6d5!important;border-color:#3e4446!important;}
+  :root[data-scdmv-dark] :where(input:not([type=hidden]):not([type=checkbox]):not([type=radio]):not([type=button]):not([type=submit]):not([type=reset]):not([type=image]),textarea,select,.form-control) {background-color:#181a1b!important;background-image:none!important;color:#b2aca2!important;border-color:#3e4446!important;box-shadow:none!important;}
+  :root[data-scdmv-dark] :where(input,textarea,select,.form-control):focus {border-color:#3b79a7!important;outline-color:#69a6d5!important;}
+  :root[data-scdmv-dark] ::placeholder {color:#b2aba1!important;opacity:.5!important;}
+  :root[data-scdmv-dark] :where(input,textarea,select):disabled,:root[data-scdmv-dark] :where(input,textarea)[readonly] {background-color:#222526!important;color:#b2aba1!important;}
+  :root[data-scdmv-dark] :where(input[type=checkbox],input[type=radio]) {accent-color:#337ab7!important;}
+  :root[data-scdmv-dark] :where(input,textarea,select):-webkit-autofill {-webkit-text-fill-color:#e8e6e3!important;box-shadow:none!important;}
+  :root[data-scdmv-dark] :where(button,.btn,input[type=button],input[type=submit],input[type=reset]) {background-color:#181a1b!important;background-image:none!important;color:#c8c3bc!important;border-color:#3e4446!important;box-shadow:none!important;}
+  :root[data-scdmv-dark] :where(button,.btn,input[type=button],input[type=submit]):hover {background-color:#25282a!important;}
+  :root[data-scdmv-dark] .btn-primary {background-color:#296292!important;color:#e8e6e3!important;border-color:#2b638e!important;}
+  :root[data-scdmv-dark] .btn-primary:hover {background-color:#214e70!important;}
+  :root[data-scdmv-dark] .btn-success {background-color:#367c36!important;color:#e8e6e3!important;border-color:#3b873b!important;}
+  :root[data-scdmv-dark] .btn-danger {background-color:#922722!important;color:#e8e6e3!important;border-color:#a02a24!important;}
+  :root[data-scdmv-dark] .btn-warning {background-color:#976308!important;color:#e8e6e3!important;border-color:#a66d09!important;}
+  :root[data-scdmv-dark] .btn-info {background-color:#1f7189!important;color:#e8e6e3!important;border-color:#267f99!important;}
+  :root[data-scdmv-dark] :where(button,.btn,input):disabled,:root[data-scdmv-dark] .btn.disabled {opacity:.65!important;}
+  :root[data-scdmv-dark] table {background-color:#181a1b!important;color:#c8c3bc!important;border-color:#545b5e!important;}
+  :root[data-scdmv-dark] :where(td,th) {background-color:transparent!important;color:inherit!important;}
+  :root[data-scdmv-dark] :where(thead,.table>thead>tr>th) {background-color:#222426!important;color:#c8c3bc!important;}
+  :root[data-scdmv-dark] .table-striped>tbody>tr:nth-of-type(odd),:root[data-scdmv-dark] table.dataTable.stripe>tbody>tr.odd {background-color:#1b1d1e!important;}
+  :root[data-scdmv-dark] :where(.table-hover>tbody>tr:hover,table.dataTable.hover>tbody>tr:hover) {background-color:#25282a!important;}
+  :root[data-scdmv-dark] .table>tbody>tr.success {background-color:#263e1e!important;color:#99c388!important;}
+  :root[data-scdmv-dark] .table>tbody>tr.danger {background-color:#381616!important;color:#db8f8f!important;}
+  :root[data-scdmv-dark] .table>tbody>tr.warning {background-color:#332600!important;color:#cfb47c!important;}
+  :root[data-scdmv-dark] .table>tbody>tr.info {background-color:#193c4d!important;color:#85b6cf!important;}
+  :root[data-scdmv-dark] .alert-danger {background-color:#381616!important;color:#db8f8f!important;border-color:#681d24!important;}
+  :root[data-scdmv-dark] .alert-warning {background-color:#332600!important;color:#cfb47c!important;border-color:#554400!important;}
+  :root[data-scdmv-dark] .alert-success {background-color:#263e1e!important;color:#99c388!important;border-color:#3a5b30!important;}
+  :root[data-scdmv-dark] .alert-info {background-color:#193c4d!important;color:#85b6cf!important;border-color:#285b6b!important;}
+  :root[data-scdmv-dark] :where(.text-danger,.iFormsRequired,.has-error .control-label,.field-validation-error,.validation-summary-errors) {color:#e87d7b!important;}
+  :root[data-scdmv-dark] :where(.text-warning,.has-warning .control-label) {color:#cfb47c!important;}
+  :root[data-scdmv-dark] :where(.text-success,.has-success .control-label) {color:#99c388!important;}
+  :root[data-scdmv-dark] :where(.text-muted,.help-block,.footer-text-head) {color:#b2aba1!important;}
+  :root[data-scdmv-dark] .has-error .form-control {border-color:#a94442!important;}
+  :root[data-scdmv-dark] :where(pre,code,kbd) {background-color:#1e2021!important;color:#e8e6e3!important;border-color:#3e4446!important;}
+  :root[data-scdmv-dark] .panel-danger>.panel-heading {background-color:#381616!important;color:#db8f8f!important;border-color:#681d24!important;}
+  :root[data-scdmv-dark] .panel-warning>.panel-heading {background-color:#332600!important;color:#cfb47c!important;border-color:#554400!important;}
+  :root[data-scdmv-dark] .panel-success>.panel-heading {background-color:#263e1e!important;color:#99c388!important;border-color:#3a5b30!important;}
+  :root[data-scdmv-dark] .panel-info>.panel-heading {background-color:#193c4d!important;color:#85b6cf!important;border-color:#285b6b!important;}
+  :root[data-scdmv-dark] :where(.badge,.label) {background-color:#3c4144!important;color:#e8e6e3!important;}
+  :root[data-scdmv-dark] :where(.label-danger,.badge-danger) {background-color:#922722!important;}
+  :root[data-scdmv-dark] :where(.label-success,.badge-success) {background-color:#367c36!important;}
+  :root[data-scdmv-dark] :where(.label-warning,.badge-warning) {background-color:#976308!important;}
+  :root[data-scdmv-dark] :where(.label-info,.badge-info,.label-primary,.badge-primary) {background-color:#295f88!important;}
+  :root[data-scdmv-dark] .modal-backdrop {background-color:#000!important;}
+  :root[data-scdmv-dark] .tooltip-inner {background-color:#101112!important;color:#e8e6e3!important;}
+  :root[data-scdmv-dark] .ui-state-active {background-color:#234e70!important;color:#e8e6e3!important;}
+  :root[data-scdmv-dark] .ui-state-highlight {background-color:#332600!important;color:#cfb47c!important;}
+  :root[data-scdmv-dark] .dataTables_wrapper .dataTables_paginate .paginate_button {background-color:#181a1b!important;background-image:none!important;color:#69a6d5!important;border-color:#3e4446!important;}
+  :root[data-scdmv-dark] .dataTables_wrapper .dataTables_paginate .paginate_button.current {background-color:#234e70!important;color:#e8e6e3!important;}
+  :root[data-scdmv-dark] .dataTables_wrapper .dataTables_paginate .paginate_button:hover {background-color:#25282a!important;}
+  :root[data-scdmv-dark] :where(a,button,input,textarea,select):focus-visible {outline:2px solid #69a6d5!important;outline-offset:2px!important;}
+  :root[data-scdmv-dark]::-webkit-scrollbar,:root[data-scdmv-dark] *::-webkit-scrollbar {background-color:#202324!important;}
+  :root[data-scdmv-dark]::-webkit-scrollbar-thumb,:root[data-scdmv-dark] *::-webkit-scrollbar-thumb {background-color:#454a4d!important;border-color:#202324!important;}
+  :root[data-scdmv-dark] ::selection {background-color:#004daa!important;color:#e8e6e3!important;}
+}
+
+}

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "SC DMV Hotkeys",
-  "version": "1.7.6",
+  "version": "1.8.2",
   "minimum_chrome_version": "120",
   "description": "Keyboard shortcut keys for automating searches through the SCDMV online portal.",
   "permissions": [
@@ -83,6 +83,21 @@
       "matches": [
         "https://www.scdmvonline.com/*"
       ]
+    }
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.scdmvonline.com/*"
+      ],
+      "exclude_matches": [
+        "https://www.scdmvonline.com/SCTRNS/Member/Transactions/ViewAttachment.aspx*"
+      ],
+      "js": [
+        "dmv-theme.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": true
     }
   ]
 }

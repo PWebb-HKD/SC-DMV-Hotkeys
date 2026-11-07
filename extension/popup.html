@@ -27,10 +27,10 @@
     </section>
     <section id="settingsView" role="tabpanel" aria-labelledby="settingsTab" hidden>
     <div class="alerts-setting">
-      <label class="alerts-toggle" for="alertsToggle"><span>Plate & license status alerts<small>This session only · Off by default</small></span><span class="switch-control"><input id="alertsToggle" type="checkbox" role="switch"><span class="switch-track" aria-hidden="true"></span></span></label>
+      <label class="alerts-toggle" for="alertsToggle"><span>Plate & license status alerts<small>Saved between sessions · Off until enabled</small></span><span class="switch-control"><input id="alertsToggle" type="checkbox" role="switch"><span class="switch-track" aria-hidden="true"></span></span></label>
     </div>
     <div class="alerts-setting">
-      <label class="alerts-toggle" for="speechToggle"><span>Voice status alerts<small>Plays once · Off by default</small></span><span class="switch-control"><input id="speechToggle" type="checkbox" role="switch"><span class="switch-track" aria-hidden="true"></span></span></label>
+      <label class="alerts-toggle" for="speechToggle"><span>Voice status alerts<small>Plays once · Saved between sessions</small></span><span class="switch-control"><input id="speechToggle" type="checkbox" role="switch"><span class="switch-track" aria-hidden="true"></span></span></label>
       <label for="voiceSource">Announcement source</label>
       <select id="voiceSource"><option value="recordings">Bundled voice recordings</option><option value="microsoft">Microsoft text to speech</option></select>
       <label class="alerts-toggle repeat-speech" for="repeatSpeechToggle"><span>Repeat voice announcement<small>Play twice with a one-second pause · Applies to recordings and speech</small></span><span class="switch-control"><input id="repeatSpeechToggle" type="checkbox" role="switch"><span class="switch-track" aria-hidden="true"></span></span></label>
@@ -38,8 +38,8 @@
       <select id="voiceGender"><option value="female">Female</option><option value="male">Male</option></select>
       <label for="voiceName">Microsoft voice (optional override)</label>
       <select id="voiceName"><option value="">Automatic for selected voice</option></select>
-      <small id="voiceHelp">A status without a matching recording uses Microsoft speech with the selected gender. Voice settings apply to this session.</small>
-      <label class="alerts-toggle" for="clipToggle"><span>Suspended audio clip<small>Replaces other voice alerts for suspended results · Plays three times · Off by default</small></span><span class="switch-control"><input id="clipToggle" type="checkbox" role="switch"><span class="switch-track" aria-hidden="true"></span></span></label>
+      <small id="voiceHelp">A status without a matching recording uses Microsoft speech with the selected gender. Voice settings are saved between browser sessions.</small>
+      <label class="alerts-toggle" for="clipToggle"><span>Suspended audio clip<small>Replaces other voice alerts for suspended results · Plays three times · Saved between sessions</small></span><span class="switch-control"><input id="clipToggle" type="checkbox" role="switch"><span class="switch-track" aria-hidden="true"></span></span></label>
       <button id="stopAudio" class="secondary">Stop audio</button>
     </div>
       <section class="section blacklist-settings" aria-labelledby="blacklistTitle">
@@ -61,6 +61,7 @@
         </form>
         <p id="blacklistFeedback" role="status"></p>
       </section>
+      <div class="section"><h2>DMV website</h2><label class="check"><input id="dmvDarkMode" type="checkbox">Dark DMV website</label><p class="binding-note">On by default. Applies only to the SCDMV website and takes priority over styles from other dark mode extensions. PDF results use the separate setting below. Reload DMV tabs after turning this off to let another dark mode extension reapply.</p></div>
       <div class="section"><h2>PDF results</h2><label class="check"><input id="pdfDarkMode" type="checkbox">Dark PDF results (keep photos unchanged)</label><p class="binding-note">Applies to newly opened PDF results in the same results tab. Pages scroll continuously. Image-only portions retain their original colors.</p></div>
       <div class="section">
         <h2>Set up your shortcuts</h2>
