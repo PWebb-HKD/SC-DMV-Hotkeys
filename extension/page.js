@@ -9,7 +9,8 @@ export function pageOperation(op, args = {}) {
   const find = selector => { const el = document.querySelector(selector); if (!el) throw new Error(`Page control not found: ${selector}`); return el; };
   if (op === 'state') return {
     url: location.href,
-    errors: [...document.querySelectorAll(args.errorSelector || '.iFormsValidationSummary li span')].filter(visible).map(x => x.textContent.trim()).filter(Boolean),
+    errors: [...new Set([...document.querySelectorAll(args.errorSelector || '.iFormsValidationSummary li span, #ContentPlaceHolder1_errorMessagePublicText')].filter(visible).map(x => x.textContent.trim()).filter(Boolean))],
+    portalError: location.origin === 'https://www.scdmvonline.com' && !!visible(document.querySelector('#ContentPlaceHolder1_errorMessagePublicText')),
     present: args.selector ? !!document.querySelector(args.selector) : false,
     enabled: args.selector ? !!document.querySelector(args.selector) && !document.querySelector(args.selector).disabled : false,
     presentSelectors: args.selectors ? args.selectors.map(selector => !!document.querySelector(selector)) : []

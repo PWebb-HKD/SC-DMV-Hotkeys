@@ -8,7 +8,7 @@ export const MEMBER = `${ROOT}/SCTRNS/Member/`;
 export const PDF_URL = `${MEMBER}Transactions/ViewAttachment.aspx`;
 export const LOGIN = `${MEMBER}logon.aspx`;
 export const DISCLAIMER = `${MEMBER}Disclaimer.aspx`;
-export const ERROR_SELECTOR = '#form1 > div.container > div.iFormsValidationSummary.alert.alert-danger > ul > li > span';
+export const ERROR_SELECTOR = '#form1 > div.container > div.iFormsValidationSummary.alert.alert-danger > ul > li > span, #ContentPlaceHolder1_errorMessagePublicText';
 export const COMMANDS = {
   plate: {label: 'Plate Search', key: 'Alt+P', prompt: 'Enter a license plate number', max: 8},
   license: {label: 'DL Number', key: 'Alt+L', prompt: "Enter a driver's license number", max: 9},
@@ -45,8 +45,9 @@ export function isPortal(url = '') {
 export function samePage(a, b) {
   try { const x = new URL(a), y = new URL(b); return x.origin === y.origin && x.pathname.toLowerCase() === y.pathname.toLowerCase(); } catch { return false; }
 }
+export function isPortalErrorPage(url = '') { return samePage(url, `${MEMBER}ErrorPage.aspx`); }
 export function loginSucceeded(url = '') {
-  try { return new URL(url).origin === ROOT && !samePage(url, LOGIN); } catch { return false; }
+  try { return new URL(url).origin === ROOT && !samePage(url, LOGIN) && !isPortalErrorPage(url); } catch { return false; }
 }
 /** Remove spaces, enforce command length, and canonicalize customer leading zeros. */
 export function normalize(kind, input) {

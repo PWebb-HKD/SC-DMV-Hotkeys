@@ -50,3 +50,14 @@ test('a redirected dark reader in a new or reused results tab is discovered with
   onUpdated.emit(2,{url:tab.url,status:'loading'},tab);
   const result=await watcher.find();assert.equal(result.tab.id,2);assert.equal(result.sourceUrl,PDF_URL+'?record=1&format=2');assert.equal(result.reused,true);watcher.dispose();
 });
+
+test('only new or navigated error results belonging to this portal are reported',async()=>{
+  const {tabs,onCreated,onUpdated}=fixture();
+  tabs.set(5,{id:5,url:MEMBER+'ErrorPage.aspx',status:'complete',openerTabId:1});
+  const watcher=await watchResults(1);watcher.arm();assert.equal(await watcher.find(),undefined);
+  tabs.set(6,{id:6,url:MEMBER+'ErrorPage.aspx',status:'complete',openerTabId:999});onCreated.emit(tabs.get(6));
+  assert.equal(await watcher.find(),undefined);
+  const reused=tabs.get(2);reused.url=MEMBER+'ErrorPage.aspx';onUpdated.emit(2,{url:reused.url},reused);
+  const result=await watcher.find();assert.equal(result.tab.id,2);assert.equal(result.errorPage,true);assert.equal(result.reused,true);
+  watcher.dispose();assert.equal(onUpdated.count,0);assert.equal(onCreated.count,0);
+});

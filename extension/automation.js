@@ -3,7 +3,7 @@
  * discover its results. ctx carries cancellation plus UI callbacks supplied by the
  * service worker. All asynchronous browser operations must remain run-guarded.
  */
-import {ROOT, MEMBER, LOGIN, ERROR_SELECTOR, samePage, isPortal, isPdf, loginSucceeded} from './core.js';
+import {ROOT, MEMBER, LOGIN, ERROR_SELECTOR, samePage, isPortal, isPdf, isPortalErrorPage, loginSucceeded} from './core.js';
 import {pageOperation} from './page.js';
 import {guardedApi} from './run.js';
 import {watchResults} from './results.js';
@@ -24,10 +24,14 @@ export async function evaluate(tabId, op, args = {}, ctx) {
 export class PortalSearchError extends Error {
   constructor(message) { super(message); this.name = 'PortalSearchError'; }
 }
-function checkPageErrors(page, searchPages = []) {
-  if (!page.errors.length) return;
-  const ErrorType = searchPages.some(url => samePage(page.url, url)) ? PortalSearchError : Error;
-  throw new ErrorType(page.errors.join('\n'));
+async function checkPageErrors(page, searchPages = [], ctx) {
+  const fatal = page.portalError || isPortalErrorPage(page.url);
+  if (!page.errors.length && !fatal) return;
+  // A server failure invalidates the warm-session hint, but must not resubmit
+  // a transaction that may already have reached the DMV.
+  if (fatal) await api(ctx).storage.session.set({lastQuery: 0});
+  const ErrorType = searchPages.length && (fatal || searchPages.some(url => samePage(page.url, url))) ? PortalSearchError : Error;
+  throw new ErrorType(page.errors.join('\n') || 'The DMV returned an unexpected error page.');
 }
 async function state(tabId, selector, ctx) { return evaluate(tabId, 'state', {selector, errorSelector: ERROR_SELECTOR}, ctx); }
 async function click(tabId, selector, ctx) {
@@ -46,7 +50,7 @@ async function ready(tabId, selector, ctx, searchPage) {
     const tab = await api(ctx).tabs.get(tabId);
     if (tab.status !== 'complete') return false;
     let s; try { s = await state(tabId, selector, ctx); } catch { ctx?.run?.check(); return false; }
-    checkPageErrors(s, searchPage ? [searchPage] : []);
+    await checkPageErrors(s, searchPage ? [searchPage] : [], ctx);
     if (samePage(s.url, LOGIN)) throw new Error('Your DMV session has expired. Run the command again to sign in.');
     return s.present && s;
   }, 'the search page controls', 60000, ctx);
@@ -54,7 +58,10 @@ async function ready(tabId, selector, ctx, searchPage) {
 async function navigate(tabId, url, ctx) {
   await api(ctx).tabs.update(tabId, {url}); // The workflow has already focused its portal tab.
   await until(async () => {
-    const t = await api(ctx).tabs.get(tabId); return t.status === 'complete' && samePage(t.url, url);
+    const t = await api(ctx).tabs.get(tabId);
+    if (t.status !== 'complete') return false;
+    await checkPageErrors(await state(tabId, undefined, ctx), [], ctx);
+    return samePage(t.url, url);
   }, 'the page to load', 60000, ctx);
 }
 /** Activate the tab and restore/focus its window before automation and on results/errors. */
@@ -76,7 +83,7 @@ export async function portalTab(ctx) {
   return target;
 }
 /** Use extension credentials exclusively, notify form handlers, and allow synchronization
- * before submission. Any completed same-origin redirect away from logon verifies success. */
+ * before submission. A completed non-error same-origin redirect away from logon verifies success. */
 async function login(tabId, ctx) {
   ctx.status('Checking DMV login');
   const current = await api(ctx).tabs.get(tabId);
@@ -86,10 +93,11 @@ async function login(tabId, ctx) {
   await until(async () => {
     const t = await api(ctx).tabs.get(tabId); if (t.status !== 'complete') return false;
     if (loginSucceeded(t.url)) return true;
-    try {
-      const form = await evaluate(tabId, 'state', {selectors: [USER, PASS] }, ctx);
-      return form.presentSelectors.every(Boolean);
-    } catch { ctx.run?.check(); return false; }
+    let form;
+    try { form = await evaluate(tabId, 'state', {selectors: [USER, PASS] }, ctx); }
+    catch { ctx.run?.check(); return false; }
+    await checkPageErrors(form, [], ctx);
+    return form.presentSelectors.every(Boolean);
   }, 'the login form', 60000, ctx);
   if (samePage((await api(ctx).tabs.get(tabId)).url, LOGIN)) {
     const saved = await ctx.credentials(tabId);
@@ -120,12 +128,12 @@ async function login(tabId, ctx) {
       if (t.status !== 'complete') return false;
       if (loginSucceeded(t.url)) return true;
       const s = await state(tabId, undefined, ctx);
-      if (s.errors.length) throw new Error(s.errors.join('\n'));
+      await checkPageErrors(s, [], ctx);
       if (!samePage(t.url, LOGIN)) throw new Error('The website requires an additional login step or password update. Complete it in the browser, then run the command again.');
       return false;
     }, 'a successful redirect away from the login page on the SCDMV site', 30000, ctx);
   }
-  // Any completed same-origin redirect away from logon.aspx verifies login.
+  // A completed non-error same-origin redirect away from logon.aspx verifies login.
 }
 /** Use the ten-minute activity hint, with login redirects checked again by search(). */
 async function ensureSession(tabId, ctx) {
@@ -162,6 +170,7 @@ async function initialSearchPage(tabId, url, reusedSession, ctx) {
     }
     await login(tabId, ctx);
     page = await load();
+    await checkPageErrors(await state(tabId, undefined, ctx), [], ctx);
     if (samePage(page.url, TRANSACTIONS)) throw new Error('The DMV returned to the transaction list again after signing in. Please check the website and try again.');
     if (!samePage(page.url, url)) throw new Error('The DMV returned to an unexpected page again after signing in. Please check the website and try again.');
   }
@@ -198,7 +207,7 @@ export async function search(kind, value, ctx) {
     const t = await api(ctx).tabs.get(tab.id);
     if (t.status !== 'complete') return false;
     const s = await state(tab.id, undefined, ctx);
-    checkPageErrors(s, [`${base}Page1.aspx`, `${base}Page2.aspx`]);
+    await checkPageErrors(s, [`${base}Page1.aspx`, `${base}Page2.aspx`], ctx);
     if (samePage(t.url, LOGIN)) throw new Error('The DMV session expired during the search. Please run it again.');
     return samePage(t.url, `${base}Page2.aspx`);
   }, 'search results', 60000, ctx);
@@ -208,7 +217,17 @@ export async function search(kind, value, ctx) {
   try {
     watcher.arm();
     await click(tab.id, '#downloadButton', ctx);
-    result = await until(() => watcher.find(), 'the PDF results tab', 60000, ctx);
+    result = await until(async () => {
+      const found = await watcher.find();
+      if (found && !found.errorPage) return found;
+      // Download can fail in this tab or in its new/reused results window.
+      const current = found?.tab || await api(ctx).tabs.get(tab.id);
+      if (current.status !== 'complete' || isPdf(current.url)) return false;
+      if (found) { ctx.tabId = current.id; await focusTab(current.id, ctx); }
+      await checkPageErrors(await state(current.id, undefined, ctx), [`${base}Page1.aspx`, `${base}Page2.aspx`], ctx);
+      if (samePage(current.url, LOGIN)) throw new Error('The DMV session expired while opening the report. Please run it again.');
+      return false;
+    }, 'the PDF results tab', 60000, ctx);
   } finally { watcher.dispose(); }
   const readyResult = {tabId: result.tab.id, portalId: tab.id, sourceUrl: result.sourceUrl, reused: result.reused, startedAt: result.startedAt};
   await api(ctx).storage.session.set({lastQuery: Date.now()});
@@ -247,7 +266,7 @@ export async function scutties(identity, ctx) {
         await focusTab(t.id, ctx); // The permission popup may have taken focus.
       }
       const s = await state(t.id, SC_NAME, ctx);
-      if (s.errors.length) throw new Error(s.errors.join('\n'));
+      await checkPageErrors(s, [], ctx);
       if (s.present) { destination = t; return true; }
     }
     return false;
@@ -263,7 +282,7 @@ export async function scutties(identity, ctx) {
   await delay(100, ctx);
   await until(async () => {
     const form = await state(destination.id, SC_SEARCH, ctx);
-    if (form.errors.length) throw new Error(form.errors.join('\n'));
+    await checkPageErrors(form, [], ctx);
     return form.present && form.enabled;
   }, 'SCUTTIES to enable its Search button', 10000, ctx);
   await ctx.beforeSubmit?.();
@@ -271,7 +290,7 @@ export async function scutties(identity, ctx) {
   await delay(900, ctx);
   // No SCUTTIES result selector was supplied; expose the response for user review.
   const s = await state(destination.id, undefined, ctx);
-  if (s.errors.length) throw new Error(s.errors.join('\n'));
+  await checkPageErrors(s, [], ctx);
   await api(ctx).storage.session.set({lastQuery: Date.now()});
   await focusTab(destination.id, ctx);
 }
