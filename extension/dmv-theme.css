@@ -31,6 +31,10 @@
   :root[data-scdmv-dark] .footer-copyright {background-color:#103e70!important;color:#e8e6e3!important;border-color:transparent!important;}
   :root[data-scdmv-dark] .panel-primary {border-color:#246aa6!important;}
   :root[data-scdmv-dark] .panel-primary>.panel-heading {background-color:#103e70!important;color:#e8e6e3!important;border-color:#246aa6!important;}
+  /* The fixed transaction controls are a navbar, but not a logo/title band. */
+  :root[data-scdmv-dark] #navigationFooter {background-color:#1c1e1f!important;color:#c8c3bc!important;border-color:#373b3e!important;}
+  /* Receipt values are display-only spans; editable inputs keep their own palette. */
+  :root[data-scdmv-dark] span.iForms_Textbox[id$="_DisplayOnly"] {color:#69a6d5!important;}
   :root[data-scdmv-dark] #globalTopPanel {background-color:transparent!important;border-color:transparent!important;box-shadow:none!important;}
   :root[data-scdmv-dark] #globalTopPanel_header {background-color:transparent!important;color:#b2aba1!important;border-color:transparent!important;}
   :root[data-scdmv-dark] #globalTopPanel_header a {color:inherit!important;background-color:transparent!important;}
@@ -53,6 +57,11 @@
   :root[data-scdmv-dark] .btn-primary {background-color:#296292!important;color:#e8e6e3!important;border-color:#2b638e!important;}
   :root[data-scdmv-dark] .btn-primary:hover {background-color:#214e70!important;}
   :root[data-scdmv-dark] .btn-success {background-color:#367c36!important;color:#e8e6e3!important;border-color:#3b873b!important;}
+  /* DMV overrides Bootstrap's primary/success colors on transaction buttons. */
+  :root[data-scdmv-dark] .iFormsButton.btn-primary {background-color:#103e6f!important;color:#e8e6e3!important;border-color:#1a66b5!important;}
+  :root[data-scdmv-dark] .iFormsButton.btn-success {background-color:#216636!important;color:#e8e6e3!important;border-color:#329b51!important;}
+  :root[data-scdmv-dark] .iFormsButton.btn-primary:hover {background-color:#0d3258!important;}
+  :root[data-scdmv-dark] .iFormsButton.btn-success:hover {background-color:#1a522b!important;}
   :root[data-scdmv-dark] .btn-danger {background-color:#922722!important;color:#e8e6e3!important;border-color:#a02a24!important;}
   :root[data-scdmv-dark] .btn-warning {background-color:#976308!important;color:#e8e6e3!important;border-color:#a66d09!important;}
   :root[data-scdmv-dark] .btn-info {background-color:#1f7189!important;color:#e8e6e3!important;border-color:#267f99!important;}
@@ -62,6 +71,14 @@
   :root[data-scdmv-dark] :where(thead,.table>thead>tr>th) {background-color:#222426!important;color:#c8c3bc!important;}
   :root[data-scdmv-dark] .table-striped>tbody>tr:nth-of-type(odd),:root[data-scdmv-dark] table.dataTable.stripe>tbody>tr.odd {background-color:#1b1d1e!important;}
   :root[data-scdmv-dark] :where(.table-hover>tbody>tr:hover,table.dataTable.hover>tbody>tr:hover) {background-color:#25282a!important;}
+  /* These results use DataTables display, not Bootstrap table-striped/stripe.
+   * Set row backgrounds as well as cells so late odd/even redraws stay dark. */
+  :root[data-scdmv-dark] table.dataTable :is(thead,tfoot,th,td) {background-color:transparent!important;color:inherit!important;box-shadow:none!important;}
+  :root[data-scdmv-dark] table.dataTable tbody tr {background-color:#181a1b!important;color:#c8c3bc!important;}
+  :root[data-scdmv-dark] table.dataTable:is(.display,.stripe) tbody tr.odd {background-color:#1e2021!important;}
+  :root[data-scdmv-dark] table.dataTable:is(.display,.order-column) tbody tr.odd>.sorting_1 {background-color:#202324!important;}
+  :root[data-scdmv-dark] table.dataTable:is(.display,.hover) tbody tr:hover {background-color:#1d1f20!important;}
+  :root[data-scdmv-dark] table.dataTable.no-footer,:root[data-scdmv-dark] table.dataTable :is(thead,tfoot) :is(th,td) {border-color:#867d6e!important;}
   :root[data-scdmv-dark] .table>tbody>tr.success {background-color:#263e1e!important;color:#99c388!important;}
   :root[data-scdmv-dark] .table>tbody>tr.danger {background-color:#381616!important;color:#db8f8f!important;}
   :root[data-scdmv-dark] .table>tbody>tr.warning {background-color:#332600!important;color:#cfb47c!important;}
@@ -93,6 +110,7 @@
   :root[data-scdmv-dark] .dataTables_wrapper .dataTables_paginate .paginate_button.current {background-color:#234e70!important;color:#e8e6e3!important;}
   :root[data-scdmv-dark] .dataTables_wrapper .dataTables_paginate .paginate_button:hover {background-color:#25282a!important;}
   :root[data-scdmv-dark] :where(a,button,input,textarea,select):focus-visible {outline:2px solid #69a6d5!important;outline-offset:2px!important;}
+  :root[data-scdmv-dark] .iFormsButton:focus-visible {outline:2px solid #e6bd00!important;outline-offset:1px!important;}
   :root[data-scdmv-dark]::-webkit-scrollbar,:root[data-scdmv-dark] *::-webkit-scrollbar {background-color:#202324!important;}
   :root[data-scdmv-dark]::-webkit-scrollbar-thumb,:root[data-scdmv-dark] *::-webkit-scrollbar-thumb {background-color:#454a4d!important;border-color:#202324!important;}
   :root[data-scdmv-dark] ::selection {background-color:#004daa!important;color:#e8e6e3!important;}

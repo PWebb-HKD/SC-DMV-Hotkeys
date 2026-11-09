@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en-us"><head><meta charset="utf-8"><title>Synthetic DMV transaction pages</title>
+<style>
+/* Public class/ID structure from supplied DOM snapshots; invented contents only.
+   Light colors reproduce the roles visible in the supplied Dark Reader examples. */
+body{margin:0;background:white;color:#333;font:16px Arial,sans-serif}
+a{color:#337ab7}.container{width:75%;margin:auto}.row{margin:18px 0}
+.navbar{border:1px solid transparent;margin:0;min-height:50px;background:#f8f8f8}
+.topnav-color{background:#144e8b;color:white}.topnav-Logo{background:white;padding:30px 0}
+.pageTitle h1{font-size:42px;font-weight:400}.globalLogo{font-size:40px;font-weight:bold;color:#144e8b}
+.panel-heading{padding:18px;background:#f5f5f5}.panel-title{font-size:28px;font-weight:400;margin:0}
+.panel-title a{color:#777;text-decoration:none}.panel-body{padding:22px;border:1px solid #aaa;border-radius:4px}
+#globalTopPanel{margin:24px 0}#globalTopPanel_header{background:transparent}
+.btn{padding:11px 15px;border:1px solid transparent;border-radius:4px;color:white;font:inherit;cursor:pointer}
+.btn-primary{background:#337ab7;border-color:#2e6da4}.btn-success{background:#5cb85c;border-color:#4cae4c}
+.iFormsButton.btn-primary{background:#144e8b;border-color:#144e8b}
+.iFormsButton.btn-success{background:#298043;border-color:#298043}
+.iFormsButton.btn-primary:hover{background:#103e6e}.iFormsButton.btn-success:hover{background:#216636}
+.iFormsButton:focus-visible{outline:2px solid #e6bd00;outline-offset:1px}
+.iForms_Textbox{color:#337ab7}.control-label{font-weight:bold}.mediumWidth{display:inline-block;width:210px}
+.receipt .form-group{margin:6px 0}.receipt #downloadButton{display:block;margin:25px auto}
+.dataTables_filter{text-align:right;margin:26px 0 8px}.dataTables_filter input{padding:9px;border:1px solid #aaa;border-radius:3px}
+table.dataTable{border-collapse:collapse;width:100%;background:white;color:#333}
+table.dataTable thead th{padding:18px 12px;border-bottom:1px solid #111;text-align:left;cursor:pointer}
+table.dataTable tbody tr{background:white}table.dataTable.display tbody tr.odd{background:#f5f5f5}
+table.dataTable.display tbody tr:hover{background:#f6f6f6}table.dataTable td{padding:14px 12px}
+table.dataTable.display tbody tr.odd>.sorting_1{background:#f1f1f1}
+table.dataTable.no-footer{border-bottom:1px solid #111}.dataTables_info{margin:14px 0 30px}
+.footer-Area{background:#eee;padding:30px 0;margin-top:28px}.footer-text-head{color:#337ab7}
+.footer-copyright{background:#144e8b;color:white;padding:25px 0;margin-bottom:70px}
+#navigationFooter{position:fixed;bottom:0;left:0;right:0;background:#f8f8f8;border-color:#e7e7e7;text-align:center;z-index:10}
+#navigationFooter .nav{padding:10px}.pageNumbers{padding:0 12px}
+[hidden]{display:none!important}@media print{.hidden-print{display:none!important}}
+</style></head><body>
+<form id="form1" class="form-inline">
+  <div class="navbar first-navbar topnav-color"></div>
+  <div class="navbar topnav-Logo"><div class="container"><a class="globalLogo" id="dmvHomeLink" href="#home">SCDMV</a><a id="cancelLink" href="#cancel" style="float:right">CANCEL</a></div></div>
+  <div class="navbar topnav-color pageTitle"><div class="container"><h1>CERTIFICATION FOR COURT WITH PHOTO</h1></div></div>
+  <main class="container">
+    <div id="globalTopPanel" class="panel panel-default">
+      <div id="globalTopPanel_header" class="panel-heading"><h2 class="panel-title"><a href="#globalTopPanel_message">Transaction Complete</a></h2></div>
+      <div id="globalTopPanel_message" class="panel-body">Your PDF document is now available below.</div>
+    </div>
+    <section class="receipt" id="completion">
+      <div class="row">Please print a copy of this page for your records. <button type="button" id="ContentPlaceHolder1_btnPrint" class="btn-primary hidden-print iFormsButton btn" style="float:right"><i class="fa fa-print">▣</i> PRINT</button></div>
+      <div class="row"><div class="form-group"><label class="mediumWidth control-label">Reference Number:</label><span id="ContentPlaceHolder1_referenceNbrBox_DisplayOnly" class="iForms_Textbox">1234567890</span></div>
+      <div class="form-group"><label class="mediumWidth control-label">Date:</label><span id="ContentPlaceHolder1_dateBox_DisplayOnly" class="iForms_Textbox">01/01/2026</span></div>
+      <div class="form-group"><label class="mediumWidth control-label">Time:</label><span id="ContentPlaceHolder1_timeBox_DisplayOnly" class="iForms_Textbox">12:00:00</span></div>
+      <div class="form-group"><label class="mediumWidth control-label">Amount:</label><span id="ContentPlaceHolder1_amountBox_DisplayOnly" class="iForms_Textbox">$0.00</span></div>
+      <div class="form-group"><label class="mediumWidth control-label">DL Number:</label><span id="ContentPlaceHolder1_dlNbrBox_DisplayOnly" class="iForms_Textbox"></span></div></div>
+      <p>To download the requested document in PDF format please click the following button.</p>
+      <button type="button" id="downloadButton" class="center-block btn-success arrow-Right iFormsButton btn">DOWNLOAD RESULTS IN PDF FORMAT ➜</button>
+    </section>
+    <section id="ContentPlaceHolder1_pnlSearchResults" hidden>
+      <p>Select a customer by clicking the Customer Number.</p>
+      <div class="dataTables_wrapper form-inline dt-bootstrap no-footer">
+        <div class="dataTables_filter"><label>Search: <input type="search" aria-label="Filter synthetic results"></label></div>
+        <table id="ContentPlaceHolder1_grdSearchResults_grdSearchResults_table" class="iFormsGridControl display dataTable no-footer dtr-">
+          <thead><tr><th class="sorting"><span class="control-label">Cust Num ↕</span></th><th class="sorting"><span class="control-label">Last Name ↕</span></th><th class="sorting">First Name ↕</th><th class="sorting">Street ↕</th><th class="sorting">City ↕</th></tr></thead>
+          <tbody><tr class="odd"><td class="gridCentered"><a href="#first">11111111</a></td><td>EXAMPLE</td><td>JANE</td><td>123 EXAMPLE ROAD</td><td>COLUMBIA</td></tr><tr class="even"><td><a href="#second">22222222</a></td><td>SAMPLE</td><td>JOHN</td><td>456 FICTIONAL STREET</td><td>ROCK HILL</td></tr></tbody>
+        </table>
+        <div class="dataTables_info" aria-live="polite">Showing 1 to 2 of 2 entries</div>
+      </div>
+    </section>
+  </main>
+  <div class="navbar footer-Area"><div class="container"><span class="footer-text-head control-label">CONTACT</span></div></div>
+  <div class="navbar footer-copyright"><div class="container">Synthetic DMV footer</div></div>
+  <div id="navigationFooter" class="navbar navbar-default navbar-fixed-bottom hidden-print"><div class="container"><div class="nav"><button type="button" id="btnFooterNavPrevious" class="btn btn-success navbar-btn arrow-Left cancel iFormsButton">⬅ PREVIOUS</button><span id="pageNumberText" class="pageNumbers">Page 2 of 2</span><button type="button" id="btnFooterNavNext" class="btn btn-success navbar-btn arrow-Right nextbutton iFormsButton">NEXT ➜</button></div></div></div>
+</form>
+<script>
+// Local interactions only; never sends a request to the portal.
+if(location.search.includes('view=search')){document.querySelector('#completion').hidden=true;document.querySelector('#ContentPlaceHolder1_pnlSearchResults').hidden=false;document.querySelector('.panel-title a').textContent='Search for an Individual';document.querySelector('#globalTopPanel_message').textContent='Customers matching your search criteria are displayed below.';}
+document.querySelector('input[type=search]').oninput=event=>{for(const row of document.querySelectorAll('tbody tr'))row.hidden=!row.textContent.toLowerCase().includes(event.target.value.toLowerCase());};
+document.querySelector('thead th').onclick=()=>{const body=document.querySelector('tbody');body.append(...[...body.rows].reverse());[...body.rows].forEach((row,index)=>{row.className=index%2?'even':'odd';row.cells[0].classList.add('sorting_1');});};
+for(const button of document.querySelectorAll('button'))button.onclick=()=>{window.lastClicked=button.id;};
+</script></body></html>
