@@ -305,3 +305,9 @@ Business-owner import remains unverified in Coplogic. The existing encoder selec
 - Native DMV dark mode restores the dark footer area, white footer emblem, blue copyright band, and blue transaction-panel headers and borders. Report photos retain their original colors.
 
 Optional local PDF checks use real PDF.js extraction without logging identifiers: `CHROME_PATH=/usr/bin/chromium node tests/browser.mjs --residence-pdf /path/to/residence.pdf --barcode-pdf /path/to/vehicle.pdf`. Do not commit real reports or extracted personal information.
+
+## Version 1.8.3 dark mode refinements
+
+Native DMV styling now covers the DataTables `display` result grids used by individual searches: dark rows, neutral headers, readable customer links, and sorted-column shading remain in place after filtering and redraws. Transaction receipt values use blue text, DMV transaction buttons use the darker blue/green palette with visible keyboard focus, and the fixed bottom navigation has its own dark background and border. Portal-controlled visibility of Previous/Next/Finish remains intact.
+
+Run `CHROME_PATH=/usr/bin/chromium npm run test:dmv-theme` to compare synthetic completion/search pages against the actual Dark Reader engine. The fixtures preserve the supplied DOM's public class structure and use invented data; screenshots are written to `test-results/`.
