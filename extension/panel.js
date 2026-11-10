@@ -1,5 +1,5 @@
 /**
- * Shared popup controller for number entry, credentials, permissions, queue restart,
+ * Shared popup controller for number entry, credentials, queue restart,
  * errors, and record alerts. The worker owns the pending job; this view only validates
  * user input, renders plain text, and submits the panel ID with the response.
  */
@@ -76,9 +76,9 @@ try {
       unlocking = data.hasVault; $('unlockArea').hidden = !unlocking; $('newCredentials').hidden = unlocking;
       (unlocking ? $('unlockPass') : $('user')).focus();
     } else {
-      $('title').textContent = data.type === 'barcode-owner-incomplete' ? 'Incomplete owner information' : data.type === 'restart' ? 'Queue complete' : data.type === 'permission' ? 'Website access needed' : 'SC DMV Hotkeys';
+      $('title').textContent = data.type === 'barcode-owner-incomplete' ? 'Incomplete owner information' : data.type === 'restart' ? 'Queue complete' : 'SC DMV Hotkeys';
       $('message').hidden = false; $('message').textContent = data.message;
-      $('submit').textContent = data.type === 'barcode-owner-incomplete' ? (data.hasNext ? 'Use next owner' : 'Generate with blanks') : data.type === 'restart' ? 'Start again' : data.type === 'permission' ? 'Allow site' : 'OK';
+      $('submit').textContent = data.type === 'barcode-owner-incomplete' ? (data.hasNext ? 'Use next owner' : 'Generate with blanks') : data.type === 'restart' ? 'Start again' : 'OK';
       $('barcodeBlanks').hidden = data.type !== 'barcode-owner-incomplete' || !data.hasNext;
       $('cancel').hidden = data.type === 'notice'; $('submit').focus();
     }
@@ -94,10 +94,6 @@ $('form').onsubmit = async event => {
     if (data.type === 'input') { request.value = normalize(data.command, $('value').value); if (!request.value) { await close(); return; } }
     if (data.type === 'credentials') Object.assign(request, {unlock: unlocking, user: $('user').value, password: $('password').value, save: $('save').checked, passphrase: unlocking ? $('unlockPass').value : $('savePass').value});
     if (data.type === 'credentials' && data.unlockOnly && !unlocking) request.blacklistPassphrase = $('unlockPass').value;
-    if (data.type === 'permission') {
-      const granted = await chrome.permissions.request({origins: [data.origin]});
-      if (!granted) throw new Error('Site access was declined. Cancel to stop this search.');
-    }
     submitted = true; $('submit').disabled = true;
     await send(request); await close();
   } catch (error) { submitted = false; $('submit').disabled = false; $('error').textContent = error.message; if (data.type === 'input') { $('value').select(); $('value').focus(); } }

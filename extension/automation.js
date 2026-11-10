@@ -246,7 +246,7 @@ export async function search(kind, value, ctx) {
 const SC_NAME = '#home > div > div.col-xs-12.row > div:nth-child(3) > div.panel-body > div:nth-child(1) > div:nth-child(1) > input';
 const SC_DOB = '#home > div > div.col-xs-12.row > div:nth-child(3) > div.panel-body > div:nth-child(1) > div:nth-child(2) > input';
 const SC_SEARCH = '#home > div > div.col-xs-12.row > div:nth-child(3) > div.panel-body > div:nth-child(1) > div.col-xs-8 > button:nth-child(2)';
-/** Follow the portal handoff, request access only for the destination origin, and wait
+/** Follow the portal handoff, retain the declared DMV-origin boundary, and wait
  * for the real form. Notify both fields after filling before clicking Search. */
 export async function scutties(identity, ctx) {
   const tab = await portalTab(ctx); ctx.tabId = tab.id;
@@ -265,13 +265,10 @@ export async function scutties(identity, ctx) {
       if (t.id === candidates[0].id && t.id !== focusedDestination) {
         await focusTab(t.id, ctx); focusedDestination = t.id;
       }
-      if (t.status !== 'complete' || !/^https:\/\//i.test(t.url || '')) continue;
+      if (t.status !== 'complete' || !/^https?:\/\//i.test(t.url || '')) continue;
       ctx.tabId = t.id;
-      const origin = `${new URL(t.url).origin}/*`;
-      if (!await api(ctx).permissions.contains({origins: [origin]})) {
-        await ctx.permission(origin); // Explicit user gesture in panel grants only this origin.
-        await focusTab(t.id, ctx); // The permission popup may have taken focus.
-      }
+      // The transaction link establishes the session; automation remains inside the declared DMV origin.
+      if (new URL(t.url).origin !== ROOT) throw new Error('SCUTTIES opened a site outside the permitted DMV origin. Complete any external sign-in manually and return to the DMV site before trying again.');
       const s = await state(t.id, SC_NAME, ctx);
       await checkPageErrors(s, [], ctx);
       if (s.present) { destination = t; return true; }

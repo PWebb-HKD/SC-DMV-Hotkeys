@@ -56,9 +56,9 @@ test('warm-session searches focus the portal and restore its window before navig
   }
 });
 
-test('SCUTTIES activates a new destination window and refocuses it after the permission popup', async () => {
+test('SCUTTIES follows the DMV handoff in a focused child window and refuses external automation', async () => {
   const portal={id:1,url:DISCLAIMER,status:'complete',windowId:7};
-  let child, activeId, focusedWindow, permissions=false, searched=false;
+  let child, activeId, focusedWindow, searched=false, destination=MEMBER+'Transactions/SCUTTIES/Search.aspx';
   const session={portalId:1,lastQuery:Date.now()};
   globalThis.chrome={
     storage:{session:{get:async()=>session,set:async value=>Object.assign(session,value)}},
@@ -67,21 +67,24 @@ test('SCUTTIES activates a new destination window and refocuses it after the per
       Object.assign(id===1?portal:child,update);return {...id===1?portal:child};
     }},
     windows:{get:async id=>({id,state:'minimized'}),update:async(id,update)=>{if(update.focused)focusedWindow=id;}},
-    permissions:{contains:async()=>permissions},
     scripting:{executeScript:async({target,args:[op,args]})=>{
       const tab=target.tabId===1?portal:child;
       assert.equal(activeId,tab.id);assert.equal(focusedWindow,tab.windowId);
       if(op==='state')return [{result:{url:tab.url,present:true,enabled:true,errors:[]}}];
-      if(op==='click'&&target.tabId===1)child={id:2,url:'https://scutties.fixture.test/search',windowId:8,status:'complete',openerTabId:1};
+      if(op==='click'&&target.tabId===1)child={id:2,url:destination,windowId:8,status:'complete',openerTabId:1};
       if(op==='fill')assert.ok(['EXAMPLE','01/02/2000'].includes(args.value));
       if(op==='click'&&target.tabId===2)searched=true;
       return [{result:true}];
     }}
   };
-  await scutties({lastName:'EXAMPLE',dob:'01/02/2000'},{status(){},permission:async origin=>{
-    assert.equal(origin,'https://scutties.fixture.test/*');permissions=true;activeId=99;focusedWindow=99;
-  }});
+  await scutties({lastName:'EXAMPLE',dob:'01/02/2000'},{status(){}});
   assert.equal(searched,true);assert.equal(activeId,2);assert.equal(focusedWindow,8);
+  for(const url of ['https://scutties.fixture.test/search','http://www.scdmvonline.com/search']) {
+    child=undefined;searched=false;destination=url;
+    await assert.rejects(scutties({lastName:'EXAMPLE',dob:'01/02/2000'},{status(){}}),/outside the permitted DMV origin/);
+    assert.equal(searched,false);
+  }
+
 });
 
 const TRANSACTIONS = `${MEMBER}Transactions/TransactionList.aspx`;

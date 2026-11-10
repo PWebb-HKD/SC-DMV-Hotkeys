@@ -117,8 +117,8 @@ try {
         }
       }
       else if (action === 'scutties') {
-        // A separate destination origin exercises just-in-time permission handling.
-        await updateTab(id, {url: 'https://scutties.fixture.test/search'});
+        // The transaction link establishes the DMV session before opening the SCUTTIES form.
+        await updateTab(id, {url: MEMBER+'Transactions/SCUTTIES/Search.aspx'});
       }
     });
     chrome.tabs.onCreated.emit({...tab});
@@ -139,7 +139,7 @@ try {
     if (update.active) { activated.push(id); for (const r of tabs.values()) r.tab.active = r.tab.id === id; }
     return {...record.tab};
   }
-  await context.route('https://scutties.fixture.test/**', route => route.fulfill({contentType:'text/html',body:`<div id="home"><div><div class="col-xs-12 row"><div></div><div></div><div><div class="panel-body"><div><div><input id="last"></div><div><input id="dob"></div><div class="col-xs-8"><button>Other</button><button id="scSearch" disabled>Search</button></div></div></div></div></div></div></div><script>
+  await context.route(`${MEMBER}Transactions/SCUTTIES/Search.aspx`, route => route.fulfill({contentType:'text/html',body:`<div id="home"><div><div class="col-xs-12 row"><div></div><div></div><div><div class="panel-body"><div><div><input id="last"></div><div><input id="dob"></div><div class="col-xs-8"><button>Other</button><button id="scSearch" disabled>Search</button></div></div></div></div></div></div></div><script>
     window.events=[];window.formModel={};window.delegatedEvents=[];
     const last=document.querySelector('#last'),dob=document.querySelector('#dob'),search=document.querySelector('#scSearch');
     for(const type of ['input','change','keyup','blur'])document.querySelector('#home').addEventListener(type,event=>{
@@ -170,8 +170,7 @@ try {
     permissions: {contains: async ({origins}) => origins.every(o => permissions.has(o))}
   };
   const ctx = {
-    status: () => {}, credentials: async () => {credentialPrompts++; return {user:'fictional-user',password:'fictional-password'};},
-    permission: async origin => permissions.add(origin)
+    status: () => {}, credentials: async () => {credentialPrompts++; return {user:'fictional-user',password:'fictional-password'};}
   };
   await tests('plate: extension-only login focuses the login tab and window before submitting', async () => {
     const result = await search('plate','ABC12345',ctx);
@@ -209,7 +208,7 @@ try {
     await assert.rejects(search('plate','ABC',ctx), /Invalid User ID Or Password/);
     assert.equal(loginClicks,2); loginInvalid = false;
   });
-  await tests('SCUTTIES follows destination, grants only its origin, emits framework input events', async () => {
+  await tests('SCUTTIES follows the DMV transaction link without extra permissions and emits framework input events', async () => {
     session.lastQuery = Date.now();
     // Reset portal to a valid authenticated page after the invalid-login case.
     await updateTab(session.portalId,{url:`${MEMBER}Transactions/TransactionList.aspx`});
@@ -224,7 +223,7 @@ try {
     for(const id of ['last','dob'])for(const type of ['input','change','keyup','blur']) {
       assert.ok(delegated.some(event=>event.id===id&&event.type===type&&event.bubbles&&event.complete),`${id} must notify the parent after both fields have values`);
     }
-    assert.ok(permissions.has('https://scutties.fixture.test/*'));
+    assert.deepEqual([...permissions],[`${ROOT}/*`]);
   });
   for (const mode of ['filled','delayed','concealed','early','last-moment']) {
     await tests(`extension-only login replaces ${mode} browser autofill with extension credentials`,async()=>{

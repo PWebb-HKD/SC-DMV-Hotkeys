@@ -28,7 +28,7 @@ The Manifest V3 worker owns browser APIs and private state. Popup, prompt, barco
 
 The theme-init message is the only website-content-script path into the worker. It returns `{enabled}` and inserts USER-origin CSS into the exact authorized sender document. All other message requests require an extension-owned sender URL and extension ID. Theme code must never read credentials, form values, or hidden portal state. External theme-coexistence metadata and the test reference-engine API use fixed protocol identifiers; their literal names are compatibility requirements, not explanatory documentation.
 
-The reader's job ID is bound to its tab and, for same-tab viewers, committed document ID. Offscreen audio accepts extension messages and only catalogued packaged assets. SCUTTIES permission requests are explicit user gestures for the detected destination origin; extension credentials are never injected into external sign-in pages.
+The reader's job ID is bound to its tab and, for same-tab viewers, committed document ID. Offscreen audio accepts extension messages and only catalogued packaged assets. SCUTTIES enters through the transaction-page link and automates only the declared DMV HTTPS origin. No optional host permissions or permission-request UI are present. A different origin is rejected before DOM inspection or input filling.
 
 ## Search lifecycle and failure handling
 

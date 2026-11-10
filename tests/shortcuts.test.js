@@ -17,3 +17,9 @@ test('browser-only release requires neither native messaging nor retry alarms', 
   assert.equal(manifest.permissions.includes('nativeMessaging'), false);
   assert.equal(manifest.permissions.includes('alarms'), false);
 });
+
+test('host access is restricted to the DMV origin without broad optional permissions',()=>{
+  const manifest = JSON.parse(readFileSync(new URL('../extension/manifest.json', import.meta.url)));
+  assert.deepEqual(manifest.host_permissions,['https://www.scdmvonline.com/*']);
+  assert.deepEqual(manifest.optional_host_permissions||[],[]);
+});
