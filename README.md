@@ -1,6 +1,6 @@
 # SC DMV Hotkeys
 
-A Chromium Manifest V3 extension for authorized SCDMV member searches, PDF follow-ups, status alerts, and PDF417 data-entry barcodes. Current version: **1.8.6**.
+A Chromium Manifest V3 extension for authorized SCDMV member searches, PDF follow-ups, status alerts, and PDF417 data-entry barcodes. Current version: **1.8.7**.
 
 ## Install and update
 
@@ -37,7 +37,7 @@ A successful query permits a ten-minute login bypass. If the first requested for
 
 Visible validation and server errors stop submitted searches and display the portal message. They appear in recent history as failed attempts; queued customer attempts advance so the next number remains usable. Server errors clear the ten-minute hint so the next requested search signs in again. A submitted transaction is not automatically repeated. PDF-download waits also detect related server-error tabs.
 
-SCUTTIES may use an external sign-in origin. The extension requests access to that specific destination from a user-activated permission prompt. Interactive sign-in, MFA, and password changes stay in the browser; DMV credentials are not injected into external sign-in forms. SCUTTIES history records a submitted search with no visible shared validation error, rather than asserting that an external result is correct. Review that response in the browser.
+SCUTTIES is opened by clicking its transaction-page link so the DMV can establish the login sequence. Automation stays on `https://www.scdmvonline.com/`, covered by the existing required site permission. No broad optional HTTP/HTTPS access or additional site-permission prompt is used. A destination outside that origin stops automation before its form is read or filled. SCUTTIES history records a submitted search with no visible shared validation error; review its response in the browser.
 
 ## Customer queue and recent history
 
@@ -99,7 +99,7 @@ Persistent local storage contains the encrypted vault and non-sensitive appearan
 
 The vault uses PBKDF2-SHA-256 and AES-GCM, with a random salt and a fresh IV for every write. Unlocking keeps the derived key only in trusted session storage. Local and session storage access is restricted to extension contexts. Website theme scripts receive only an enabled flag, not private state.
 
-Permissions support storage, DMV tab automation, scripting, navigation tracking, optional PDF redirection, and local audio. Additional destination access is requested only for SCUTTIES when needed. There is no external audio service or native helper.
+Permissions support storage, DMV tab automation, scripting, navigation tracking, optional PDF redirection, and local audio. Host access is limited to `https://www.scdmvonline.com/*`; the manifest declares no optional host permissions. There is no external audio service or native helper.
 
 ## Development and validation
 

@@ -270,10 +270,7 @@ function context(run) {
   return {
     run,
     status: message => guardedApi(chrome, run).storage.session.set({status: message}).catch(() => {}),
-    credentials: tabId => credentials(tabId, run),
-    permission: async origin => {
-      if (!await ask({type: 'permission', origin, message: `Allow access to ${origin} so the extension can enter the SCUTTIES search?`}, run)) throw new Error('SCUTTIES site access cancelled.');
-    }
+    credentials: tabId => credentials(tabId, run)
   };
 }
 /** Never navigate to a search while a saved blacklist is still encrypted. */
@@ -608,10 +605,6 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
             // Different credentials must not reuse the previous login-time hint.
             await chrome.storage.session.set({lastQuery: 0});
           }
-        }
-        if (data.type === 'permission') {
-          if (!await chrome.permissions.contains({origins: [data.origin]})) throw new Error('Website access has not been granted.');
-          result = true;
         }
         entry.run?.check();
         clearTimeout(entry.timer); panels.delete(message.id); await chrome.storage.session.remove(`panel:${message.id}`);
