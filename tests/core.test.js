@@ -1,7 +1,7 @@
 // Pure normalization, report identifiers, URL recognition.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {normalize, ownerNumbers, isResidenceReport, driverLicense, driverIdentity, isPdf, isPortal} from '../extension/core.js';
+import {normalize, ownerNumbers, isResidenceReport, driverLicense, driverIdentity, isPdf, isPortal, isPortalErrorPage, loginSucceeded, MEMBER, ROOT} from '../extension/core.js';
 test('plate and DL limits ignore whitespace and reject oversize input', () => {
   assert.equal(normalize('plate', 'ab cd 1234'), 'ABCD1234');
   assert.throws(() => normalize('plate', 'ABCDEFGHI'), /more than 8/);
@@ -63,4 +63,12 @@ test('multi-page residence reports may repeat Driver License No headers without 
   const report='Customers at Same Residence\nCustomer Number: 00000111 FICTIONAL, FIRST\nCustomer Number: 222 FICTIONAL, SECOND\nPage 1 of 2\fCustomers at Same Residence\nCustomer No: 999 Driver License No: 123456789\nCustomer Number: 222 FICTIONAL, SECOND\nCustomer Number: 333 FICTIONAL, THIRD';
   assert.equal(isResidenceReport(report),true);assert.deepEqual(ownerNumbers(report),['111','222','333']);
   assert.throws(()=>ownerNumbers('Driver License No: 123456789 Name: FICTIONAL, PERSON\nCustomer Number: 111\nNotes: Customers at Same Residence'),/driver record/);
+});
+
+test('the dedicated DMV error page is not a successful login redirect',()=>{
+  assert.equal(isPortalErrorPage(MEMBER+'ErrorPage.aspx?source=fixture'),true);
+  assert.equal(isPortalErrorPage(MEMBER+'ERRORPAGE.ASPX'),true);
+  assert.equal(loginSucceeded(MEMBER+'ErrorPage.aspx'),false);
+  assert.equal(loginSucceeded(MEMBER+'Disclaimer.aspx'),true);
+  assert.equal(isPortalErrorPage(ROOT+'.unrelated.test/SCTRNS/Member/ErrorPage.aspx'),false);
 });

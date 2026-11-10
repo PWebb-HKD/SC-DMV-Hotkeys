@@ -5,6 +5,7 @@ import {createServer} from 'node:http';
 import {join, extname} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {dependency} from './runtime.mjs';
+import {pageOperation} from '../extension/page.js';
 import {search, scutties} from '../extension/automation.js';
 import {ROOT, MEMBER, LOGIN, DISCLAIMER, PDF_URL, ownerNumbers, isResidenceReport} from '../extension/core.js';
 import {reportBarcode} from '../extension/barcode-data.js';
@@ -13,6 +14,7 @@ import {RECORDING_PATHS} from '../extension/voice-recordings.js';
 const {chromium} = dependency('playwright');
 const {PDFDocument, StandardFonts, degrees} = dependency('pdf-lib');
 const root = fileURLToPath(new URL('../', import.meta.url));
+const errorFixture=await readFile(join(root,'tests/fixtures/dmv-error.html'),'utf8');
 const browser = await chromium.launch({executablePath: process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true});
 const screenshots = join(root, 'test-results'); await mkdir(screenshots, {recursive: true});
 let passed = 0;
@@ -25,9 +27,10 @@ try {
   const navigation = [], loginFills = [];
   let loginEvents = [], loginReapplied = [], loginWasFocused = false, loginSubmitted;
   const tabs = new Map(), local = {}, session = {}, permissions = new Set([`${ROOT}/*`]);
-  let latestPdf = null;
+  let latestPdf = null, serverFailureStage='';
   const render = async (page, url) => {
     const u = new URL(url); let html = '';
+    if(u.pathname.endsWith('/ErrorPage.aspx'))return errorFixture;
     if (u.pathname.endsWith('/logon.aspx')) html = `<input id="ContentPlaceHolder1_userNameText"><input id="ContentPlaceHolder1_passwordText" type="password"><button id="ContentPlaceHolder1_loginButton">Log in</button>`;
     else if (u.pathname.endsWith('/Disclaimer.aspx')) html = '<button id="accept">I Agree</button>';
     else if (u.pathname.endsWith('/TransactionList.aspx') && brokenTransactions) html = '<div id="ContentPlaceHolder1_menuContainer"><div><div><div><div class="panel-body"><ul><li><a id="logoff" href="#">Log off</a></li></ul></div></div></div></div></div>';
@@ -91,9 +94,16 @@ try {
       else if (action === 'radio') plateRadio = true;
       else if (action === 'next') {
         submissions.push(payload);
+        if(serverFailureStage==='submit'){await updateTab(id,{url:MEMBER+'ErrorPage.aspx'});return;}
         if (invalid) await page.locator('#validation').evaluate(el => el.textContent = 'Invalid search number');
         else await updateTab(id, {url: tab.url.replace('Page1.aspx','Page2.aspx')});
       } else if (action === 'download') {
+        if(serverFailureStage.startsWith('download-')) {
+          if(serverFailureStage==='download-same')await updateTab(id,{url:MEMBER+'ErrorPage.aspx'});
+          else if(serverFailureStage==='download-reuse')await updateTab(latestPdf.id,{url:MEMBER+'ErrorPage.aspx'});
+          else latestPdf=await createTab(MEMBER+'ErrorPage.aspx',false,id);
+          return;
+        }
         if(resultMode==='reuse') {
           const reuse=tabs.get(latestPdf.id).tab;reuse.status='loading';
           chrome.tabs.onUpdated.emit(reuse.id,{status:'loading'},reuse);
@@ -252,7 +262,7 @@ try {
     const before=loginClicks;await search('license','123456789',ctx);
     assert.equal(loginClicks,before);assert.equal(disclaimerClicks,0);
   });
-  await tests('any completed SCDMV redirect away from logon verifies login, not just Disclaimer.aspx',async()=>{
+  await tests('completed non-error SCDMV redirects away from logon verify login, not just Disclaimer.aspx',async()=>{
     loginDestination=`${ROOT}/SCTRNS/Member/Home.aspx`;session.lastQuery=0;
     await updateTab(session.portalId,{url:LOGIN});
     const before=loginClicks;
@@ -295,6 +305,38 @@ try {
     assert.equal(submissions.length,before.submits+1);
     assert.equal(submissions.at(-1).ContentPlaceHolder1_idNumberTextBox,'11223344');
     assert.equal(activated.at(-1),result.tabId);assert.ok(session.lastQuery>0);
+  });
+  await tests('generic portal error DOM exposes the public message while ignoring hidden validation summaries',async()=>{
+    const page=await context.newPage();await page.goto(MEMBER+'ErrorPage.aspx');
+    const state=await page.evaluate(pageOperation,'state');assert.equal(state.portalError,true);assert.deepEqual(state.errors,['An unexpected error occurred']);
+    await page.locator('#ContentPlaceHolder1_errorMessagePublicText').evaluate(element=>element.hidden=true);
+    const hidden=await page.evaluate(pageOperation,'state');assert.equal(hidden.portalError,false);assert.deepEqual(hidden.errors,[]);await page.close();
+  });
+  await tests('generic portal error before submission recovers once through login and does not duplicate the query',async()=>{
+    const source=await createTab(DISCLAIMER,true);session.portalId=source.id;session.lastQuery=Date.now();transactionRedirects=1;transactionRedirectTarget=MEMBER+'ErrorPage.aspx';
+    const before=submissions.length;await search('customer','11000001',ctx);assert.equal(submissions.length,before+1);
+    transactionRedirects=2;session.lastQuery=Date.now();const retryStart=submissions.length;
+    await assert.rejects(search('customer','11000002',ctx),/An unexpected error occurred/);assert.equal(submissions.length,retryStart);assert.equal(session.lastQuery,0);assert.equal(transactionRedirects,0);
+  });
+  await tests('generic portal error after submission stops immediately and the next query requires login',async()=>{
+    const source=await createTab(DISCLAIMER,true);session.portalId=source.id;session.lastQuery=Date.now();serverFailureStage='submit';const before=submissions.length;
+    try {await assert.rejects(search('customer','11000003',ctx),{name:'PortalSearchError',message:'An unexpected error occurred'});assert.equal(submissions.length,before+1);assert.equal(session.lastQuery,0);}
+    finally {serverFailureStage='';}
+    const logins=loginClicks;await search('customer','11000004',ctx);assert.equal(loginClicks,logins+1);assert.equal(submissions.length,before+2);
+  });
+  await tests('generic portal error during PDF download is detected in same, new and reused tabs',async()=>{
+    for(const stage of ['download-same','download-new','download-reuse']) {
+      const source=await createTab(DISCLAIMER,true);session.portalId=source.id;session.lastQuery=Date.now();
+      if(stage==='download-reuse')latestPdf=await createTab(PDF_URL,false,source.id);
+      serverFailureStage=stage;const before=submissions.length;
+      try {await assert.rejects(search('customer','11000005',ctx),{name:'PortalSearchError',message:'An unexpected error occurred'});assert.equal(submissions.length,before+1);assert.equal(session.lastQuery,0);if(stage!=='download-same')assert.equal(ctx.tabId,latestPdf.id);}
+      finally {serverFailureStage='';}
+    }
+  });
+  await tests('generic portal error during login is surfaced instead of being accepted as login success',async()=>{
+    const source=await createTab(LOGIN,true);session.portalId=source.id;session.lastQuery=0;loginDestination=MEMBER+'ErrorPage.aspx';const before=submissions.length;
+    try {await assert.rejects(search('customer','11000006',ctx),{name:'Error',message:'An unexpected error occurred'});assert.equal(submissions.length,before);assert.equal(session.lastQuery,0);}
+    finally {loginDestination=DISCLAIMER;}
   });
   await context.close();
 

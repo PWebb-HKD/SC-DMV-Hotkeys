@@ -8,7 +8,7 @@ const event=()=>({listeners:[],addListener(fn){this.listeners.push(fn);},removeL
 const local={history:[{id:'old-persistent',kind:'plate',value:'OLD123',at:1}]}, session={history:[],lastQuery:Date.now(),portalId:1,pdfCreated:{2:100},'pdf:2':{text:'Owner Number: 00001234\nCustomer Number: 87654321\nOwner Number: 1234'}};
 const tabs=new Map([[1,{id:1,url:`${MEMBER}Transactions/DrvRec/Page2.aspx`,status:'complete',windowId:1,active:false}],[2,{id:2,url:PDF_URL,status:'complete',windowId:1,active:true}]]);
 const windows=[], submissions=[], navigations=[], submittedQueries=[];
-let nextId=3, invalid=false, invalidAfterSubmit=false, technicalFailure=false, loginRejected=false, blockSubmitted=false, captureBlocked=false, onResultFocus=null;
+let serverFailureStage='', nextId=3, invalid=false, invalidAfterSubmit=false, technicalFailure=false, loginRejected=false, blockSubmitted=false, captureBlocked=false, onResultFocus=null;
 let reportText='Driver License No: 123456789 Name: TEST, PERSON\nDOB: 01/01/2000';
 let pauseAlertWindow=false,alertWindowRelease;
 const removedWindows=[],removedTabs=[];
@@ -32,12 +32,14 @@ globalThis.chrome={
     const tab=tabs.get(target.tabId); let result=true;
     if(op==='fill'&&technicalFailure)throw new Error('Script connection lost');
     if(op==='state')result={url:tab.url,present:true,enabled:true,presentSelectors:args.selectors?.map(()=>true)||[],errors:(invalid&&tab.url.includes('Page1.aspx'))||(invalidAfterSubmit&&tab.url.includes('Page2.aspx'))?['Invalid customer number']:[]};
+    if(op==='state'&&tab.url===MEMBER+'ErrorPage.aspx')Object.assign(result,{errors:['An unexpected error occurred'],portalError:true});
     if(op==='state'&&loginRejected&&tab.url.endsWith('/logon.aspx'))result.errors=['Invalid User ID Or Password'];
     if(op==='extensionLogin'&&args.submit&&!loginRejected)tab.url=`${MEMBER}Disclaimer.aspx`;
     if(op==='fill')submissions.push(args.value);
-    if(op==='click'&&args.selector==='#btnFooterNavNext') {submittedQueries.push(submissions.at(-1));if(!invalid&&!blockSubmitted)tab.url=tab.url.replace('Page1.aspx','Page2.aspx');}
+    if(op==='click'&&args.selector==='#btnFooterNavNext') {submittedQueries.push(submissions.at(-1));if(serverFailureStage==='submit')tab.url=MEMBER+'ErrorPage.aspx';else if(!invalid&&!blockSubmitted)tab.url=tab.url.replace('Page1.aspx','Page2.aspx');}
     if(op==='fetchPdf'&&captureBlocked)return new Promise(()=>{});
     if(op==='click'&&args.selector==='#downloadButton'){
+      if(serverFailureStage==='download'){tab.url=MEMBER+'ErrorPage.aspx';return [{result:true}];}
       const pdf={id:nextId++,url:PDF_URL,status:'complete',windowId:1,openerTabId:tab.id,active:false};tabs.set(pdf.id,pdf);
       if(captureBlocked)session.pdfCreated[pdf.id]=Date.now();
       else session[`pdf:${pdf.id}`]={text:reportText,capturedAt:Date.now()};
@@ -674,4 +676,16 @@ test('Collect on a residence PDF with a repeated driver header retains every cus
   for(const tab of tabs.values())tab.active=tab.id===2;
   await send({type:'run',command:'owners'});await wait(()=>session.queue?.values?.join(',')==='111,222,333'&&session.queue.index===2);
   assert.equal(submissions.at(-1),'222');await send({type:'run',command:'next'});await wait(()=>session.queue.index===3);assert.equal(submissions.at(-1),'333');
+});
+
+test('generic DMV server errors consume queued attempts, show a notice, record failed history, and permit Next',async()=>{
+  for(const stage of ['submit','download']) {
+    await send({type:'stop'});session.credentials={user:'fixture-user',password:'fixture-password'};session.portalId=1;session.lastQuery=Date.now();tabs.get(1).url=MEMBER+'Disclaimer.aspx';session.queue={values:['81000001','81000002'],index:0};
+    serverFailureStage=stage;const before=submittedQueries.length;
+    try {
+      await send({type:'run',command:'next'});await wait(()=>session.queue.index===1&&session.history[0]?.value==='81000001'&&panel('notice'));
+      assert.equal(session.history[0].outcome,'error');assert.equal(session.history[0].errorMessage,'An unexpected error occurred');assert.equal(session[`panel:${new URL(panel('notice').url).searchParams.get('id')}`].message,'An unexpected error occurred');assert.equal(session.lastQuery,0);assert.equal(submittedQueries.length,before+1);
+    } finally {serverFailureStage='';}
+    await send({type:'run',command:'next'});await wait(()=>session.queue.index===2&&session.history[0]?.value==='81000002');assert.notEqual(session.history[0].outcome,'error');assert.equal(submittedQueries.length,before+2);
+  }
 });

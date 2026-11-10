@@ -1,9 +1,10 @@
 /**
  * Identify the PDF produced by a particular Download click, including reused named tabs
- * and Chromium viewer wrappers. Discovery deliberately does not require load completion.
+ * and Chromium viewer wrappers. Related ErrorPage.aspx tabs are returned as failures.
+ * PDF discovery deliberately does not require load completion.
  * The caller must arm before clicking and dispose listeners in a finally block.
  */
-import {attachmentUrl} from './core.js';
+import {attachmentUrl, isPortalErrorPage} from './core.js';
 import {guardedApi} from './run.js';
 
 // Listen before clicking Download: PDF viewers may never report 'complete',
@@ -32,14 +33,17 @@ export async function watchResults(portalId, ctx = {}) {
       for (const current of tabs) {
         const event = changed.get(current.id), tab = {...event?.tab, ...current};
         const sourceUrl = attachmentUrl(tab.pendingUrl) || attachmentUrl(tab.url);
-        if (!sourceUrl) continue;
         const old = before.get(tab.id);
+        const errorPage = !sourceUrl && (isPortalErrorPage(tab.pendingUrl) || isPortalErrorPage(tab.url));
+        if (!sourceUrl && !errorPage) continue;
+        // Error pages must belong to this transaction, never an unrelated window.
+        if (errorPage && tab.id !== portalId && tab.openerTabId !== portalId && old?.openerTabId !== portalId) continue;
         const changedUrl = old && (old.url !== tab.url || old.pendingUrl !== tab.pendingUrl);
         const navigated = !!(event?.navigated || changedUrl || old?.status === 'complete' && tab.status === 'loading');
         if (old && !navigated) continue; // Never select an unchanged historical PDF.
         if (tab.id !== portalId && tab.openerTabId != null && tab.openerTabId !== portalId) continue;
         const score = (tab.openerTabId === portalId ? 1000 : tab.id === portalId ? 900 : 0) + (event?.sequence || 0);
-        candidates.push({tab, sourceUrl, reused: !!old, score});
+        candidates.push({tab, sourceUrl, reused: !!old, score, ...(errorPage ? {errorPage: true} : {})});
       }
       candidates.sort((a, b) => b.score - a.score);
       const match = candidates[0];
