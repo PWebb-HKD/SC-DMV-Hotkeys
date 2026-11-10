@@ -317,3 +317,7 @@ Run `CHROME_PATH=/usr/bin/chromium npm run test:dmv-theme` to compare synthetic 
 The DMV's dedicated `ErrorPage.aspx` and its visible public error message are now recognized alongside field-validation errors. Errors during login stop with the website's message. Before a search is submitted, an unexpected first page can use the existing one-time login recovery. After submission, a server error stops the attempt, appears in recent history as a DMV error, and lets queued customer searches move to the next number. The failed transaction is not automatically submitted again. Its session hint is cleared so the next requested search signs in again.
 
 PDF-download waits also check for errors in the working tab and in new or reused result tabs associated with that transaction. Hidden validation messages and unrelated error tabs are ignored.
+
+## Version 1.8.5 barcode parsing fix
+
+Party relationship labels (such as `Owner Relationship:`) now end the preceding name field. They are not encoded as part of a person's given names. Barcode generation continues to use the first listed owner/customer/registrant, keeps that party's address, and retains existing field-length limits and incomplete-party choices.

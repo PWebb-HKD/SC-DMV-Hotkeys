@@ -239,3 +239,16 @@ test('a separate mailing address cannot contaminate the first owner address on a
   assert.equal(f.RBI,'123 EXAMPLE DR');assert.equal(f.RBK,'ROCK HILL');assert.equal(f.RBM,'297321234');assert.equal(f.RAM,'TEST123  ');
   assert.equal(f.RBD,'EXAMPLE-SAMPLE');assert.equal(f.RBE,'JANE MARIE');assert.ok(!Object.values(f).some(v=>v.includes('PO BOX 456')));
 });
+
+test('party relationship labels terminate owner names without borrowing a later party',()=>{
+  for(const category of ['Owner','Customer','Registrant/Lessee']) {
+    const report=vehicleReport.replaceAll('Owner ',category+' ')
+      .replace(`${category} Name: EXAMPLE-SAMPLE, JANE MARIE`,`${category} Name: EXAMPLE-SAMPLE, JANE MARIE\n${category} Relationship: AND`)
+      .replace('Last Transaction: RENEWAL','Owner Number: 22222222 Owner Name: LATER, PERSON Last Transaction: RENEWAL');
+    const f=registrationFields(vehicleBarcode(report).payload);
+    assert.equal(f.RBD,'EXAMPLE-SAMPLE');assert.equal(f.RBE,'JANE MARIE');assert.equal(f.RBI,'123 EXAMPLE ROAD');assert.equal(f.RBK,'COLUMBIA');
+    assert.ok(!Object.values(f).some(value=>/RELATIONSHIP|LATER|PERSON/.test(value)));
+    // Even when the user explicitly selects a later party, do not inherit the first address.
+    assert.throws(()=>vehicleBarcode(report,{partyIndex:1}),error=>error instanceof VehiclePartyError&&!error.hasNext);
+  }
+});
