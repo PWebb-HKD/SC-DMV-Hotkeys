@@ -1,5 +1,5 @@
 /**
- * Toolbar popup controller: recent-search replay, session settings, and shortcut help.
+ * Toolbar popup controller: recent-search replay, persistent preferences, and shortcut help.
  * It sends requests to the worker rather than running portal automation itself.
  * Shortcut assignments and Global scope are managed by the browser.
  */
@@ -17,19 +17,23 @@ const DESCRIPTIONS = {
   scutties: "Read the driver's last name and date of birth from the open PDF and search SCUTTIES.",
   barcode: 'Generate a PDF417 data-entry barcode from the focused driver/vehicle report, or the newest report when none is focused.'
 };
+/** Send a privileged UI request and return its value or throw the worker's displayed error. */
 async function send(message) {
   const result = await chrome.runtime.sendMessage(message);
   if (!result?.ok) throw new Error(result?.error || 'Extension unavailable.');
   return result.value;
 }
+/** Write feedback as text so worker messages cannot introduce markup. */
 function feedback(message) { $('feedback').textContent = message; }
+/** Enable controls appropriate to the announcement source and explain persistent voice preferences. */
 function voiceSourceUI() {
   const recorded = $('voiceSource').value === 'recordings';
   $('voiceName').disabled = recorded;
   $('voiceHelp').textContent = recorded
-    ? 'A status without a matching recording uses Microsoft speech with the selected gender. Voice settings apply to this session.'
+    ? 'A status without a matching recording uses Microsoft speech with the selected gender. Voice settings are saved between browser sessions.'
     : 'Microsoft speech replaces bundled recordings. Automatic uses the selected gender; an installed voice can be selected explicitly.';
 }
+/** Select one popup view and keep its accessible tab state synchronized. */
 function tab(selected) {
   for (const name of ['history', 'settings', 'about']) {
     $(`${name}View`).hidden = name !== selected;
@@ -52,6 +56,7 @@ function renderShortcuts(commands = []) {
   });
   $('shortcutList').replaceChildren(...rows);
 }
+/** Render only unlocked entries and require explicit confirmation before requesting their removal. */
 function renderBlacklist(current = {}) {
   const unlocked = current.unlocked === true;
   $('blacklistState').textContent = !current.hasVault
@@ -83,6 +88,7 @@ function renderBlacklist(current = {}) {
     action.append(remove); row.append(category, value, action); $('blacklistEntries').append(row);
   }
 }
+// Entry controls follow category-specific limits; the worker independently validates submitted values.
 $('blacklistKind').onchange = () => {
   const kind = $('blacklistKind').value;
   $('blacklistLimit').textContent = kind === 'license' ? 'Up to 9 digits. Spaces are ignored; leading zeroes are kept.' : kind === 'customer' ? 'Up to 8 digits after leading zeroes are removed. Spaces are ignored.' : 'Up to 8 letters or digits. Spaces are ignored.';
@@ -97,6 +103,7 @@ $('blacklistForm').onsubmit = async event => {
   } catch (error) { $('blacklistFeedback').textContent = error.message; $('blacklistAdd').disabled = false; }
   finally { $('blacklistPassphrase').value = ''; }
 };
+// Create or unlock the vault through the worker, then clear passphrase fields after use.
 $('blacklistSetup').onclick = () => send({type: 'blacklist-setup'}).then(renderBlacklist).catch(error => { $('blacklistFeedback').textContent = error.message; });
 $('blacklistUnlock').onclick = async () => {
   $('blacklistUnlock').disabled = true;
@@ -158,6 +165,7 @@ $('stopFunction').onclick = async () => {
   catch (error) { feedback(error.message); }
   finally { $('stopFunction').disabled = false; }
 };
+// Map related voice controls to one validated preference-update message without duplicating handlers.
 for (const [id, key] of [['speechToggle', 'speechEnabled'], ['repeatSpeechToggle', 'repeatSpeech'], ['clipToggle', 'suspendedClipEnabled'], ['voiceSource', 'voiceSource'], ['voiceGender', 'voiceGender'], ['voiceName', 'voiceName']]) {
   $(id).onchange = async () => {
     const input = $(id), value = input.type === 'checkbox' ? input.checked : input.value;

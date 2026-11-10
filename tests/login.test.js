@@ -86,6 +86,7 @@ test('SCUTTIES activates a new destination window and refocuses it after the per
 
 const TRANSACTIONS = `${MEMBER}Transactions/TransactionList.aspx`;
 const LOGOFF = '#ContentPlaceHolder1_menuContainer > div > div:nth-child(1) > div:nth-child(1) > div.panel-body > ul > li:nth-child(1) > a';
+/** Model redirect, login, and logoff outcomes without making real portal requests. */
 function recoveryFixture({redirects=1, redirectUrl=TRANSACTIONS, fresh=false, loginLanding=DISCLAIMER, missingLogoff=false, laterRedirect=false, pendingInitial=false, onLogoff, onLoginNavigation}={}) {
   const portal={id:1,url:DISCLAIMER,status:'complete',windowId:1};
   const session={portalId:1,lastQuery:fresh?0:Date.now()};

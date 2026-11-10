@@ -9,6 +9,7 @@ export const PDF_URL = `${MEMBER}Transactions/ViewAttachment.aspx`;
 export const LOGIN = `${MEMBER}logon.aspx`;
 export const DISCLAIMER = `${MEMBER}Disclaimer.aspx`;
 export const ERROR_SELECTOR = '#form1 > div.container > div.iFormsValidationSummary.alert.alert-danger > ul > li > span, #ContentPlaceHolder1_errorMessagePublicText';
+// Shared command IDs and limits are the contract between the manifest, worker, and extension views.
 export const COMMANDS = {
   plate: {label: 'Plate Search', key: 'Alt+P', prompt: 'Enter a license plate number', max: 8},
   license: {label: 'DL Number', key: 'Alt+L', prompt: "Enter a driver's license number", max: 9},
@@ -38,14 +39,19 @@ export function attachmentUrl(url = '', depth = 0) {
   } catch { /* Not a supported viewer URL. */ }
   return null;
 }
+/** Recognize attachment URLs directly or through supported browser-viewer wrappers. */
 export function isPdf(url = '') { return !!attachmentUrl(url); }
+/** Limit working tabs to the DMV HTTPS origin while excluding PDF attachment views. */
 export function isPortal(url = '') {
   try { return new URL(url).origin === ROOT && !isPdf(url); } catch { return false; }
 }
+/** Compare origin and case-insensitive path, deliberately ignoring query strings and fragments. */
 export function samePage(a, b) {
   try { const x = new URL(a), y = new URL(b); return x.origin === y.origin && x.pathname.toLowerCase() === y.pathname.toLowerCase(); } catch { return false; }
 }
+/** Recognize the dedicated DMV failure endpoint, including query and path-case variations. */
 export function isPortalErrorPage(url = '') { return samePage(url, `${MEMBER}ErrorPage.aspx`); }
+/** Accept a same-origin redirect away from login only when it is not the dedicated error endpoint. */
 export function loginSucceeded(url = '') {
   try { return new URL(url).origin === ROOT && !samePage(url, LOGIN) && !isPortalErrorPage(url); } catch { return false; }
 }
@@ -61,6 +67,7 @@ export function normalize(kind, input) {
   if (v.length > max) throw new Error(`The DMV does not allow ${kind === 'plate' ? 'plates' : kind === 'license' ? 'DL numbers' : 'customer numbers'} with more than ${max} characters. Please re-enter the number.`);
   return kind === 'plate' ? v.toUpperCase() : v;
 }
+/** Read the first license-number/name heading and preserve valid DL leading zeroes. */
 export function driverLicense(text) {
   const match = text.match(/Driver\s+License\s+No\s*:\s*([\d\s]+?)\s*Name\s*:/i);
   if (!match) return null;

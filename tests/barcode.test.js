@@ -7,7 +7,7 @@ import {driverReport, vehicleReport} from './barcode-fixtures.js';
 import {COMMANDS} from '../extension/core.js';
 const fields = payload => Object.fromEntries(payload.slice(33).replace(/\r$/, '').split('\n').map(field => [field.slice(0, 3), field.slice(3)]));
 const registrationFields = payload => Object.fromEntries(payload.slice(31).replace(/\r$/, '').split('\n').map(field => [field.slice(0, 3), field.slice(3)]));
-// Only field identifiers/framing from the supplied screenshots; no real personal data.
+// Registration and credential schema expectations contain field identifiers only.
 const official = JSON.parse(readFileSync(new URL('./sc-barcode-layouts.json', import.meta.url)));
 test('driver import translates demographics and uses the current class rather than Prior class', () => {
   const result = driverBarcode(driverReport), f = fields(result.payload);
@@ -93,7 +93,7 @@ test('registration does not replace missing issue date with the title date; comp
   const f = registrationFields(vehicleBarcode(text).payload);
   assert.equal(f.RBB, ''); assert.equal(f.BBC, 'EXAMPLE COMPANY LLC'); assert.equal(f.RBD, ''); assert.equal(f.RBE, '');
 });
-test('driver restriction flags do not invent actual restriction codes or copy sample metadata', () => {
+test('driver restriction flags do not invent actual restriction codes or copy unrelated credential metadata', () => {
   const f = fields(driverBarcode(driverReport.replace('N N 1234567890123456789', 'Y Y 1234567890123456789')).payload);
   assert.equal(f.DCB, 'unavl'); assert.equal(f.DCD, 'unavl'); assert.equal(f.DCR, ''); assert.equal(f.DCK, ''); assert.equal(f.DAX, '');
 });

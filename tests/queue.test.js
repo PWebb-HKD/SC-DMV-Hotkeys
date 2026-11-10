@@ -49,6 +49,7 @@ globalThis.chrome={
 };
 await import('../extension/background.js');
 const send=message=>new Promise((resolve,reject)=>runtime.onMessage.listeners[0](message,{id:runtime.id,url:runtime.getURL('popup.html')},r=>r.ok?resolve(r.value):reject(new Error(r.error))));
+/** Bound asynchronous worker expectations so a stalled workflow fails the test promptly. */
 async function wait(fn){const end=Date.now()+4000;while(Date.now()<end){if(fn())return;await new Promise(r=>setTimeout(r,10));}throw new Error('Queue test timed out.');}
 test('startup removes persistent history without changing current session history',async()=>{
   assert.deepEqual((await send({type:'state'})).history,[]);
@@ -72,7 +73,9 @@ test('queue starts with first unique number, consumes portal-rejected last item,
   assert.equal(submissions.at(-1),'1234');
   assert.equal(tabs.get(1).url.includes('Page2.aspx'),true);
 });
+/** Find the latest live panel of a type through the same session data used by extension views. */
 function panel(type) { return windows.findLast(w=>session[`panel:${new URL(w.url).searchParams.get('id')}`]?.type===type); }
+/** Submit an identifier through the actual worker prompt protocol rather than calling automation directly. */
 async function input(value,command='customer') {
   await send({type:'run',command}); await wait(()=>panel('input'));
   await send({type:'panel-submit',id:new URL(panel('input').url).searchParams.get('id'),value});
@@ -488,6 +491,7 @@ test('confirmed login-popup reset deletes saved user info and cancels the pendin
   assert.equal(navigations.length,before);
 });
 
+/** Bind invented report text to the focused PDF tab for barcode workflow assertions. */
 function barcodeSource(text){session['pdf:2']={text};for(const tab of tabs.values())tab.active=tab.id===2;}
 const barcodeData=()=>{const win=panel('barcode');return win&&session[`panel:${new URL(win.url).searchParams.get('id')}`];};
 test('incomplete first owner prompts for approval before using the next owner and preserves the captured report',async()=>{

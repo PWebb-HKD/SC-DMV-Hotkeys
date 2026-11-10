@@ -14,6 +14,7 @@ export async function watchResults(portalId, ctx = {}) {
   const before = new Map((await api.tabs.query({})).map(tab => [tab.id, {...tab}]));
   const changed = new Map();
   let armed = false, sequence = 0;
+  // Track only changes after Download is armed, including named-window reuse at an unchanged URL.
   const record = (tab, change = {}) => {
     if (!armed) return;
     const prior = changed.get(tab.id);
@@ -25,7 +26,9 @@ export async function watchResults(portalId, ctx = {}) {
   chrome.tabs.onCreated.addListener(created); chrome.tabs.onUpdated.addListener(updated);
   return {
     startedAt: 0,
+    /** Begin attributing tab events to this Download click. */
     arm() { this.startedAt = Date.now(); armed = true; },
+    /** Rank new/navigated results; return related server errors distinctly from PDF source matches. */
     async find() {
       ctx.run?.check();
       const tabs = await api.tabs.query({});
@@ -49,6 +52,7 @@ export async function watchResults(portalId, ctx = {}) {
       const match = candidates[0];
       return match && {...match, startedAt: this.startedAt};
     },
+    /** Release both listeners whether discovery succeeded, failed, or was cancelled. */
     dispose() { chrome.tabs.onCreated.removeListener(created); chrome.tabs.onUpdated.removeListener(updated); }
   };
 }

@@ -9,6 +9,7 @@ const FLAT_DATE = /\d{2}\s*\/\s*\d{2}\s*\/\s*\d{4}/;
 const LICENSE_HEADER = 'Type\\s+Class\\s+Function\\s+Issued\\s+Expires\\s+Printed\\s+Date\\s+Restr\\.?\\s*Endor\\.?\\s*Document\\s+Identifier';
 const flat = text => String(text || '').replace(/\s+/g, ' ').trim();
 
+/** Construct a validated UTC day ordinal used only for calendar comparisons, not local clock arithmetic. */
 function calendar(year, month, day) {
   const date = new Date(0); date.setUTCFullYear(year, month - 1, day); date.setUTCHours(0, 0, 0, 0);
   if (year < 1 || date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return null;
@@ -24,6 +25,7 @@ export function reportToday(now = new Date()) {
   const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', {timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit'}).formatToParts(now).map(part => [part.type, part.value]));
   return calendar(+parts.year, +parts.month, +parts.day);
 }
+/** Move a calendar date by whole months, clamping invalid month-end days to the last valid day. */
 function shiftMonths(date, delta) {
   const total = date.year * 12 + date.month - 1 + delta;
   const year = Math.floor(total / 12), month = total % 12 + 1;
@@ -42,14 +44,16 @@ export function expirationAge(expired, today) {
   const totalDays = today.ordinal - expired.ordinal;
   return {years, months, days, totalDays, text: `${units.join(', ') || '0 days'}${years || months ? ` (${totalDays} days total)` : ''}`};
 }
+/** Build display-only status data and choose the standard success or warning/error lifetime. */
 function alert(recordType, tone, sections, extra = {}) {
   return {type: 'record-alert', recordType, tone, sections, autoCloseMs: tone === 'success' ? 10000 : 90000, ...extra};
 }
+/** Report unreadable status explicitly instead of inferring a valid license or plate. */
 export function unavailableAlert(recordType, message) {
   return alert(recordType, 'warning', [{title: 'STATUS UNAVAILABLE', lines: [message]}]);
 }
 
-/** Temporary vehicle plate classes observed in the 45-day, EVR 45-day and EVR 60-day reports. */
+/** Recognize 45-day, EVR 45-day, and EVR 60-day temporary vehicle plate classes. */
 export function isTemporaryPlate(plateClass) {
   return /^(?:T45V|E45V|E60V)\b/i.test(flat(plateClass));
 }
@@ -93,6 +97,7 @@ export function plateStatus(raw, now = new Date()) {
   return alert('plate', 'success', [{title: 'TAG VALID', lines: []}], details);
 }
 
+/** Read one suspension-block field up to the next known label without crossing blocks. */
 function field(block, label, next) {
   return flat(block.match(new RegExp(`${label}\\s*:\\s*([\\s\\S]*?)(?=${next}\\s*:|$)`, 'i'))?.[1] || '');
 }
@@ -138,7 +143,7 @@ export function licenseStatus(raw, now = new Date()) {
   if (statuses.has('SUSPENDED')) {
     const summary = suspensionSummary(text, today), priors = recentDus(text, today);
     const lines = [`${priors} Prior DUS convictions within 5 years`, `${summary.active} active suspension${summary.active === 1 ? '' : 's'}`];
-    if (!summary.groups.length) lines.push('No active suspension blocks matched the supplied date rules.');
+    if (!summary.groups.length) lines.push('No active suspension blocks matched the date criteria.');
     if (summary.unreadable) lines.push(`${summary.unreadable} suspension entr${summary.unreadable === 1 ? 'y could' : 'ies could'} not be evaluated.`);
     return alert('license', 'danger', [{title: 'LICENSE SUSPENDED', lines, listTitle: 'Suspension Reasons:', items: summary.groups.map(group => `${group.reason} × ${group.count}`)}], {activeSuspensions: summary.active, priorDus: priors});
   }

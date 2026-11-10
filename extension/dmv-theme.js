@@ -6,14 +6,17 @@
   const state={enabled:document.documentElement.hasAttribute('data-scdmv-dark'),loaded:false,refresh};
   globalThis.__scdmvDmvTheme=state;
   const observer=new MutationObserver(()=>ensureLock());
+  /** Maintain the theme-coexistence marker across head replacement without inspecting form contents. */
   function ensureLock() {
     if(!state.enabled)return;
     let lock=document.getElementById('scdmv-darkreader-lock');
+    // Keep the external compatibility metadata name stable; the marker itself contains no private data.
     if(!lock){lock=document.createElement('meta');lock.id='scdmv-darkreader-lock';lock.name='darkreader-lock';lock.content='SC DMV Hotkeys';}
     const parent=document.head||document.documentElement;
     if(lock.parentNode!==parent)parent.append(lock);
     if(document.head&&head!==document.head){head=document.head;observer.observe(head,{childList:true});}
   }
+  /** Toggle the root style marker and its observer; remove only this extension's coexistence marker on disable. */
   function apply(enabled) {
     state.enabled=enabled;state.loaded=true;
     document.documentElement.toggleAttribute('data-scdmv-dark',enabled);
@@ -21,6 +24,7 @@
     if(enabled){observer.observe(document.documentElement,{childList:true});ensureLock();}
     else document.getElementById('scdmv-darkreader-lock')?.remove();
   }
+  /** Request the appearance flag and discard replies superseded by a newer refresh. */
   async function refresh() {
     const token=++generation;
     try {

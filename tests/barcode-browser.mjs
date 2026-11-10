@@ -19,7 +19,7 @@ const server = createServer(async (req, res) => {
 });
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const {chromium} = dependency('playwright');
-const browser = await chromium.launch({executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true});
+const browser = await chromium.launch({executablePath: process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true});
 const out = join(root, 'tests/tmp/barcodes'); await mkdir(out, {recursive: true});
 try {
   for (const [kind, source] of [['driver', driverReport.replace('Race: W', 'Race: WHITE')], ['suffix', driverReport.replace('JANE MARIE', 'JANE MARIE JR')], ['blank-owner', vehicleReport.replace('123 EXAMPLE ROAD, COLUMBIA SC 292010123','UNPARSEABLE ADDRESS')], ['next-owner', vehicleReport.replace('123 EXAMPLE ROAD, COLUMBIA SC 292010123','UNPARSEABLE ADDRESS').replace('Last Transaction: RENEWAL','Registrant/Lessee Number: 2222 Registrant/Lessee Name: NEXT, PERSON Registrant/Lessee Address: 456 NEXT ROAD, CHARLESTON SC 29401 Last Transaction: RENEWAL')], ['first-registrant', vehicleReport.replaceAll('Owner ', 'Registrant/Lessee ').replace('Last Transaction: RENEWAL', 'Owner Number: 2222 Owner Name: LATER, PERSON Owner Address: 456 OTHER ROAD, OTHER CITY SC 29202 Last Transaction: RENEWAL')], ['vehicle', vehicleReport.replace('123 EXAMPLE ROAD, COLUMBIA SC 292010123', '123 EXAMPLE DR ROCK HILL SC, 297321234')], ['id', driverReport.replace('DL (R) D Modify', 'ID (R) Renewal').replace('Race: W', 'Race: HISP')], ['blank-number', driverReport.replace('Driver License No: 123456789', 'Driver License No:')]]) {
@@ -43,7 +43,8 @@ try {
     await page.keyboard.press('Escape'); assert.equal(await page.evaluate(() => window.closedByUser), true);
     await page.close();
   }
-  const python = process.env.CODEX_PYTHON || 'C:/Users/prest/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe';
+  // Select an explicit Python override or the platform command, never a developer-specific path.
+  const python = process.env.PYTHON || process.env.CODEX_PYTHON || (process.platform === 'win32' ? 'python' : 'python3');
   const decode = spawnSync(python, ['-c', `import sys,pathlib
 sys.path.insert(0,'tests/tmp/python')
 import zxingcpp

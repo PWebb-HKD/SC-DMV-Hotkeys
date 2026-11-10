@@ -5,6 +5,7 @@ import {watchResults} from '../extension/results.js';
 import {attachmentUrl, PDF_URL, MEMBER} from '../extension/core.js';
 import {SearchRun} from '../extension/run.js';
 function event() { const listeners=new Set();return {addListener:fn=>listeners.add(fn),removeListener:fn=>listeners.delete(fn),emit:(...args)=>{for(const fn of listeners)fn(...args);},get count(){return listeners.size;}}; }
+/** Model one portal plus an existing result tab and observable tab events. */
 function fixture() {
   const tabs=new Map([[1,{id:1,url:`${MEMBER}Transactions/DrvRec/Page2.aspx`,status:'complete'}],[2,{id:2,url:PDF_URL,status:'complete',openerTabId:1}]]);
   const onCreated=event(),onUpdated=event();
@@ -44,7 +45,7 @@ test('cancelled results watchers stop immediately',async()=>{
   await assert.rejects(watcher.find(),{name:'AbortError'});watcher.dispose();
 });
 
-test('a redirected dark reader in a new or reused results tab is discovered with its complete source URL',async()=>{
+test('a redirected PDF viewer in a new or reused results tab is discovered with its complete source URL',async()=>{
   const {tabs,onUpdated}=fixture(),watcher=await watchResults(1);watcher.arm();
   const tab=tabs.get(2);tab.url=`chrome-extension://${'a'.repeat(32)}/reader.html?dark=1&pdf=1#${PDF_URL}?record=1&format=2`;
   onUpdated.emit(2,{url:tab.url,status:'loading'},tab);

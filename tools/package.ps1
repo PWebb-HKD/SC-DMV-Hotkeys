@@ -1,6 +1,6 @@
 # Package current source directly. Reusing a staging directory can silently ship
 # retired components, so this allow-list is also the distribution boundary.
-# Top-level tests only: tests/tmp may contain private extracts and test binaries.
+# Include only test sources and the synthetic fixture directory; tests/tmp can contain private extracts.
 $ErrorActionPreference = 'Stop'
 $project = Split-Path $PSScriptRoot -Parent
 $sourceFiles = @(
@@ -8,10 +8,12 @@ $sourceFiles = @(
         Get-ChildItem -LiteralPath (Join-Path $project $folder) -Recurse -File
     }
     Get-ChildItem -LiteralPath (Join-Path $project 'tests') -File
-    foreach ($file in @('README.md','DEVELOPMENT.md','package.json','.gitignore')) {
+    Get-ChildItem -LiteralPath (Join-Path $project 'tests/fixtures') -Recurse -File
+    foreach ($file in @('README.md','DEVELOPMENT.md','package.json','package-lock.json','.gitignore')) {
         Get-Item -LiteralPath (Join-Path $project $file)
     }
 )
+# Stream current files directly into the archive so stale staging files cannot be distributed.
 $zip = Join-Path $project 'SC-DMV-Hotkeys.zip'
 Add-Type -AssemblyName System.IO.Compression
 $zipStream = [IO.File]::Open($zip, [IO.FileMode]::Create)

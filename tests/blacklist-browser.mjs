@@ -10,6 +10,7 @@ await mkdir(join(root, 'tests/tmp'), {recursive: true});
 const profile = await mkdtemp(join(root, 'tests/tmp/blacklist-profile-'));
 const extension = join(root, 'extension'), phrase = 'synthetic vault passphrase';
 let context, httpRequests = 0;
+/** Start the isolated profile and block HTTP traffic before exercising the installed extension. */
 async function launch() {
   context = await chromium.launchPersistentContext(profile, {executablePath: process.env.CHROME_PATH || '/usr/bin/chromium', headless: true, ignoreDefaultArgs: ['--disable-extensions'],
     // Debian's launcher derives its extension allowlist from CHROMIUM_FLAGS.
@@ -23,6 +24,7 @@ async function launch() {
   await page.waitForFunction(() => document.querySelector('#blacklistState').textContent.length > 0);
   return page;
 }
+/** Trigger an extension action and wait for its newly opened prompt window. */
 async function panel(action) {
   const next = context.waitForEvent('page', {predicate: async page => {
     try { await page.waitForURL(url => url.pathname.endsWith('/panel.html'), {timeout: 5000}); return true; } catch { return false; }
@@ -30,6 +32,7 @@ async function panel(action) {
   await action();
   const page = await next; await page.waitForLoadState(); return page;
 }
+/** Execute the trusted extension-message contract inside an extension-owned page. */
 async function send(page, message) {
   const response = await page.evaluate(message => chrome.runtime.sendMessage(message), message);
   assert.equal(response.ok, true, response.error); return response.value;

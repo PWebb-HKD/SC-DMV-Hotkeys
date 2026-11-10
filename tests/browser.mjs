@@ -28,6 +28,7 @@ try {
   let loginEvents = [], loginReapplied = [], loginWasFocused = false, loginSubmitted;
   const tabs = new Map(), local = {}, session = {}, permissions = new Set([`${ROOT}/*`]);
   let latestPdf = null, serverFailureStage='';
+  // Render transaction-specific local pages; their event handlers report actions to the browser mock.
   const render = async (page, url) => {
     const u = new URL(url); let html = '';
     if(u.pathname.endsWith('/ErrorPage.aspx'))return errorFixture;
@@ -77,6 +78,7 @@ try {
     const page = route.request().frame().page();
     await route.fulfill({contentType: 'text/html', body: await render(page, route.request().url())});
   });
+  /** Create a local fixture page and attach browser events to its simulated extension tab identity. */
   async function createTab(url, active = false, openerTabId) {
     const id = nextId++, page = await context.newPage();
     const tab = {id, url, active, openerTabId, windowId: 1, status: 'loading', lastAccessed: clock++};
@@ -122,6 +124,7 @@ try {
     chrome.tabs.onCreated.emit({...tab});
     await page.goto(url); tab.status = 'complete'; return {...tab};
   }
+  /** Model redirects and tab notifications while preserving the focus state checked by automation. */
   async function updateTab(id, update) {
     const record = tabs.get(id); if (!record) throw new Error('No tab');
     if (update.url) {
@@ -190,7 +193,7 @@ try {
     assert.equal(activated[focusBefore],session.portalId);
     assert.equal(submissions.at(-1).ContentPlaceHolder1_idNumberTextBox,'12345678');
   });
-  await tests('DL and same-address searches target their supplied fields', async () => {
+  await tests('DL and same-address searches target their transaction fields', async () => {
     await search('license','123456789',ctx);
     assert.equal(submissions.at(-1).ContentPlaceHolder1_dlNumberTextBox,'123456789');
     await search('address','987654321',ctx);
@@ -440,7 +443,7 @@ try {
     });
     assert.ok(duration>0&&duration<90);await page.close();
   });
-  await tests('all 20 supplied male and female MP3 recordings decode locally in Chromium',async()=>{
+  await tests('all 20 packaged male and female MP3 recordings decode locally in Chromium',async()=>{
     const page=await ui.newPage();await page.goto(`${base}/popup.html`);
     const durations=await page.evaluate(async paths=>{
       const context=new OfflineAudioContext(1,44100,44100);
@@ -699,6 +702,7 @@ try {
   });
   const fixedNow=new Date('2026-10-28T16:00:00Z');
   const currentHeader='Type Class Function Issued Expires Printed Date Restr.Endor.Document Identifier Current (ACN / DDN)';
+  /** Render a status panel from worker display data for text, layout, and lifetime assertions. */
   async function statusPage(payload){
     const page=await ui.newPage();await page.setViewportSize({width:580,height:700});await page.clock.install();
     await page.addInitScript(payload=>{
@@ -923,48 +927,35 @@ try {
       await page.close();
     }
   });
+  /** Read one optional local PDF through the actual browser worker, without logging report contents. */
+  async function localPdfText(path) {
+    const base64=(await readFile(path)).toString('base64'),page=await ui.newPage();
+    try {
+      await page.addInitScript(base64=>{chrome.runtime.sendMessage=async message=>{
+        if(message.type==='reader-start')return {ok:true,value:{base64}};
+        if(message.type==='reader-result'){window.pdfResult=message;return {ok:true,value:true};}
+        return {ok:true};
+      };},base64);
+      await page.goto(base+'/reader.html?id=local-report-regression');await page.waitForFunction(()=>window.pdfResult,{timeout:20000});
+      const result=await page.evaluate(()=>window.pdfResult);assert.equal(result.error,undefined,result.error);return result.text;
+    } finally {await page.close();}
+  }
   const residenceIndex=process.argv.indexOf('--residence-pdf');
-  if(residenceIndex>=0)await tests('supplied residence PDF is recognized and its customer numbers are collected',async()=>{
-    const base64=(await readFile(process.argv[residenceIndex+1])).toString('base64'),page=await ui.newPage();
-    await page.addInitScript(base64=>{chrome.runtime.sendMessage=async message=>{
-      if(message.type==='reader-start')return {ok:true,value:{base64}};
-      if(message.type==='reader-result'){window.pdfResult=message;return {ok:true,value:true};}
-      return {ok:true};
-    };},base64);
-    await page.goto(base+'/reader.html?id=residence-regression');await page.waitForFunction(()=>window.pdfResult,{timeout:20000});
-    const result=await page.evaluate(()=>window.pdfResult);assert.equal(result.error,undefined,result.error);assert.equal(isResidenceReport(result.text),true);
-    const numbers=ownerNumbers(result.text);assert.ok(numbers.length>0);console.log(`Residence PDF check: ${numbers.length} unique customer numbers; identifiers are not logged.`);await page.close();
+  if(residenceIndex>=0)await tests('local report: residence recognition and customer collection',async()=>{
+    const text=await localPdfText(process.argv[residenceIndex+1]);assert.equal(isResidenceReport(text),true);
+    const numbers=ownerNumbers(text);assert.ok(numbers.length>0);console.log(`Residence PDF check: ${numbers.length} unique customer numbers; identifiers are not logged.`);
   });
   const barcodeIndex=process.argv.indexOf('--barcode-pdf');
-  if(barcodeIndex>=0)await tests('supplied barcode PDF extracts and generates a vehicle payload',async()=>{
-    const base64=(await readFile(process.argv[barcodeIndex+1])).toString('base64'),page=await ui.newPage();
-    await page.addInitScript(base64=>{chrome.runtime.sendMessage=async message=>{
-      if(message.type==='reader-start')return {ok:true,value:{base64}};
-      if(message.type==='reader-result'){window.pdfResult=message;return {ok:true,value:true};}
-      return {ok:true};
-    };},base64);
-    await page.goto(base+'/reader.html?id=barcode-regression');await page.waitForFunction(()=>window.pdfResult,{timeout:20000});
-    const result=await page.evaluate(()=>window.pdfResult);assert.equal(result.error,undefined,result.error);
-    const barcode=reportBarcode(result.text);assert.equal(barcode.kind,'vehicle');assert.ok(barcode.payload.startsWith('@\n'));
-    console.log('Supplied barcode PDF generated successfully; identifiers are not logged.');await page.close();
+  if(barcodeIndex>=0)await tests('local report: vehicle barcode mapping',async()=>{
+    const text=await localPdfText(process.argv[barcodeIndex+1]),barcode=reportBarcode(text);
+    assert.equal(barcode.kind,'vehicle');assert.ok(barcode.payload.startsWith('@\n'));
+    console.log('Local barcode PDF generated successfully; identifiers are not logged.');
   });
-  const sampleIndex=process.argv.indexOf('--sample-pdf');
-  if(sampleIndex>=0)await tests('supplied local PDF: browser worker extracts all 12 unique customer numbers',async()=>{
-    const base64=(await readFile(process.argv[sampleIndex+1])).toString('base64');
-    const page=await ui.newPage();
-    await page.addInitScript(base64=>{
-      const original=chrome.runtime.sendMessage;
-      chrome.runtime.sendMessage=async message=>{
-        if(message.type==='reader-start')return {ok:true,value:{base64,url:'https://www.scdmvonline.com/SCTRNS/Member/Transactions/ViewAttachment.aspx'}};
-        if(message.type==='reader-result'){window.pdfResult=message;return {ok:true,value:true};}
-        return original(message);
-      };
-    },base64);
-    await page.goto(`${base}/reader.html?id=local-sample`);
-    await page.waitForFunction(()=>window.pdfResult,{timeout:20000});
-    const result=await page.evaluate(()=>window.pdfResult);assert.equal(result.error,undefined,result.error);
-    assert.equal(ownerNumbers(result.text).length,12);
-    await page.close();
+  // Retain the legacy CLI spelling without retaining a report-specific expected count.
+  const customerIndex=process.argv.findIndex(arg=>['--customer-pdf','--sample-pdf'].includes(arg));
+  if(customerIndex>=0)await tests('local report: unique customer collection',async()=>{
+    const numbers=ownerNumbers(await localPdfText(process.argv[customerIndex+1]));assert.ok(numbers.length>0);
+    console.log(`Customer PDF check: ${numbers.length} unique numbers; identifiers are not logged.`);
   });
   await ui.close(); await new Promise(resolve=>server.close(resolve));
   await writeFile(join(screenshots,'browser-tests.txt'),`${passed} browser/fixture checks passed. No live database requests were made.\n`);

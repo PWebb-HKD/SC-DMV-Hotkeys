@@ -1,6 +1,6 @@
 /**
  * Portal workflow layer: select a tab, establish a session, submit a search, and
- * discover its results. ctx carries cancellation plus UI callbacks supplied by the
+ * discover its results. ctx carries cancellation plus UI callbacks owned by the
  * service worker. All asynchronous browser operations must remain run-guarded.
  */
 import {ROOT, MEMBER, LOGIN, ERROR_SELECTOR, samePage, isPortal, isPdf, isPortalErrorPage, loginSucceeded} from './core.js';
@@ -12,6 +12,7 @@ const TRANSACTIONS = `${MEMBER}Transactions/TransactionList.aspx`;
 const LOGOFF = '#ContentPlaceHolder1_menuContainer > div > div:nth-child(1) > div:nth-child(1) > div.panel-body > ul > li:nth-child(1) > a';
 const USER = '#ContentPlaceHolder1_userNameText', PASS = '#ContentPlaceHolder1_passwordText';
 const api = ctx => guardedApi(chrome, ctx?.run);
+/** Wait through the active run so Stop releases callers even during a synchronization delay. */
 export const delay = (ms, ctx) => ctx?.run ? ctx.run.step(() => new Promise(resolve => setTimeout(resolve, ms))) : new Promise(resolve => setTimeout(resolve, ms));
 /** Run one self-contained DOM operation in the page MAIN world and return its result. */
 export async function evaluate(tabId, op, args = {}, ctx) {
@@ -24,6 +25,7 @@ export async function evaluate(tabId, op, args = {}, ctx) {
 export class PortalSearchError extends Error {
   constructor(message) { super(message); this.name = 'PortalSearchError'; }
 }
+/** Surface visible portal failures, invalidate stale session hints, and distinguish completed search failures from login errors. */
 async function checkPageErrors(page, searchPages = [], ctx) {
   const fatal = page.portalError || isPortalErrorPage(page.url);
   if (!page.errors.length && !fatal) return;
@@ -33,7 +35,9 @@ async function checkPageErrors(page, searchPages = [], ctx) {
   const ErrorType = searchPages.length && (fatal || searchPages.some(url => samePage(page.url, url))) ? PortalSearchError : Error;
   throw new ErrorType(page.errors.join('\n') || 'The DMV returned an unexpected error page.');
 }
+/** Read controls and visible errors through the shared, self-contained DOM adapter. */
 async function state(tabId, selector, ctx) { return evaluate(tabId, 'state', {selector, errorSelector: ERROR_SELECTOR}, ctx); }
+/** Activate a page control; tolerate only the frame-unload race caused by navigation. */
 async function click(tabId, selector, ctx) {
   try { await evaluate(tabId, 'click', {selector}, ctx); }
   catch (e) { if (!/frame.*removed|context.*invalidated|document.*unloaded/i.test(e.message)) throw e; }
@@ -55,6 +59,7 @@ async function ready(tabId, selector, ctx, searchPage) {
     return s.present && s;
   }, 'the search page controls', 60000, ctx);
 }
+/** Navigate to a known form and surface completed-page errors while waiting for its URL. */
 async function navigate(tabId, url, ctx) {
   await api(ctx).tabs.update(tabId, {url}); // The workflow has already focused its portal tab.
   await until(async () => {
@@ -146,6 +151,7 @@ async function ensureSession(tabId, ctx) {
 /** Recover unexpected first-page navigation, with logoff for stale transaction menus. Never retry a
  * submitted transaction: the broken-session redirect happens before any form fill. */
 async function initialSearchPage(tabId, url, reusedSession, ctx) {
+  // Wait for the completed redirect destination, not just the originally requested URL.
   const load = async () => {
     await api(ctx).tabs.update(tabId, {url});
     return until(async () => {
@@ -176,6 +182,7 @@ async function initialSearchPage(tabId, url, reusedSession, ctx) {
   }
   return page;
 }
+// Each transaction selects its portal path, query option, and identifier input.
 const SEARCHES = {
   plate: ['VehRec', '', '#ContentPlaceHolder1_txtPlateNbr'],
   license: ['DrvRec', '?opt=CP', '#ContentPlaceHolder1_dlNumberTextBox'],
@@ -288,7 +295,7 @@ export async function scutties(identity, ctx) {
   await ctx.beforeSubmit?.();
   await click(destination.id, SC_SEARCH, ctx);
   await delay(900, ctx);
-  // No SCUTTIES result selector was supplied; expose the response for user review.
+  // No stable SCUTTIES result selector is configured; expose the response for user review.
   const s = await state(destination.id, undefined, ctx);
   await checkPageErrors(s, [], ctx);
   await api(ctx).storage.session.set({lastQuery: Date.now()});

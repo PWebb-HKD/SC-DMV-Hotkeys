@@ -6,21 +6,31 @@
  */
 import {blacklistEntry, validateBlacklist} from './blacklist.js';
 const enc = new TextEncoder(), dec = new TextDecoder();
+// Encode binary cryptographic fields for browser storage; never use these helpers to log plaintext.
 const b64 = bytes => btoa(Array.from(bytes, byte => String.fromCharCode(byte)).join(''));
 const bytes = text => Uint8Array.from(atob(text), c => c.charCodeAt(0));
 const vaultId = vault => JSON.stringify([vault.salt, vault.iv, vault.ciphertext]);
 let operations = Promise.resolve();
+/** Order vault reads and writes independently of other storage streams, recovering the queue after rejection. */
 function serial(fn) { const task = operations.then(fn); operations = task.catch(() => {}); return task; }
+/** Validate and trim login input once for both saved-login write paths. */
+function validatedCredentials(credentials) {
+  if (typeof credentials?.user !== 'string' || !credentials.user.trim() || typeof credentials?.password !== 'string' || !credentials.password) throw new Error('User ID and password are required.');
+  return {user: credentials.user.trim(), password: credentials.password};
+}
+/** Derive an AES-GCM key from the passphrase and vault salt using PBKDF2-SHA-256. */
 async function key(passphrase, salt) {
   const base = await crypto.subtle.importKey('raw', enc.encode(passphrase), 'PBKDF2', false, ['deriveKey']);
   return crypto.subtle.deriveKey({name: 'PBKDF2', salt, iterations: 310000, hash: 'SHA-256'}, base, {name: 'AES-GCM', length: 256}, true, ['encrypt', 'decrypt']);
 }
+/** Validate decrypted JSON and upgrade the credential-only schema to the login-and-blacklist schema. */
 function payload(plaintext) {
   const data = JSON.parse(dec.decode(plaintext));
   const credentials = data.version === 2 ? data.credentials : data;
   if (typeof credentials?.user !== 'string' || typeof credentials?.password !== 'string') throw new Error('Invalid login');
   return {version: 2, credentials, blacklist: validateBlacklist(data.version === 2 ? data.blacklist : [])};
 }
+/** Unlock one persisted vault and return validated contents plus session-only key material. */
 async function decrypt(vault, passphrase) {
   if (!vault) throw new Error('Save an encrypted DMV login before setting up the blacklist.');
   try {
@@ -29,9 +39,11 @@ async function decrypt(vault, passphrase) {
     return {data: payload(plaintext), material: b64(new Uint8Array(await crypto.subtle.exportKey('raw', encryptionKey)))};
   } catch { throw new Error('Could not unlock the vault. Check the passphrase.'); }
 }
+/** Mirror unlocked plaintext and key material into trusted session storage, bound to the current ciphertext. */
 async function cache(data, vault, material, updateCredentials = true) {
   await chrome.storage.session.set({...(updateCredentials ? {credentials: data.credentials} : {}), blacklist: data.blacklist, vaultKey: material, unlockedVault: vaultId(vault)});
 }
+/** Persist a fresh-IV ciphertext and refresh its session identity; optionally replace cached credentials. */
 async function encrypt(data, salt, encryptionKey, material, updateCredentials = true) {
   // Reusing the session key requires a fresh, random IV for every encryption.
   const iv = crypto.getRandomValues(new Uint8Array(12));
@@ -40,12 +52,14 @@ async function encrypt(data, salt, encryptionKey, material, updateCredentials = 
   await chrome.storage.local.set({vault});
   await cache(data, vault, material, updateCredentials);
 }
+/** Create a new salt and derived key when saving with an explicit passphrase. */
 async function persist(data, passphrase) {
   if (typeof passphrase !== 'string' || passphrase.length < 12) throw new Error('Use a vault passphrase of at least 12 characters.');
   const salt = crypto.getRandomValues(new Uint8Array(16)), encryptionKey = await key(passphrase, salt);
   const material = b64(new Uint8Array(await crypto.subtle.exportKey('raw', encryptionKey)));
   await encrypt(data, b64(salt), encryptionKey, material);
 }
+/** Decrypt the latest vault with its session key only if the unlocked ciphertext identity still matches. */
 async function sessionVault() {
   const {vault} = await chrome.storage.local.get('vault');
   const session = await chrome.storage.session.get(['vaultKey', 'unlockedVault']);
@@ -56,26 +70,30 @@ async function sessionVault() {
     return {data: payload(plaintext), vault, encryptionKey, material: session.vaultKey};
   } catch { throw new Error('Unlock the vault again before editing the blacklist.'); }
 }
+/** Persist a blacklist edit with the current key while retaining the active session credentials. */
 async function saveSessionVault(current) {
   await encrypt(current.data, current.vault.salt, current.encryptionKey, current.material, false);
 }
+/** Expose lock state and validated entries without returning credentials or encryption material. */
 async function state() {
   const {vault} = await chrome.storage.local.get('vault');
   const session = await chrome.storage.session.get(['blacklist', 'unlockedVault', 'vaultKey']);
   const unlocked = !!vault && session.unlockedVault === vaultId(vault) && typeof session.vaultKey === 'string' && Array.isArray(session.blacklist);
   return {hasVault: !!vault, unlocked, entries: unlocked ? validateBlacklist(session.blacklist) : []};
 }
+/** Serialize the public vault-state read with edits so the UI sees a consistent entry list. */
 export function blacklistState() { return serial(state); }
+/** Save validated credentials and preserve the existing blacklist, unlocking it when necessary. */
 export function saveCredentials(credentials, passphrase) {
   return serial(async () => {
     if (typeof passphrase !== 'string' || passphrase.length < 12) throw new Error('Use a vault passphrase of at least 12 characters.');
-    if (typeof credentials?.user !== 'string' || !credentials.user.trim() || typeof credentials?.password !== 'string' || !credentials.password) throw new Error('User ID and password are required.');
-    credentials = {user: credentials.user.trim(), password: credentials.password};
+    credentials = validatedCredentials(credentials);
     const {vault} = await chrome.storage.local.get('vault'), current = await state();
     const blacklist = !vault ? [] : current.unlocked ? current.entries : (await decrypt(vault, passphrase)).data.blacklist;
     await persist({version: 2, credentials, blacklist}, passphrase);
   });
 }
+/** Unlock persisted credentials and blacklist once for the trusted browser session. */
 export function unlockCredentials(passphrase) {
   return serial(async () => {
     const {vault} = await chrome.storage.local.get('vault');
@@ -83,6 +101,7 @@ export function unlockCredentials(passphrase) {
     await cache(data, vault, material); return data.credentials;
   });
 }
+/** Append one canonical, nonduplicate identifier and re-encrypt the latest vault payload. */
 export function addBlacklistEntry(kind, value) {
   return serial(async () => {
     const entry = blacklistEntry(kind, value), current = await sessionVault(), {data} = current;
@@ -90,6 +109,7 @@ export function addBlacklistEntry(kind, value) {
     data.blacklist.push(entry); await saveSessionVault(current); return state();
   });
 }
+/** Require confirmation, remove exactly one matching identifier, and persist the revised vault. */
 export function removeBlacklistEntry(kind, value, confirmed) {
   return serial(async () => {
     if (confirmed !== true) throw new Error('Confirm removal before deleting a blacklist entry.');
@@ -99,6 +119,7 @@ export function removeBlacklistEntry(kind, value, confirmed) {
     data.blacklist.splice(index, 1); await saveSessionVault(current); return state();
   });
 }
+/** Delete a removable vault only when its blacklist is empty, then clear its session mirrors. */
 export function forgetCredentials() {
   return serial(async () => {
     const current = await state();
@@ -110,9 +131,9 @@ export function forgetCredentials() {
 /** Replace the old persisted login while retaining this session's blacklist/key. */
 export function replaceCredentials(credentials) {
   return serial(async () => {
-    if (typeof credentials?.user !== 'string' || !credentials.user.trim() || typeof credentials?.password !== 'string' || !credentials.password) throw new Error('User ID and password are required.');
+    credentials = validatedCredentials(credentials);
     const current = await sessionVault();
-    current.data.credentials = {user: credentials.user.trim(), password: credentials.password};
+    current.data.credentials = credentials;
     await encrypt(current.data, current.vault.salt, current.encryptionKey, current.material, true);
   });
 }
