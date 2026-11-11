@@ -1,6 +1,6 @@
 # SC DMV Hotkeys
 
-A Chromium Manifest V3 extension for authorized SCDMV member searches, PDF follow-ups, status alerts, and PDF417 data-entry barcodes. Current version: **1.8.9**.
+A Chromium Manifest V3 extension for authorized SCDMV member searches, PDF follow-ups, status alerts, and PDF417 data-entry barcodes. Current version: **1.8.10**.
 
 ## Install and update
 
@@ -83,13 +83,13 @@ Captured text is tied to its report and tab. The attachment URL can return a dif
 
 ## PDF417 import barcodes
 
-Alt+B maps a driver or vehicle report to a local PDF417 image. The barcode popup closes after ninety seconds; changing scale does not extend its lifetime. Verify imported fields against the report after scanning.
+Alt+B maps a driver or vehicle report to a local PDF417 image. Parsed fields appear below the barcode with readable labels and remain read-only until **Edit Data** is clicked. Valid corrections update the barcode immediately; invalid input hides the barcode and marks the fields that need attention. Recognized reports with parsing errors can also be reviewed and corrected. Edits apply only to the open popup, without modifying the report or saved data. The popup closes after ninety seconds; changing a data field restarts that countdown, while changing barcode size does not. Verify imported fields against the report after scanning.
 
 Driver/ID mapping uses the version-09 profile. It separates name suffixes, preserves a blank driver license number rather than substituting a customer number, and leaves unavailable credential-only metadata blank or marked `unavl`. SCUTTIES uses the surname without a generational suffix.
 
 Vehicle mapping uses the SC registration v01 single RG subfile. Plate expiration is RAG, decal expiration is RBT, and owner names/address use RBD/RBE and RBI/RBK/RBL/RBM. Temporary plates use Plate Exp Date when their decal date is blank; appended display years are excluded from the tag. Mailing Address and party Relationship labels delimit fields rather than becoming part of a name or owner address. Field lengths are enforced without silently truncating data.
 
-Only the first numbered owner/customer/registrant is used initially. Missing data is not borrowed from a later party. If that party is incomplete, the user may explicitly choose a later listed party when one exists, or generate with incomplete fields blank. Ambiguous address boundaries require that decision; inferred boundaries are displayed for verification.
+Only the first numbered owner/customer/registrant is used initially. Missing data is not borrowed from a later party. If that party is incomplete, the user may explicitly choose a later listed party when one exists, review and correct that party’s parsed data, or generate with incomplete fields blank. Ambiguous address boundaries require that decision; inferred boundaries are displayed for verification.
 
 Names without commas currently use the business-name field; comma-delimited names use person-name fields. That heuristic is not reliable entity classification. Business-owner and insurance auto-import behavior in Coplogic requires an independently verified consumer mapping; registration identifiers do not establish whether an owner is a person or a business. Field-format references: [registration](https://api-docs.scanbot.io/android/api/io/scanbot/barcodescanner/entity/AAMVA.RegistrationData.html) and [AAMVA](https://www.aamva.org/).
 

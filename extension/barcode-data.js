@@ -36,11 +36,11 @@ function requireFields(values, keys) {
   if (missing.length) throw new Error(`The report is missing ${missing.join(', ')}. Open the complete driver or vehicle record and try Alt+B again.`);
 }
 /** Separate comma-delimited family/given names and detach a generational suffix from either position. */
-function names(value) {
+function names(value, normalize = clean) {
   const comma = value.indexOf(',');
   if (comma < 1) throw new Error('The driver name could not be separated into family and given names.');
-  let family = clean(value.slice(0, comma));
-  let given = clean(value.slice(comma + 1));
+  let family = normalize(value.slice(0, comma));
+  let given = normalize(value.slice(comma + 1));
   // Reports may place a generational suffix after the given names or surname.
   const suffixPattern = /(?:\s+|,\s*)(JR|SR|II|III|IV|V|VI|VII|VIII|IX|X)\.?$/i;
   const givenSuffix = given.match(suffixPattern), familySuffix = family.match(suffixPattern);
@@ -92,16 +92,25 @@ export function frameAamva(subfiles, {kind = 'driver'} = {}) {
   return payload;
 }
 /** Map first-heading demographics and the Current credential row; blank DL stays blank. */
-export function driverBarcode(raw) {
+export function driverBarcode(raw, {draft = false, error = ''} = {}) {
+  // Recovery reuses the same extraction and profile fields, but leaves raw invalid
+  // values visible for correction instead of emitting a scanner-ready payload.
+  const fieldValue = draft ? value => value || '' : valueField;
   const text = flat(raw), start = text.search(/\bCustomer\s+No\s*:/i);
-  if (start < 0) throw new Error('A driver record heading was not found.');
-  const heading = text.slice(start).split(/\bStatus\s*[-–—]\s*DL\s*:/i)[0];
+  if (start < 0 && !draft) throw new Error('A driver record heading was not found.');
+  const heading = text.slice(Math.max(0,start)).split(/\bStatus\s*[-–—]\s*DL\s*:/i)[0];
   const v = labeled(heading, ['Customer No', 'Driver License No', 'Name', 'Address', 'City', 'State', 'Zip', 'County', 'DOB', 'Sex', 'Driver Training', 'Height', 'Weight', 'Eye Color', 'Race']);
-  requireFields(v, ['name', 'address', 'city', 'state', 'zip', 'dob']);
+  if (!draft) requireFields(v, ['name', 'address', 'city', 'state', 'zip', 'dob']);
   const licenseNumber = (v['driver license no'] || '').replace(/\s/g, '');
-  if (licenseNumber && !/^\d{1,9}$/.test(licenseNumber)) throw new Error('The driver license / ID number is invalid. The customer number will not be substituted.');
-  const name = names(v.name), warnings = [];
-  const dob = date(v.dob); if (!dob) throw new Error('The driver date of birth is invalid.');
+  if (!draft && licenseNumber && !/^\d{1,9}$/.test(licenseNumber)) throw new Error('The driver license / ID number is invalid. The customer number will not be substituted.');
+  let name;
+  try { name = names(v.name || '', draft ? value => flat(value).toUpperCase() : clean); }
+  catch (nameError) {
+    if (!draft) throw nameError;
+    name = {family:v.name || '', first:'', middle:'', suffix:''};
+  }
+  const warnings = [];
+  const dob = date(v.dob) || (draft ? v.dob || '' : ''); if (!dob && !draft) throw new Error('The driver date of birth is invalid.');
   const current = text.match(/\bCurrent\s*(?:\(\s*ACN\s*\/\s*DDN\s*\))?\s*([\s\S]*?)(?=\bPrior\b|\bAddress\s+Change\b|\bPoint\s+Summary\b|\bSuspension\s+Summary\b|$)/i)?.[1] || '';
   const row = current.match(new RegExp(`^(ID|DL|CDL|BP)\\s*(?:\\(\\s*[A-Z]\\s*\\))?\\s*([A-Z]{0,6})\\s+([A-Z ]+?)\\s+${datePattern}\\s+${datePattern}(?:\\s+${datePattern})?\\s+([YN])\\s+([YN])\\s+(\\S+)`, 'i'));
   const type = row?.[1].toUpperCase() === 'ID' ? 'ID' : 'DL';
@@ -112,19 +121,21 @@ export function driverBarcode(raw) {
   const inches = height && +height[1] * 12 + +height[2];
   const heightValue = inches && +height[2] < 12 && inches < 120 ? `${String(inches).padStart(3, '0')} in` : 'unavl';
   if (heightValue === 'unavl') warnings.push('Height could not be converted; encoded as unavl.');
-  const zip = v.zip.replace(/[ -]/g, ''); if (!/^\d{5}(?:\d{4})?$/.test(zip)) throw new Error('The driver ZIP code is invalid.');
+  const zip = (v.zip || '').replace(/[ -]/g, ''); if (!draft && !/^\d{5}(?:\d{4})?$/.test(zip)) throw new Error('The driver ZIP code is invalid.');
   const eyes = {BROWN: 'BRO', BLUE: 'BLU', GREEN: 'GRN', HAZEL: 'HAZ', GRAY: 'GRY', GREY: 'GRY', BLACK: 'BLK'};
-  const eye = clean(v['eye color']);
+  const eye = draft ? flat(v['eye color']).toUpperCase() : clean(v['eye color']);
   const fields = [
     ['DCA', credentialClass], ...(type === 'DL' ? [['DCB', row?.[7]?.toUpperCase() === 'N' ? 'NONE' : 'unavl'], ['DCD', row?.[8]?.toUpperCase() === 'N' ? 'NONE' : 'unavl']] : []),
-    ['DBA', expires || 'unavl'], ['DCS', valueField(name.family, 40)], ['DAC', valueField(name.first, 40)], ['DAD', valueField(name.middle, 40)], ...(name.suffix ? [['DCU', name.suffix]] : []),
+    ['DBA', expires || 'unavl'], ['DCS', fieldValue(name.family, 40)], ['DAC', fieldValue(name.first, 40)], ['DAD', fieldValue(name.middle, 40)], ...(name.suffix ? [['DCU', name.suffix]] : []),
     ['DBD', issued || 'unavl'], ['DBB', dob], ['DBC', /^M$/i.test(v.sex) ? '1' : /^F$/i.test(v.sex) ? '2' : '9'],
-    ['DAY', /^(BLK|BLU|BRO|GRY|GRN|HAZ|MAR|PNK|DIC|UNK)$/.test(eye) ? eye : eyes[eye] || 'unavl'], ['DAU', heightValue],
-    ['DAG', valueField(v.address, 35)], ['DAI', valueField(v.city, 20)], ['DAJ', valueField(v.state, 2)], ['DAK', zip.padEnd(11, ' ')],
+    ['DAY', /^(BLK|BLU|BRO|GRY|GRN|HAZ|MAR|PNK|DIC|UNK)$/.test(eye) ? eye : eyes[eye] || (draft ? eye : 'unavl')], ['DAU', heightValue],
+    ['DAG', fieldValue(v.address, 35)], ['DAI', fieldValue(v.city, 20)], ['DAJ', fieldValue(v.state, 2)], ['DAK', zip.padEnd(11, ' ')],
     ['DAQ', licenseNumber], ['DCF', row && /^\d{1,25}$/.test(row[9]) ? row[9] : 'unavl'], ['DCG', 'USA'],
     ['DDE', 'U'], ['DDF', 'U'], ['DDG', 'U'], ['DCK', '']
   ];
-  const race = raceEthnicity(v.race);
+  let race;
+  try { race = raceEthnicity(v.race); } catch (raceError) { if (!draft) throw raceError; }
+  if (draft && !race && v.race) race = v.race;
   if (race) fields.push(['DCL', race.padEnd(3, ' ')]);
   else warnings.push('Race/ethnicity was missing or not recognized in the version-09 code list; DCL was not encoded.');
   // These optional elements belong to the SC credential profile. Their
@@ -132,7 +143,7 @@ export function driverBarcode(raw) {
   fields.push(['DCM', '    '], ['DCR', ''], ['DDC', ''], ['DDD', ''], ['DAW', /^\d{1,3}$/.test(v.weight) ? v.weight.padStart(3, '0') : ''], ['DAX', ''], ['DDH', ''], ['DDI', ''], ['DDK', '']);
   if (type === 'DL' && (!row || row[7].toUpperCase() !== 'N' || row[8].toUpperCase() !== 'N')) warnings.push('Actual restriction/endorsement codes are unavailable; flagged fields are encoded as unavl.');
   warnings.push('Credential-only inventory and other metadata not present in the report remain blank; values from another barcode are never copied.');
-  return {type: 'barcode', kind: 'driver', title: `${type === 'ID' ? 'ID' : 'Driver'} import barcode`, profile: 'AAMVA DL/ID v09 · SC', payload: frameAamva([{type, fields}]),
+  return {type: 'barcode', kind: 'driver', title: `${type === 'ID' ? 'ID' : 'Driver'} import barcode`, profile: 'AAMVA DL/ID v09 · SC', ...(draft ? {credentialType:type,draftFields:fields,parseError:error} : {payload:frameAamva([{type, fields}])}),
     summary: `${name.family}, ${name.first}${name.suffix ? ` ${name.suffix}` : ''} · ${licenseNumber || 'No license number'} · Class ${credentialClass}`, warnings};
 }
 /** Separate street/city/state/ZIP only when delimiters or one clear suffix permit it.
@@ -165,8 +176,8 @@ export class VehiclePartyError extends Error {
     this.nextPartyIndex = partyIndex + 1; this.hasNext = this.nextPartyIndex < partyCount;
   }
 }
-/** Map registration fields to the SC registration v01 RG profile. */
-export function vehicleBarcode(raw, {partyIndex = 0, allowIncompleteParty = false} = {}) {
+/** Extract registration labels and isolate the explicitly selected numbered party. */
+function vehicleValues(raw, partyIndex = 0) {
   const text = flat(raw), start = text.search(/\bVIN\s*:/i);
   if (start < 0) throw new Error('A vehicle record heading was not found.');
   const body = text.slice(start).split(/\b(?:Enforcement\s+Description\s*:|Document\s+obtained\s+from\s+DMV\s+web\s+site\s*:)/i)[0];
@@ -180,7 +191,6 @@ export function vehicleBarcode(raw, {partyIndex = 0, allowIncompleteParty = fals
   const seen = new Set();
   const parties = headers.map((match, index) => ({match, end: headers[index + 1]?.index ?? body.length, id: match[2]?.replace(/\s/g, '').replace(/^0+(?=\d)/, '') || `unknown:${index}`}))
     .filter(party => { if (seen.has(party.id)) return false; seen.add(party.id); return true; });
-  if (!parties.length && !allowIncompleteParty) throw new VehiclePartyError('The first listed customer, owner, or registrant/lessee heading was not found.', 0, 0);
   if (!Number.isInteger(partyIndex) || partyIndex < 0 || partyIndex >= Math.max(parties.length, 1)) throw new Error('The selected barcode owner is not in this report.');
   v['owner name'] = ''; v['owner address'] = '';
   if (parties.length) {
@@ -189,6 +199,12 @@ export function vehicleBarcode(raw, {partyIndex = 0, allowIncompleteParty = fals
     v['owner name'] = first[`${category} name`] || '';
     v['owner address'] = first[`${category} address`] || '';
   }
+  return {v, parties};
+}
+/** Map the selected registration party with strict report validation. */
+export function vehicleBarcode(raw, {partyIndex = 0, allowIncompleteParty = false} = {}) {
+  const {v, parties} = vehicleValues(raw, partyIndex);
+  if (!parties.length && !allowIncompleteParty) throw new VehiclePartyError('The first listed customer, owner, or registrant/lessee heading was not found.', 0, 0);
   if ((!v['owner name'] || !v['owner address']) && !allowIncompleteParty) throw new VehiclePartyError(`${partyIndex ? 'The selected party' : 'The first listed party'}'s name or address is missing.`, partyIndex, parties.length);
   const nameComma = v['owner name'].indexOf(',');
   const incompleteName = nameComma >= 0 && (!flat(v['owner name'].slice(0, nameComma)) || !flat(v['owner name'].slice(nameComma + 1)));
@@ -225,12 +241,49 @@ export function vehicleBarcode(raw, {partyIndex = 0, allowIncompleteParty = fals
     ['RBT', decalExpiration], ['RBU', clean(v['decal number'] || v['window sticker number'])]];
   if (v.model) fields.push(['VAM', valueField(v.model, 20)]);
   const payload = frameAamva([{type: 'RG', fields}], {kind: 'vehicle'});
-  return {type: 'barcode', kind: 'vehicle', title: 'Vehicle registration import barcode', profile: 'AAMVA SC registration v01 � RG', payload, summary: `${plate} · ${vin}`,
+  return {type: 'barcode', kind: 'vehicle', title: 'Vehicle registration import barcode', allowIncompleteParty, profile: 'AAMVA SC registration v01 · RG', payload, summary: `${plate} · ${vin}`,
     warnings: [...(address?.inferred ? [`Verify owner address: ${address.street}, ${address.city} ${address.state} ${address.zip}. The street/city boundary was identified from the address format.`] : []), ...warnings]};
+}
+/** Use the same report-family precedence for strict mapping and recovery drafts.
+ * A VIN mentioned later in a driving record must not switch its editing profile. */
+function barcodeReportKind(text) {
+  if (/\bDriver\s+License\s+No\s*:/i.test(text) || /\bCustomer\s+No\s*:/i.test(text) && /\bDOB\s*:/i.test(text) && /\bName\s*:/i.test(text)) return 'driver';
+  return /\bVIN\s*:/i.test(text) ? 'vehicle' : null;
 }
 /** Recognize the report family, then return payload plus readable summary/warnings. */
 export function reportBarcode(text, options) {
-  if (/\bDriver\s+License\s+No\s*:/i.test(text) || /\bCustomer\s+No\s*:/i.test(text) && /\bDOB\s*:/i.test(text) && /\bName\s*:/i.test(text)) return driverBarcode(text);
-  if (/\bVIN\s*:/i.test(text)) return vehicleBarcode(text, options);
+  const kind = barcodeReportKind(text);
+  if (kind === 'driver') return driverBarcode(text);
+  if (kind === 'vehicle') return vehicleBarcode(text, options);
   throw new Error('No driver or vehicle record was recognized. Open the appropriate SCDMV results PDF and try Alt+B again.');
+}
+
+/** Recover available values for manual correction. Draft fields are not scanner-ready
+ * until the editor validates them; an incomplete party never borrows another's data. */
+export function reportBarcodeDraft(raw, {partyIndex = 0, error = '', allowIncompleteParty = false} = {}) {
+  const kind = barcodeReportKind(flat(raw));
+  if (kind === 'driver') return driverBarcode(raw, {draft:true, error});
+  if (kind === 'vehicle') {
+    const {v} = vehicleValues(raw, partyIndex), comma = v['owner name'].indexOf(',');
+    const address = ownerAddress(v['owner address']), temporary = isTemporaryPlate(v['plate class']);
+    const decalDate = temporary && !v['decal exp date'] ? v['plate exp date'] : v['decal exp date'];
+    // Keep malformed dates and unsplit addresses visible; the editor must not
+    // conceal a value merely because it cannot yet be encoded safely.
+    const draftDate = value => date(value, true) || value || '';
+    const draftFields = [
+      ['RBD', comma >= 0 ? v['owner name'].slice(0,comma) : ''],
+      ['RBE', comma >= 0 ? v['owner name'].slice(comma+1) : ''],
+      ['BBC', comma < 0 ? v['owner name'] : ''],
+      ['RBI', address?.street || (allowIncompleteParty ? '' : v['owner address'])], ['RBK', address?.city || ''],
+      ['RBL', address?.state || ''], ['RBM', address?.zip || ''],
+      ['RAM', temporary ? flat(v['plate number']).replace(/^(\S+)\s+\d{4}$/, '$1') : v['plate number']],
+      ['VAD', v.vin], ['VAK', v.make], ['VAM', v.model], ['VAL', v.year], ['VAO', v.body],
+      ['RBB', draftDate(v['date of issue'])], ['RAG', draftDate(v['plate exp date'])],
+      ['RBT', draftDate(decalDate)], ['RBU', v['decal number'] || v['window sticker number'] || '']
+    ];
+    return {type:'barcode', kind:'vehicle', credentialType:'RG', draftFields, allowIncompleteParty,
+      title:'Vehicle registration import barcode', profile:'SC vehicle registration', summary:'Review parsed vehicle data', parseError:error,
+      warnings: !allowIncompleteParty && !address && v['owner address'] ? ['The unsplit owner address is shown in Street Address. Separate it into the correct address fields.'] : []};
+  }
+  throw new Error(error || 'No driver or vehicle record was recognized.');
 }

@@ -13,6 +13,7 @@ async function send(message) { const r = await chrome.runtime.sendMessage(messag
 /** Stop the panel heartbeat and any status audio before closing the popup. */
 async function close() { clearInterval(heartbeat); if (data?.type === 'record-alert') await send({type: 'stop-audio'}).catch(() => {}); window.close(); }
 $('cancel').onclick = close;
+$('barcodeEdit').onclick = () => { barcodeChoice = 'edit'; $('form').requestSubmit(); };
 $('barcodeBlanks').onclick = () => { barcodeChoice = 'blank'; $('form').requestSubmit(); };
 document.addEventListener('keydown', event => { if (event.key === 'Escape') { event.preventDefault(); close(); } });
 $('save').onchange = () => { $('savePassArea').hidden = !$('save').checked; };
@@ -79,6 +80,7 @@ try {
       $('title').textContent = data.type === 'barcode-owner-incomplete' ? 'Incomplete owner information' : data.type === 'restart' ? 'Queue complete' : 'SC DMV Hotkeys';
       $('message').hidden = false; $('message').textContent = data.message;
       $('submit').textContent = data.type === 'barcode-owner-incomplete' ? (data.hasNext ? 'Use next owner' : 'Generate with blanks') : data.type === 'restart' ? 'Start again' : 'OK';
+      $('barcodeEdit').hidden = data.type !== 'barcode-owner-incomplete';
       $('barcodeBlanks').hidden = data.type !== 'barcode-owner-incomplete' || !data.hasNext;
       $('cancel').hidden = data.type === 'notice'; $('submit').focus();
     }

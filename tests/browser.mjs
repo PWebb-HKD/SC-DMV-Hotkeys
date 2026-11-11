@@ -9,6 +9,7 @@ import {pageOperation} from '../extension/page.js';
 import {search, scutties} from '../extension/automation.js';
 import {ROOT, MEMBER, LOGIN, DISCLAIMER, PDF_URL, ownerNumbers, isResidenceReport} from '../extension/core.js';
 import {reportBarcode} from '../extension/barcode-data.js';
+import {driverReport} from './barcode-fixtures.js';
 import {plateStatus, licenseStatus} from '../extension/status-alerts.js';
 import {RECORDING_PATHS} from '../extension/voice-recordings.js';
 const {chromium} = dependency('playwright');
@@ -614,8 +615,8 @@ try {
     await page.screenshot({path:join(screenshots,'blacklist-warning.png'),fullPage:true});
     await page.clock.fastForward(90000);await page.waitForFunction(()=>window.panelClosed);await page.close();
   });
-  await tests('incomplete barcode-owner popup offers next owner only when available and submits explicit blank choices',async()=>{
-    for(const [hasNext,choice] of [[true,'next'],[true,'blank'],[false,'blank']]){
+  await tests('incomplete barcode-owner popup offers review, blanks, and next owner only when available',async()=>{
+    for(const [hasNext,choice] of [[true,'next'],[true,'blank'],[false,'blank'],[true,'edit'],[false,'edit']]){
       const page=await ui.newPage();
       await page.addInitScript(hasNext=>{
         const original=chrome.runtime.sendMessage;
@@ -625,7 +626,9 @@ try {
       assert.match(await page.locator('#message').textContent(),/incomplete/);
       assert.equal(await page.locator('#barcodeBlanks').isVisible(),hasNext);
       assert.equal(await page.locator('#submit').textContent(),hasNext?'Use next owner':'Generate with blanks');
-      await page.locator(choice==='blank'&&hasNext?'#barcodeBlanks':'#submit').click();
+      assert.equal(await page.locator('#barcodeEdit').isVisible(),true);
+      assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+      await page.locator(choice==='edit'?'#barcodeEdit':choice==='blank'&&hasNext?'#barcodeBlanks':'#submit').click();
       await page.waitForFunction(()=>window.requests.some(x=>x.type==='panel-submit'));
       assert.equal(await page.evaluate(()=>window.requests.find(x=>x.type==='panel-submit').value),choice);
       await page.close();
@@ -690,16 +693,16 @@ try {
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
     await page.screenshot({path:join(screenshots,'credentials.png'),fullPage:true});
   });
-  await tests('barcodes close at ninety seconds without scale changes extending their lifetime; Escape cancels expiry',async()=>{
-    for(const mode of ['timeout','escape']) {
+  await tests('barcode edits renew the ninety-second lifetime, size changes do not, and Escape cancels expiry',async()=>{
+    for(const mode of ['timeout','escape','edit']) {
       const page=await ui.newPage();await page.clock.install();
-      await page.addInitScript(()=>{
+      await page.addInitScript(barcode=>{
         window.barcodeCloseCalls=0;window.close=()=>{window.barcodeCloseCalls++;};
         const original=chrome.runtime.sendMessage;
         chrome.runtime.sendMessage=async message=>message.type==='panel-data'
-          ? {ok:true,value:{type:'barcode',title:'Synthetic barcode',summary:'Fixture only',profile:'Test',payload:'SYNTHETIC TEST DATA',warnings:[]}}
+          ? {ok:true,value:barcode}
           : original(message);
-      });
+      },reportBarcode(driverReport));
       await page.goto(base+'/barcode.html?id=timeout-fixture');
       await page.waitForFunction(()=>document.querySelector('#barcode').width>100);
       assert.equal(await page.locator('#error').textContent(),'');
@@ -708,6 +711,17 @@ try {
       else {
         await page.clock.fastForward(89000);assert.equal(await page.evaluate(()=>window.barcodeCloseCalls),0);
         assert.equal(await page.locator('#countdown').textContent(),'Closes in 1 seconds. Press Esc to dismiss.');
+        if(mode==='edit') {
+          await page.getByRole('button',{name:'Edit Data',exact:true}).click();
+          await page.getByLabel('Last Name',{exact:true}).fill('UPDATED');
+          assert.equal(await page.locator('#countdown').textContent(),'Closes in 90 seconds. Press Esc to dismiss.');
+          await page.clock.fastForward(89000);assert.equal(await page.evaluate(()=>window.barcodeCloseCalls),0);
+          // Even invalid changes renew the editing lifetime, while hiding the barcode.
+          await page.getByLabel('First Name',{exact:true}).fill('');
+          assert.equal(await page.locator('#countdown').textContent(),'Closes in 90 seconds. Press Esc to dismiss.');
+          assert.equal(await page.locator('#scanArea').isVisible(),false);
+          await page.clock.fastForward(89000);assert.equal(await page.evaluate(()=>window.barcodeCloseCalls),0);
+        }
         await page.locator('#scale').selectOption('4');
         assert.equal(await page.locator('#countdown').textContent(),'Closes in 1 seconds. Press Esc to dismiss.');
         await page.clock.fastForward(1000);
