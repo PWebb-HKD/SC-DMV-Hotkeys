@@ -30,7 +30,7 @@ function voiceSourceUI() {
   const recorded = $('voiceSource').value === 'recordings';
   $('voiceName').disabled = recorded;
   $('voiceHelp').textContent = recorded
-    ? 'A status without a matching recording uses Microsoft speech with the selected gender. Voice settings are saved between browser sessions.'
+    ? 'A status without a matching recording uses Microsoft speech with the selected gender.'
     : 'Microsoft speech replaces bundled recordings. Automatic uses the selected gender; an installed voice can be selected explicitly.';
 }
 /** Select one popup view and keep its accessible tab state synchronized. */
@@ -186,7 +186,7 @@ $('alertsToggle').onchange = async event => {
   finally { input.disabled = false; }
 };
 $('aboutTab').onclick = () => { tab('about'); refresh().catch(error => feedback(error.message)); };
-for (const [id, label] of [['plate', 'Plate'], ['license', 'DL'], ['customer', 'Customer'], ['owners', 'PDF owners'], ['previous', 'Previous customer'], ['next', 'Next customer'], ['address', 'Same address'], ['scutties', 'SCUTTIES'], ['barcode', 'Barcode']]) {
+for (const [id, label] of [['plate', "Plate Search"], ['license', "DL # Search"], ['customer', "Customer # Search"], ['owners', "Get Customer #'s \nfrom current page"], ['previous', 'Previous customer'], ['next', 'Next customer'], ['address', 'Same address'], ['scutties', 'SCUTTIES'], ['barcode', 'Barcode']]) {
   const button = document.createElement('button'); button.textContent = label;
   button.onclick = async () => { try { await send({type: 'run', command: id}); window.close(); } catch (error) { feedback(error.message); } };
   $('quick').append(button);

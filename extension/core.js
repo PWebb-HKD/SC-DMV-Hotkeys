@@ -14,7 +14,7 @@ export const COMMANDS = {
   plate: {label: 'Plate Search', key: 'Alt+P', prompt: 'Enter a license plate number', max: 8},
   license: {label: 'DL Number', key: 'Alt+L', prompt: "Enter a driver's license number", max: 9},
   customer: {label: 'Customer Number', key: 'Alt+O', prompt: 'Enter a customer number', max: 8},
-  owners: {label: 'PDF Customer/Owner Numbers', key: 'Alt+J'},
+  owners: {label: 'Get All Customer/Owner Numbers', key: 'Alt+J'},
   next: {label: 'Next Customer Number', key: 'Alt+N'},
   previous: {label: 'Previous Customer Number', key: 'Alt+M'},
   address: {label: 'Customers at Same Address', key: 'Alt+I'},

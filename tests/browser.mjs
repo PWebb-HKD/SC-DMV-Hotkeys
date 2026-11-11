@@ -755,11 +755,21 @@ try {
     const payloads=[plateStatus('Plate Class: ABC Decal Exp Date: 10/28/2026',fixedNow),licenseStatus(`Status - DL: NO SUSPENSION Driver License No:123456789 Name: FICTIONAL, PERSON ${currentHeader} DL Renewal 01/01/2020 10/28/2026 01/01/2020`,fixedNow)];
     for(const payload of payloads){const page=await statusPage(payload);assert.equal(await page.locator('.record-status-title').evaluate(el=>getComputedStyle(el).color),'rgb(67, 220, 121)');await page.clock.fastForward(9000);assert.equal(await page.evaluate(()=>window.closedByAlert),false);await page.clock.fastForward(1000);assert.equal(await page.evaluate(()=>window.closedByAlert),true);await page.close();}
   });
-  await tests('DMV website dark mode starts enabled and changes independently of the PDF preference',async()=>{
+  await tests('combined Dark Mode group exposes two keyboard-accessible independent saved switches',async()=>{
     const page=await ui.newPage();await page.goto(base+'/popup.html');await page.locator('#settingsTab').click();
-    assert.equal(await page.locator('#dmvDarkMode').isChecked(),true);await page.locator('#dmvDarkMode').uncheck();
+    const group=page.locator('#appearanceSettings');assert.equal(await group.getByRole('heading',{name:'Dark Mode',exact:true}).count(),1);
+    assert.equal(await group.getByRole('switch').count(),2);assert.equal(await group.getByRole('checkbox').count(),0);
+    assert.equal(await page.locator('#dmvDarkMode').isChecked(),true);assert.equal(await page.locator('#pdfDarkMode').isChecked(),false);
+    await page.locator('#dmvDarkMode').focus();await page.keyboard.press('Space');
     assert.deepEqual(await page.evaluate(()=>window.requests.find(x=>x.type==='dmv-display-settings')),{type:'dmv-display-settings',enabled:false});
-    assert.equal(await page.locator('#pdfDarkMode').isChecked(),false);assert.equal(await page.evaluate(()=>window.requests.some(x=>x.type==='run')),false);await page.close();
+    assert.equal(await page.locator('#pdfDarkMode').isChecked(),false);
+    await page.locator('#pdfDarkMode').focus();await page.keyboard.press('Space');
+    assert.deepEqual(await page.evaluate(()=>window.requests.find(x=>x.type==='pdf-display-settings')),{type:'pdf-display-settings',enabled:true});
+    assert.equal(await page.locator('#dmvDarkMode').isChecked(),false);
+    await page.locator('#aboutTab').click();await page.locator('#settingsTab').click();
+    assert.equal(await page.locator('#dmvDarkMode').isChecked(),false);assert.equal(await page.locator('#pdfDarkMode').isChecked(),true);
+    assert.equal(await page.evaluate(()=>window.requests.some(x=>x.type==='run')),false);
+    await page.screenshot({path:join(screenshots,'settings-wording-v1.8.8.png'),fullPage:true});await page.close();
   });
   await tests('PDF dark-view setting is opt-in and changes only the PDF preference',async()=>{
     const page=await ui.newPage();await page.goto(`${base}/popup.html`);await page.locator('#history tr').first().waitFor();await page.locator('#settingsTab').click();

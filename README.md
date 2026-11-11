@@ -1,6 +1,6 @@
 # SC DMV Hotkeys
 
-A Chromium Manifest V3 extension for authorized SCDMV member searches, PDF follow-ups, status alerts, and PDF417 data-entry barcodes. Current version: **1.8.7**.
+A Chromium Manifest V3 extension for authorized SCDMV member searches, PDF follow-ups, status alerts, and PDF417 data-entry barcodes. Current version: **1.8.8**.
 
 ## Install and update
 
@@ -71,11 +71,11 @@ Bundled recordings are the default voice source. A missing recording falls back 
 
 ## Native dark modes and PDF follow-ups
 
-**Settings → DMV website → Dark DMV website** is enabled by default and saved between sessions. Screen-only styling covers the DMV's forms, tables, menus, transaction controls, and footer. It preserves page layout and control visibility. Images retain their colors; header/footer emblems are lightened for contrast. Turning the theme off restores site styling.
+**Settings → Dark Mode → Darkmode for the DMV website** is enabled by default and saved between sessions. Screen-only styling covers the DMV's forms, tables, menus, transaction controls, and footer. It preserves page layout and control visibility. Images retain their colors; header/footer emblems are lightened for contrast. Turning the theme off restores site styling.
 
 The theme uses layered important user-origin CSS and a coexistence marker to take priority over ordinary page styles and compatible theme extensions. It neutralizes inversion and blending filters. Other equally privileged user styles or extensions that replace page content can still conflict. Reload DMV tabs after disabling the native theme if another theme engine needs to reapply.
 
-**Dark PDF results** is a separate, opt-in preference. It redirects new top-level attachment results to a local viewer in the same tab. Pages scroll continuously and render near the viewport. Neutral paper and ink are recolored outside embedded image regions so license photos retain their pixels. Unsupported image operations keep a page in original colors. Text selection remains available across pages even when distant canvases are released.
+**Toggle dark mode on or off for pdf results pages.** is the independent, opt-in PDF switch in the same Dark Mode group. It redirects new top-level attachment results to a local viewer in the same tab. Pages scroll continuously and render near the viewport. Neutral paper and ink are recolored outside embedded image regions so license photos retain their pixels. Unsupported image operations keep a page in original colors. Text selection remains available across pages even when distant canvases are released.
 
 The viewer's Print button and Ctrl+P/Cmd+P open the exact loaded PDF in Chromium's native renderer for printing. Printing uses an immutable local copy, not a new request to the session-dependent attachment URL.
 
