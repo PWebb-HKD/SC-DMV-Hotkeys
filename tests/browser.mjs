@@ -555,10 +555,13 @@ try {
     await page.locator('#blacklistKind').selectOption('license');
     await page.locator('#blacklistValue').fill('001 234 567');await page.locator('#blacklistAdd').click();
     await page.waitForFunction(()=>document.querySelectorAll('#blacklistEntries tr').length===1);
-    assert.equal(await page.evaluate(()=>window.requests.find(x=>x.type==='blacklist-add').value),'001234567');
+    assert.equal(await page.evaluate(()=>window.requests.find(x=>x.type==='blacklist-add').value),'1234567');
     await page.locator('#blacklistValue').fill('1234567890');await page.locator('#blacklistAdd').click();
     assert.match(await page.locator('#blacklistFeedback').textContent(),/more than 9/);
     assert.equal(await page.evaluate(()=>window.requests.filter(x=>x.type==='blacklist-add').length),1);
+    await page.locator('#blacklistKind').selectOption('customer');await page.locator('#blacklistValue').fill('C00012345678');await page.locator('#blacklistAdd').click();
+    await page.waitForFunction(()=>window.requests.filter(x=>x.type==='blacklist-add').length===2);
+    assert.equal(await page.evaluate(()=>window.requests.filter(x=>x.type==='blacklist-add').at(-1).value),'12345678');
     await page.close();
   });
   await tests('vault setup requires encryption and different credentials retain the blacklist-unlock requirement',async()=>{
@@ -649,6 +652,22 @@ try {
     await page.waitForTimeout(100);
     const request=await page.evaluate(()=>window.requests.find(x=>x.type==='panel-submit'));
     assert.equal(request.value,'ABC123');
+  });
+  await tests('DL and customer prompts strip leading zeroes before checking significant length',async()=>{
+    for(const [command,significant,limit,prefix] of [['license','123456789',9,'000 '],['customer','12345678',8,'000 '],['customer','12345678',8,'C000 ']]) {
+      const page=await ui.newPage();await page.addInitScript(command=>{
+        const original=chrome.runtime.sendMessage;
+        chrome.runtime.sendMessage=async message=>message.type==='panel-data'?{ok:true,value:{type:'input',command}}:original(message);
+      },command);
+      await page.goto(`${base}/panel.html?id=numeric-${command}`);
+      await page.locator('#value').fill(prefix+significant+'1');await page.keyboard.press('Enter');
+      assert.match(await page.locator('#error').textContent(),new RegExp('more than '+limit));
+      assert.equal(await page.evaluate(()=>window.requests.some(message=>message.type==='panel-submit')),false);
+      await page.locator('#value').fill(prefix+significant);await page.keyboard.press('Enter');
+      await page.waitForFunction(()=>window.requests.some(message=>message.type==='panel-submit'));
+      assert.equal(await page.evaluate(()=>window.requests.find(message=>message.type==='panel-submit').value),significant);
+      await page.close();
+    }
   });
   await tests('empty Enter, Escape, and the 90-second deadline cancel without a query',async()=>{
     for (const action of ['empty','escape','timeout']) {

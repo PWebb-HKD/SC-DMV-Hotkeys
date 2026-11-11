@@ -83,6 +83,8 @@ Printing owns the already-loaded document and text. `doc.getData()` creates an i
 
 ## Parsing contracts
 
+Customer normalization also accepts a case-insensitive leading C0 prefix. DL/customer normalization removes spaces and leading zeroes before applying the nine/eight-digit limits. Manual input, history replay, report follow-ups, and blacklist entries use that canonical form. Decrypted vault entries are validated again, so legacy padded identifiers are normalized and duplicate variants collapse without changing encryption formats. Plate leading zeroes remain significant.
+
 Owner-number extraction preserves line breaks to avoid merging adjacent numeric columns. Label-based status/barcode parsing flattens whitespace. These serve different layouts and are intentionally separate. Fixture data must be synthetic; no private records or viewstate belong in source.
 
 Dates are strict South Carolina calendar days. Month/year shifts clamp month ends. Temporary classes T45V/E45V/E60V use Plate Exp Date; a blank decal date inherits it only for temporary barcode mapping. Current credential fields take precedence over Prior entries. Unreadable required status data yields an explicit unavailable result.

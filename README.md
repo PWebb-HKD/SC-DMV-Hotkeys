@@ -1,6 +1,6 @@
 # SC DMV Hotkeys
 
-A Chromium Manifest V3 extension for authorized SCDMV member searches, PDF follow-ups, status alerts, and PDF417 data-entry barcodes. Current version: **1.8.8**.
+A Chromium Manifest V3 extension for authorized SCDMV member searches, PDF follow-ups, status alerts, and PDF417 data-entry barcodes. Current version: **1.8.9**.
 
 ## Install and update
 
@@ -27,7 +27,7 @@ The packaged extension needs no build or npm installation. PDF.js and the barcod
 
 These are recommendations, not automatic assignments. Chromium owns key validity, conflicts, assignments, and Global scope. The setup guide shows actual assignments; the extension cannot read their scope. Toolbar buttons run the same workflows. **Stop current function** cancels pending automation, prompts, extraction, and announcements; it cannot recall a request already submitted to the DMV. The extension uses no native desktop companion.
 
-Plate and customer inputs allow up to eight characters; DL inputs allow nine. Spaces are ignored. Customer numbers are numeric and lose leading zeroes; DL numbers keep leading zeroes. Blacklist entry controls additionally require numeric customer/DL values and alphanumeric plates.
+Plate and customer inputs allow up to eight characters; DL inputs allow nine. Spaces are ignored. DL and customer searches remove leading zeroes before checking these limits; both are numeric. Customer searches also accept a leading C0 prefix and remove it before validation. Blacklist entry controls additionally require numeric customer/DL values and alphanumeric plates.
 
 ## Login and recovery
 

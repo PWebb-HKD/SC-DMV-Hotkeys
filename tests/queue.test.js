@@ -693,3 +693,11 @@ test('generic DMV server errors consume queued attempts, show a notice, record f
     await send({type:'run',command:'next'});await wait(()=>session.queue.index===2&&session.history[0]?.value==='81000002');assert.notEqual(session.history[0].outcome,'error');assert.equal(submittedQueries.length,before+2);
   }
 });
+
+test('worker-side DL and customer submissions strip padding before portal fill and history',async()=>{
+  for(const [command,value,prefix] of [['license','123456789','000 '],['customer','12345678','000 '],['customer','12345678','C000 ']]) {
+    const before=submittedQueries.length,historyId=session.history[0]?.id;await input(prefix+value,command);
+    await wait(()=>submittedQueries.length===before+1&&session.history[0]?.id!==historyId&&session.history[0]?.kind===command&&session.history[0]?.value===value);
+    assert.equal(submittedQueries.at(-1),value);assert.equal(submissions.at(-1),value);
+  }
+});

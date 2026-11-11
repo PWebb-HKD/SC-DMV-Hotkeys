@@ -72,3 +72,24 @@ test('the dedicated DMV error page is not a successful login redirect',()=>{
   assert.equal(loginSucceeded(MEMBER+'Disclaimer.aspx'),true);
   assert.equal(isPortalErrorPage(ROOT+'.unrelated.test/SCTRNS/Member/ErrorPage.aspx'),false);
 });
+
+test('DL and customer zero padding is removed before length checks without weakening significant-digit limits',()=>{
+  for(const [kind,limit] of [['license',9],['customer',8]]) {
+    const significant='123456789'.slice(0,limit);
+    assert.equal(normalize(kind,'000 '+significant),significant);assert.equal(normalize(kind,'0000'),'0');
+    assert.throws(()=>normalize(kind,'000'+significant+'1'),new RegExp('more than '+limit));
+    assert.throws(()=>normalize(kind,'00012A'),/only numbers/);
+  }
+  assert.equal(normalize('plate','0ABC123'),'0ABC123');
+  assert.equal(driverLicense('Driver License No: 000123456789 Name: FICTIONAL, PERSON'),'123456789');
+  assert.equal(driverLicense('Driver License No: 0001234567891 Name: FICTIONAL, PERSON'),null);
+});
+
+test('C0 is a customer-only prefix and is removed before numeric and length validation',()=>{
+  for(const input of ['C012345678','c00012345678',' C 0 1234 5678 '])assert.equal(normalize('customer',input),'12345678');
+  assert.equal(normalize('customer','C0'),'');assert.equal(normalize('customer','C0000'),'0');assert.equal(normalize('plate','C0123456'),'C0123456');
+  for(const input of ['C12345678','0C01234','C012A'])assert.throws(()=>normalize('customer',input),/only numbers/);
+  assert.throws(()=>normalize('customer','C000123456789'),/more than 8/);assert.throws(()=>normalize('license','C012345678'),/only numbers/);
+});
+
+test('customer collection canonicalizes C0-prefixed numbers and keeps numeric duplicates once',()=>{assert.deepEqual(ownerNumbers('Customer Number: C0001234\nOwner Number: 0001234\nCustomer Number: C012A\nRegistrant/Lessee Number: C05678'),['1234','5678']);});

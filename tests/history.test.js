@@ -23,3 +23,10 @@ test('malformed or unsupported history cannot start a query',()=>{
   assert.throws(()=>historySearch({kind:'plate',value:''}),/no search number/);
   assert.throws(()=>historySearch({kind:'customer',value:'ABC'}),/only numbers/);
 });
+
+test('padded legacy DL, residence, and customer history replays use the canonical search number',()=>{
+  for(const kind of ['license','address'])assert.deepEqual(historySearch({kind,value:'000123456789'}),{kind,value:'123456789'});
+  assert.deepEqual(historySearch({kind:'customer',value:'00012345678'}),{kind:'customer',value:'12345678'});
+});
+
+test('C0-prefixed customer history replays the canonical numeric query',()=>{assert.deepEqual(historySearch({kind:'customer',value:'C0012345678'}),{kind:'customer',value:'12345678'});});

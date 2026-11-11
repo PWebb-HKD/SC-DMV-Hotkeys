@@ -91,7 +91,7 @@ function renderBlacklist(current = {}) {
 // Entry controls follow category-specific limits; the worker independently validates submitted values.
 $('blacklistKind').onchange = () => {
   const kind = $('blacklistKind').value;
-  $('blacklistLimit').textContent = kind === 'license' ? 'Up to 9 digits. Spaces are ignored; leading zeroes are kept.' : kind === 'customer' ? 'Up to 8 digits after leading zeroes are removed. Spaces are ignored.' : 'Up to 8 letters or digits. Spaces are ignored.';
+  $('blacklistLimit').textContent = kind === 'license' ? 'Up to 9 digits after leading zeroes are removed. Spaces are ignored.' : kind === 'customer' ? 'Up to 8 digits. A leading C0 and leading zeroes are ignored. Spaces are ignored.' : 'Up to 8 letters or digits. Spaces are ignored.';
   $('blacklistValue').inputMode = kind === 'plate' ? 'text' : 'numeric';
 };
 $('blacklistForm').onsubmit = async event => {

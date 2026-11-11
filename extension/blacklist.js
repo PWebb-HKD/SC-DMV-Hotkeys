@@ -36,7 +36,7 @@ export function checkBlacklist(entries, kind, input) {
 /** Capture identifiers needed to protect later SCUTTIES history replay as well. */
 export function driverIdentifiers(text) {
   const result = [];
-  for (const [kind, pattern] of [['license', /\bDriver\s+License\s+No\s*:\s*(\d[\d \t]*)(?=\s*Name\s*:)/i], ['customer', /\bCustomer\s+No\s*:\s*(\d[\d \t]*)/i]]) {
+  for (const [kind, pattern] of [['license', /\bDriver\s+License\s+No\s*:\s*(\d[\d \t]*)(?=\s*Name\s*:)/i], ['customer', /\bCustomer\s+No\s*:\s*((?:C[ \t]*(?=0))?\d[\d \t]*)/i]]) {
     const value = String(text).match(pattern)?.[1];
     if (value) result.push(blacklistEntry(kind, value));
   }
