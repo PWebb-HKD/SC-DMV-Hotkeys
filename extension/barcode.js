@@ -12,6 +12,7 @@ let data, expiryTimer, countdownTimer;
 function close() {clearInterval(heartbeat); clearTimeout(expiryTimer); clearInterval(countdownTimer); window.close();}
 $('close').onclick = close;
 document.addEventListener('keydown', event => {if (event.key === 'Escape') {event.preventDefault(); close();}});
+/** Draw the immutable payload at the chosen scale and report encoder failures without extending the popup lifetime. */
 function render() {
   if (!data) return;
   try {
@@ -28,6 +29,7 @@ try {
   for (const warning of data.warnings || []) {const li = document.createElement('li'); li.textContent = warning; $('warnings').append(li);}
   render(); $('close').focus();
   const deadline = Date.now() + 90000;
+  // Update the visible countdown from a fixed deadline so render/scale changes cannot renew it.
   const tick = () => {
     const seconds = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
     $('countdown').textContent = `Closes in ${seconds} seconds. Press Esc to dismiss.`;

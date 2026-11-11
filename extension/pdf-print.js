@@ -4,6 +4,7 @@ export function installNativePrint(documentReady, signal) {
   let blobUrl,opening=false,disposed=false;
   button.disabled=true;
   documentReady.then(()=>{if(!disposed)button.disabled=false;},()=>{});
+  // Reuse a Blob of the loaded report so printing never refetches the session-dependent attachment URL.
   const print=async()=>{
     if(opening||disposed)return;
     opening=true;button.disabled=true;status.classList.remove('error');status.setAttribute('role','status');status.textContent='Preparing original PDF for printing…';
@@ -22,12 +23,14 @@ export function installNativePrint(documentReady, signal) {
       if(!disposed){status.classList.add('error');status.setAttribute('role','alert');status.textContent=signal.aborted?'Report loading stopped. Run the search again before printing.':`Unable to open PDF for printing: ${error.message}`;}
     } finally {opening=false;if(!disposed)button.disabled=false;}
   };
+  // Intercept the print shortcut in capture phase to avoid printing the virtualized HTML surface.
   const keydown=event=>{
     if((event.ctrlKey||event.metaKey)&&!event.altKey&&event.key.toLowerCase()==='p') {
       event.preventDefault();event.stopPropagation();if(!event.repeat)print();
     }
   };
   button.onclick=print;window.addEventListener('keydown',keydown,true);
+  // Stop key interception and release the object URL when the viewer is cancelled or unloaded.
   const dispose=()=>{disposed=true;button.disabled=true;window.removeEventListener('keydown',keydown,true);if(blobUrl)URL.revokeObjectURL(blobUrl);};
   signal.addEventListener('abort',dispose,{once:true});window.addEventListener('beforeunload',dispose,{once:true});
 }

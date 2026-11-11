@@ -1,4 +1,4 @@
-/* Native DMV theme, using the neutral palette from the supplied Dark Reader sample.
+/* Native DMV theme with neutral surfaces and semantic control colors.
  * USER-origin !important rules take priority over page/extension author styles.
  * An important cascade layer also outranks unlayered important user styles.
  * Screen only: browser printing keeps the website's normal print styling. */

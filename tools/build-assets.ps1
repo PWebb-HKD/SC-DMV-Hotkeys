@@ -1,6 +1,6 @@
 # Asset maintenance only; normal installation needs no build. Copies local PDF.js
 # with its support files/license and draws the palmetto icon at supported sizes.
-param([string]$PdfJsRoot = 'C:\Users\prest\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\node_modules\pdfjs-dist')
+param([Parameter(Mandatory = $true)][string]$PdfJsRoot)
 $ErrorActionPreference = 'Stop'
 $project = Split-Path $PSScriptRoot -Parent
 $vendor = Join-Path $project 'extension\vendor'
@@ -9,6 +9,7 @@ Copy-Item -LiteralPath (Join-Path $PdfJsRoot 'legacy\build\pdf.mjs') -Destinatio
 Copy-Item -LiteralPath (Join-Path $PdfJsRoot 'legacy\build\pdf.worker.mjs') -Destination (Join-Path $vendor 'pdf.worker.mjs')
 Copy-Item -LiteralPath (Join-Path $PdfJsRoot 'LICENSE') -Destination (Join-Path $vendor 'PDFJS-LICENSE.txt')
 foreach ($folder in @('cmaps','standard_fonts','wasm')) { Copy-Item -LiteralPath (Join-Path $PdfJsRoot $folder) -Destination $vendor -Recurse -Force }
+# Icon generation uses System.Drawing and must run on a host that supports that API.
 Add-Type -AssemblyName System.Drawing
 $icons = Join-Path $project 'extension\icons'
 New-Item -ItemType Directory -Path $icons -Force | Out-Null
@@ -19,6 +20,7 @@ foreach ($size in @(16,32,48,128)) {
     $blue = New-Object Drawing.SolidBrush ([Drawing.ColorTranslator]::FromHtml('#0c3d70'))
     $white = [Drawing.Brushes]::White
     $g.Clear([Drawing.ColorTranslator]::FromHtml('#0c3d70'))
+    # Paint the crescent, then the palmetto silhouette on the shared high-resolution source.
     $g.FillEllipse($white,65,51,106,112)
     $g.FillEllipse($blue,91,30,100,111)
     $trunk = New-Object Drawing.Drawing2D.GraphicsPath
@@ -31,6 +33,7 @@ foreach ($size in @(16,32,48,128)) {
     $fronds = @(@(277,210,229,125,173,146,146,201),@(277,210,198,172,153,208,134,266),@(277,210,221,216,197,258,185,308),@(277,210,259,120,294,100,306,96),@(277,210,306,116,363,130,395,173),@(277,210,357,153,407,195,427,249),@(277,210,336,204,365,251,374,294))
     foreach ($p in $fronds) { $g.DrawBezier($pen,[single]$p[0],[single]$p[1],[single]$p[2],[single]$p[3],[single]$p[4],[single]$p[5],[single]$p[6],[single]$p[7]) }
     $g.FillEllipse($white,249,189,55,37)
+    # Downsample to each browser icon size and release all drawing resources per iteration.
     $small = New-Object Drawing.Bitmap $size,$size
     $sg = [Drawing.Graphics]::FromImage($small); $sg.InterpolationMode = [Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
     $sg.DrawImage($bitmap,0,0,$size,$size)

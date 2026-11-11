@@ -2,7 +2,9 @@
 export const ALERT_DEFAULTS=Object.freeze({alertsEnabled:false,speechEnabled:false,repeatSpeech:false,suspendedClipEnabled:false,voiceSource:'recordings',voiceGender:'female',voiceName:''});
 export const ALERT_KEYS=Object.freeze(Object.keys(ALERT_DEFAULTS));
 let writing=Promise.resolve();
+// Keep preference writes ordered; failure must not block the next user change.
 const serial=action=>{const task=writing.then(action);writing=task.catch(()=>{});return task;};
+/** Copy only recognized preference keys and values; never persist arbitrary session data. */
 function valid(source={}) {
   const values={};
   if(!source||typeof source!=='object')return values;
@@ -14,6 +16,7 @@ function valid(source={}) {
   }
   return values;
 }
+/** Migrate active legacy choices, merge defaults, and populate persistent settings plus session mirrors. */
 export function initializeAlertPreferences() {
   return serial(async()=>{
     const [local,session]=await Promise.all([chrome.storage.local.get('alertPreferences'),chrome.storage.session.get(ALERT_KEYS)]);
@@ -23,6 +26,7 @@ export function initializeAlertPreferences() {
     await chrome.storage.session.set(prefs);return prefs;
   });
 }
+/** Serialize a validated preference update so simultaneous popup changes cannot overwrite one another. */
 export function saveAlertPreferences(changes) {
   return serial(async()=>{
     const {alertPreferences}=await chrome.storage.local.get('alertPreferences'),updates=valid(changes);
@@ -30,6 +34,7 @@ export function saveAlertPreferences(changes) {
     await chrome.storage.local.set({alertPreferences:prefs});await chrome.storage.session.set(updates);return prefs;
   });
 }
+/** Rebuild session mirrors from saved preferences without replaying searches or announcements. */
 export function restoreAlertPreferences() {
   return serial(async()=>{
     const {alertPreferences}=await chrome.storage.local.get('alertPreferences');

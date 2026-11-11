@@ -1,6 +1,7 @@
-/** Recolor neutral paper/ink outside PDF.js-recorded image footprints. */
+/** Continuous PDF rendering with image-safe recoloring and persistent text-selection layers. */
 import {OPS, TextLayer} from './vendor/pdf.mjs';
 const unsafeImageOps = new Set(Object.entries(OPS).filter(([name]) => /paint.*Image/i.test(name) && !['paintImageXObject','paintInlineImageXObject'].includes(name)).map(([,value]) => value));
+/** Recolor neutral raster pixels outside protected image bounds; leave colored pixels untouched. */
 export function darkenPaper(context, coordinates) {
   const {width,height} = context.canvas, protectedPixels = new Uint8Array(width*height);
   for (let i=0; i<coordinates.length; i+=6) {
@@ -40,12 +41,14 @@ export async function openDarkViewer(doc, signal) {
   // Keep lightweight text layers in the document even when distant raster pages
   // are released, so selections across pages and Select All do not lose text.
   const pendingText = new Set();
+  // Resize retained selection surfaces to the current sheet width without rebuilding their text spans.
   const resizeText = sheet => {
     if(sheet.textSurface)sheet.textSurface.style.transform=`scale(${sheet.element.getBoundingClientRect().width/sheet.viewportWidth})`;
   };
   const resizeObserver = new ResizeObserver(entries => {
     for(const entry of entries)resizeText(sheets.find(sheet=>sheet.element===entry.target));
   });
+  // Build each selectable text layer once and keep it even when its distant canvas is evicted.
   const prepareText = (sheet,page,viewport) => {
     if(sheet.textPromise)return sheet.textPromise;
     sheet.textPromise=(async()=>{
@@ -66,13 +69,17 @@ export async function openDarkViewer(doc, signal) {
     })();
     return sheet.textPromise;
   };
+  // Keep image rendering usable when a page cannot create a selection layer.
   const textError = (sheet,error) => {
     if(!stopped)sheet.element.querySelector('.pdf-page-label').textContent=`Page ${sheet.number}: text selection unavailable (${error.message})`;
   };
+  // Bound raster dimensions and scale to avoid unbounded memory usage on large-format reports.
   const viewportFor = page => {
     const initial=page.getViewport({scale:1});return page.getViewport({scale:Math.min(1.5,1600/initial.width,2400/initial.height)});
   };
+  // Report document-wide page count and the active color mode in the viewer header.
   const status = () => {progress.textContent = `${doc.numPages} ${doc.numPages===1?'page':'pages'} · ${dark?'Dark':'Original'} colors`;};
+  // Render one nearby page off-DOM and publish it only if its generation and visibility still match.
   const render = async (sheet, token) => {
     const page = await doc.getPage(sheet.number);
     if (stopped || token !== generation) return;
@@ -105,6 +112,7 @@ export async function openDarkViewer(doc, signal) {
       if(!stopped && token === generation) {sheet.ready=true;sheet.element.querySelector('.pdf-page-label').textContent=`Page ${sheet.number}: ${error.message}`;}
     } finally {currentTask=null;page.cleanup();}
   };
+  // Serialize raster work while allowing viewport changes to queue newly nearby pages.
   const pump = async () => {
     if(pumping || stopped)return;
     pumping=true;
@@ -114,6 +122,7 @@ export async function openDarkViewer(doc, signal) {
     } finally {pumping=false;}
   };
   let observer;
+  // Cancel raster/text tasks and release observers plus the PDF document when the view is abandoned.
   const stop = () => {stopped=true;generation++;observer?.disconnect();resizeObserver.disconnect();currentTask?.cancel();for(const task of pendingText)task.cancel();doc.destroy();};
   signal?.addEventListener('abort',stop,{once:true});
   window.addEventListener('beforeunload',stop,{once:true});
@@ -121,6 +130,7 @@ export async function openDarkViewer(doc, signal) {
   await render(sheets[0],generation);
   if(stopped)throw new DOMException('Report loading stopped.','AbortError');
   status();toggle.disabled=false;
+  // Prepare distant text in order so Select All still works across pages not currently rasterized.
   const prepareRemainingText=async()=>{
     for(const sheet of sheets.slice(1)) {
       if(stopped)return;
@@ -129,6 +139,7 @@ export async function openDarkViewer(doc, signal) {
     }
   };
   prepareRemainingText().catch(error=>{if(!stopped)progress.textContent=`Text selection unavailable: ${error.message}`;});
+  // Keep only nearby canvases resident; text layers stay available for copying across pages.
   observer = new IntersectionObserver(entries => {
     for(const entry of entries) {
       const sheet = sheets.find(item=>item.element===entry.target);sheet.near=entry.isIntersecting;
@@ -137,6 +148,7 @@ export async function openDarkViewer(doc, signal) {
     pump().catch(error=>{progress.textContent=`Unable to render: ${error.message}`;});
   },{rootMargin:'800px 0px'});
   sheets.forEach(sheet=>observer.observe(sheet.element));
+  // Invalidate previous color renders and repaint without replacing the immutable source document.
   toggle.onclick=()=>{
     dark=!dark;generation++;currentTask?.cancel();
     toggle.textContent=dark?'Use original PDF colors':'Use dark PDF colors';

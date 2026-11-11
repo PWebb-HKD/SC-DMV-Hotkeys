@@ -1,5 +1,5 @@
 /**
- * Shared popup controller for number entry, credentials, permissions, queue restart,
+ * Shared popup controller for number entry, credentials, queue restart,
  * errors, and record alerts. The worker owns the pending job; this view only validates
  * user input, renders plain text, and submits the panel ID with the response.
  */
@@ -8,19 +8,24 @@ const $ = id => document.getElementById(id), id = new URL(location.href).searchP
 let data, unlocking = false, submitted = false, barcodeChoice;
 const port = chrome.runtime.connect({name: 'panel'});
 const heartbeat = setInterval(() => { try { port.postMessage({type: 'heartbeat'}); } catch {} }, 15000);
+/** Unwrap the worker response envelope and route rejected requests to the panel error display. */
 async function send(message) { const r = await chrome.runtime.sendMessage(message); if (!r?.ok) throw new Error(r?.error || 'Extension unavailable.'); return r.value; }
+/** Stop the panel heartbeat and any status audio before closing the popup. */
 async function close() { clearInterval(heartbeat); if (data?.type === 'record-alert') await send({type: 'stop-audio'}).catch(() => {}); window.close(); }
 $('cancel').onclick = close;
 $('barcodeBlanks').onclick = () => { barcodeChoice = 'blank'; $('form').requestSubmit(); };
 document.addEventListener('keydown', event => { if (event.key === 'Escape') { event.preventDefault(); close(); } });
 $('save').onchange = () => { $('savePassArea').hidden = !$('save').checked; };
+// Destructive vault reset requires an explicit warning and confirmation before the worker request.
 $('clearSavedInfo').onclick = async () => {
   if (!window.confirm('Delete the saved credentials and encrypted vault? All blacklisted numbers will also be deleted and must be re-entered before blacklist protection is enabled again. Session search history and cached reports will also be cleared. This cannot be undone.')) return;
   $('clearSavedInfo').disabled = true;
   try { await send({type: 'clear-saved-user-info', confirmed: true}); await close(); }
   catch (error) { $('error').textContent = error.message; $('clearSavedInfo').disabled = false; }
 };
+// Switching login entry mode retains the blacklist and requires the current vault unlock when necessary.
 $('useNew').onclick = () => { unlocking = false; $('unlockArea').hidden = !data.unlockOnly; $('useNew').hidden = true; $('newCredentials').hidden = false; if (data.hasVault) { $('save').checked = true; $('save').disabled = true; $('savePassArea').hidden = true; $('message').hidden = false; $('message').textContent = (data.unlockOnly ? 'Unlock the blacklist with the vault passphrase above. ' : '') + 'Using different credentials replaces the saved login in this vault. Your blacklist and vault passphrase are retained.'; } $('user').focus(); };
+// Render the worker-selected panel type; report messages always enter the DOM as text.
 try {
   data = await send({type: 'panel-data', id});
   if (!data) { window.close(); } else {
@@ -71,9 +76,9 @@ try {
       unlocking = data.hasVault; $('unlockArea').hidden = !unlocking; $('newCredentials').hidden = unlocking;
       (unlocking ? $('unlockPass') : $('user')).focus();
     } else {
-      $('title').textContent = data.type === 'barcode-owner-incomplete' ? 'Incomplete owner information' : data.type === 'restart' ? 'Queue complete' : data.type === 'permission' ? 'Website access needed' : 'SC DMV Hotkeys';
+      $('title').textContent = data.type === 'barcode-owner-incomplete' ? 'Incomplete owner information' : data.type === 'restart' ? 'Queue complete' : 'SC DMV Hotkeys';
       $('message').hidden = false; $('message').textContent = data.message;
-      $('submit').textContent = data.type === 'barcode-owner-incomplete' ? (data.hasNext ? 'Use next owner' : 'Generate with blanks') : data.type === 'restart' ? 'Start again' : data.type === 'permission' ? 'Allow site' : 'OK';
+      $('submit').textContent = data.type === 'barcode-owner-incomplete' ? (data.hasNext ? 'Use next owner' : 'Generate with blanks') : data.type === 'restart' ? 'Start again' : 'OK';
       $('barcodeBlanks').hidden = data.type !== 'barcode-owner-incomplete' || !data.hasNext;
       $('cancel').hidden = data.type === 'notice'; $('submit').focus();
     }
@@ -89,10 +94,6 @@ $('form').onsubmit = async event => {
     if (data.type === 'input') { request.value = normalize(data.command, $('value').value); if (!request.value) { await close(); return; } }
     if (data.type === 'credentials') Object.assign(request, {unlock: unlocking, user: $('user').value, password: $('password').value, save: $('save').checked, passphrase: unlocking ? $('unlockPass').value : $('savePass').value});
     if (data.type === 'credentials' && data.unlockOnly && !unlocking) request.blacklistPassphrase = $('unlockPass').value;
-    if (data.type === 'permission') {
-      const granted = await chrome.permissions.request({origins: [data.origin]});
-      if (!granted) throw new Error('Site access was declined. Cancel to stop this search.');
-    }
     submitted = true; $('submit').disabled = true;
     await send(request); await close();
   } catch (error) { submitted = false; $('submit').disabled = false; $('error').textContent = error.message; if (data.type === 'input') { $('value').select(); $('value').focus(); } }

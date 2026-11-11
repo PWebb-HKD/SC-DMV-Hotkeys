@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "SC DMV Hotkeys",
-  "version": "1.8.5",
+  "version": "1.8.9",
   "minimum_chrome_version": "120",
-  "description": "Keyboard shortcut keys for automating searches through the SCDMV online portal.",
+  "description": "Keyboard shortcuts for automating user-input searches through the SCDMV online portal and customizing CSS dark mode styling.",
   "permissions": [
     "storage",
     "tts",
@@ -15,10 +15,6 @@
   ],
   "host_permissions": [
     "https://www.scdmvonline.com/*"
-  ],
-  "optional_host_permissions": [
-    "https://*/*",
-    "http://*/*"
   ],
   "background": {
     "service_worker": "background.js",
@@ -51,7 +47,7 @@
       "global": true
     },
     "owners": {
-      "description": "Queue PDF customers/owners (preferred Alt+J)",
+      "description": "Get all customer/owner numbers from current results page, run the first number, and queue the rest to be ran (preferred Alt + J)",
       "global": true
     },
     "next": {
@@ -67,7 +63,7 @@
       "global": true
     },
     "barcode": {
-      "description": "Generate PDF417 import barcode (preferred Alt+B)",
+      "description": "Generate PDF417 barcode for scanning (preferred Alt + B)",
       "global": true
     },
     "previous": {

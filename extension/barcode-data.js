@@ -1,16 +1,19 @@
 /**
- * Pure report-to-AAMVA mapping for driver/ID v09 and the observed SC registration v01
+ * Pure report-to-AAMVA mapping for driver/ID v09 and SC registration v01
  * profile. Preserve SC field choices documented below; generic registration mappings
  * differ. Unknown credential metadata stays blank/unavl, never copied from examples.
  */
 import {parseReportDate, isTemporaryPlate} from './status-alerts.js';
+// Flatten report spacing only for label parsing; encoded fields are normalized separately.
 const flat = value => String(value || '').replace(/\s+/g, ' ').trim();
 const datePattern = '(\\d{2}\\s*/\\s*\\d{2}\\s*/\\s*\\d{4})';
+/** Normalize text to uppercase printable ASCII; reject characters that would invalidate byte offsets. */
 function clean(value) {
   const result = flat(value).normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
   if (/[^\x20-\x7e]/.test(result)) throw new Error('The report contains characters that cannot be represented reliably in the barcode.');
   return result;
 }
+/** Read a leading valid report date and format it as MMDDYYYY or YYYYMMDD without guessing missing dates. */
 function date(value, iso = false) {
   const parsed = parseReportDate(flat(value).match(/^\d{2}\s*\/\s*\d{2}\s*\/\s*\d{4}/)?.[0]);
   if (!parsed) return '';
@@ -27,10 +30,12 @@ function labeled(text, labels) {
   });
   return values;
 }
+/** Stop mapping when required report labels are empty rather than creating a misleading import. */
 function requireFields(values, keys) {
   const missing = keys.filter(key => !values[key]);
   if (missing.length) throw new Error(`The report is missing ${missing.join(', ')}. Open the complete driver or vehicle record and try Alt+B again.`);
 }
+/** Separate comma-delimited family/given names and detach a generational suffix from either position. */
 function names(value) {
   const comma = value.indexOf(',');
   if (comma < 1) throw new Error('The driver name could not be separated into family and given names.');
@@ -46,12 +51,14 @@ function names(value) {
   if (!family || !parts[0]) throw new Error('The driver first or family name was not found.');
   return {family, first: parts[0], middle: parts.slice(1).join(',') || 'NONE', suffix};
 }
+/** Normalize one field, enforce its format limit, and represent absent optional values as unavl. */
 function valueField(value, max) {
   if (!value) return 'unavl';
   const result = clean(value);
   if (result.length > max) throw new Error(`A report value exceeds the supported ${max}-character barcode field length.`);
   return result;
 }
+/** Translate supported demographic labels into the three-character legacy version-09 code vocabulary. */
 export function raceEthnicity(value) {
   // Version 09 DCL uses D20's legacy Driver Race And Ethnicity (DDVRAC),
   // not the newer, separate Person Race (BPERAC) code list.
@@ -120,7 +127,7 @@ export function driverBarcode(raw) {
   const race = raceEthnicity(v.race);
   if (race) fields.push(['DCL', race.padEnd(3, ' ')]);
   else warnings.push('Race/ethnicity was missing or not recognized in the version-09 code list; DCL was not encoded.');
-  // These optional elements occur in the supplied official SC barcode. Their
+  // These optional elements belong to the SC credential profile. Their
   // credential-only values are not recoverable from the report heading.
   fields.push(['DCM', '    '], ['DCR', ''], ['DDC', ''], ['DDD', ''], ['DAW', /^\d{1,3}$/.test(v.weight) ? v.weight.padStart(3, '0') : ''], ['DAX', ''], ['DDH', ''], ['DDI', ''], ['DDK', '']);
   if (type === 'DL' && (!row || row[7].toUpperCase() !== 'N' || row[8].toUpperCase() !== 'N')) warnings.push('Actual restriction/endorsement codes are unavailable; flagged fields are encoded as unavl.');
@@ -151,14 +158,14 @@ export function ownerAddress(raw) {
   }
   return candidates.length === 1 ? candidates[0] : null;
 }
-/** Incomplete party information can be retried only after explicit user approval. */
+/** Signal an incomplete selected party with the next index available for an explicit user decision. */
 export class VehiclePartyError extends Error {
   constructor(message, partyIndex, partyCount) {
     super(message); this.name = 'VehiclePartyError';
     this.nextPartyIndex = partyIndex + 1; this.hasNext = this.nextPartyIndex < partyCount;
   }
 }
-/** Map registration fields to the observed SC RG profile. */
+/** Map registration fields to the SC registration v01 RG profile. */
 export function vehicleBarcode(raw, {partyIndex = 0, allowIncompleteParty = false} = {}) {
   const text = flat(raw), start = text.search(/\bVIN\s*:/i);
   if (start < 0) throw new Error('A vehicle record heading was not found.');
@@ -199,9 +206,9 @@ export function vehicleBarcode(raw, {partyIndex = 0, allowIncompleteParty = fals
   // Temporary plate reports append the year after a space; it is not part of the tag.
   const displayedPlate = flat(v['plate number']);
   const plateValue = temporary ? displayedPlate.replace(/^(\S+)\s+\d{4}$/, '$1') : displayedPlate;
-  const plate = valueField(plateValue, 9), make = valueField(v.make, 4), comma = v['owner name'].indexOf(',');
-  const ownerFields = !v['owner name'] ? [['RBD', ''], ['RBE', '']] : comma >= 0
-    ? [['RBD', flat(v['owner name'].slice(0, comma)) ? valueField(v['owner name'].slice(0, comma), 35) : ''], ['RBE', flat(v['owner name'].slice(comma + 1)) ? valueField(v['owner name'].slice(comma + 1), 35) : '']]
+  const plate = valueField(plateValue, 9), make = valueField(v.make, 4);
+  const ownerFields = !v['owner name'] ? [['RBD', ''], ['RBE', '']] : nameComma >= 0
+    ? [['RBD', flat(v['owner name'].slice(0, nameComma)) ? valueField(v['owner name'].slice(0, nameComma), 35) : ''], ['RBE', flat(v['owner name'].slice(nameComma + 1)) ? valueField(v['owner name'].slice(nameComma + 1), 35) : '']]
     : [['BBC', valueField(v['owner name'], 70)], ['RBD', ''], ['RBE', '']];
   const warnings = [];
   if (!v['owner name']) warnings.push('Owner name is unavailable; barcode name fields are blank. Verify the imported record after scanning.');
@@ -210,8 +217,8 @@ export function vehicleBarcode(raw, {partyIndex = 0, allowIncompleteParty = fals
   const issued = date(v['date of issue'], true);
   if (!issued) warnings.push('Registration Date of Issue is unavailable; RBB is blank. Title Issue Date is not substituted.');
   if (!decalExpiration) warnings.push('Decal expiration is unavailable; the SC RBT field is blank.');
-  // Official SC version-01 RG layout, decoded from the supplied barcode:
-  // RAG = Plate Exp Date; SC uses RBT for Decal Exp Date (confirmed against source).
+  // SC registration v01 keeps expiration values in separate RG fields:
+  // RAG = Plate Exp Date; SC uses RBT for Decal Exp Date.
   const fields = [['RBB', issued], ['RAG', expiration], ['RAM', plate.padEnd(9, ' ')], ...ownerFields,
     ['RBI', address ? valueField(address.street, 35) : ''], ['RBK', address ? valueField(address.city, 20) : ''], ['RBL', address?.state || ''], ['RBM', address?.zip || ''],
     ['VAD', vin], ['VAK', make], ['VAL', v.year], ['VAO', v.body ? valueField(v.body, 2) : ''],

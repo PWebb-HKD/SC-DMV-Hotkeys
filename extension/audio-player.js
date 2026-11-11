@@ -6,6 +6,7 @@
 import {RECORDING_PATHS} from './voice-recordings.js';
 const allowedFiles = new Set(RECORDING_PATHS);
 let active, pendingReject, job = 0;
+// A new accepted request replaces playback; replies settle only after its files finish or fail.
 chrome.runtime.onMessage.addListener((message, sender, reply) => {
   if (message.target !== 'audio-player' || message.type !== 'play' || sender.id !== chrome.runtime.id) return false;
   const token = ++job;
@@ -15,6 +16,7 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
     const files = legacy ? ['audio/suspended.mp3'] : message.files;
     const repeat = legacy ? 3 : message.repeat;
     if (!Array.isArray(files) || !files.length || files.length > 4 || files.some(file => !allowedFiles.has(file) && !(legacy && file === 'audio/suspended.mp3')) || ![1, 2, 3].includes(repeat)) throw new Error('Invalid packaged audio request.');
+    // Play each file sequentially and recheck replacement before every repetition.
     for (let cycle = 0; cycle < repeat && token === job; cycle++) {
       if (cycle && !legacy) await new Promise(resolve => setTimeout(resolve, 1000));
       for (const file of files) {

@@ -5,6 +5,7 @@
  */
 import {COMMANDS} from './core.js';
 const $ = id => document.getElementById(id);
+/** Render actual browser assignments beside preferred keys without changing bindings or their Global scope. */
 async function refresh() {
   const commands = await chrome.commands.getAll();
   const assigned = new Map(commands.map(command => [command.name, command.shortcut]));

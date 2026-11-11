@@ -9,6 +9,7 @@ import {getDocument, GlobalWorkerOptions} from './vendor/pdf.mjs';
 GlobalWorkerOptions.workerSrc = chrome.runtime.getURL('vendor/pdf.worker.mjs');
 const params = new URL(location.href).searchParams;
 let id = params.get('id'), loadingTask;
+// Cancellation covers both the job handshake and PDF loading; a late job ID may already be cancelled.
 const controller = new AbortController(), cancelledIds = new Set();
 const printReady=Promise.withResolvers();printReady.promise.catch(()=>{});
 if(params.get('dark')==='1')installNativePrint(printReady.promise,controller.signal);
@@ -32,6 +33,7 @@ try {
     if(cancelledIds.has(id))controller.abort();
   }
   controller.signal.throwIfAborted();
+  // Prefer authorized captured bytes; otherwise fetch the current job source with size/type limits.
   let data;
   if (base64) { data = Uint8Array.from(atob(base64), c => c.charCodeAt(0)); base64 = null; }
   else {
@@ -41,12 +43,14 @@ try {
     if (data.length > 24 * 1024 * 1024) throw new Error('PDF exceeds the 24 MB extraction limit.');
     if (!new TextDecoder().decode(data.slice(0, 1024)).includes('%PDF-')) throw new Error('The attachment is not a PDF. Sign in and run the search again.');
   }
+  // Disable dynamic evaluation and load fonts, character maps, and workers from packaged assets only.
   loadingTask = getDocument({data, isEvalSupported: false, disableFontFace: true, useSystemFonts: true, cMapUrl: chrome.runtime.getURL('vendor/cmaps/'), cMapPacked: true, standardFontDataUrl: chrome.runtime.getURL('vendor/standard_fonts/'), wasmUrl: chrome.runtime.getURL('vendor/wasm/')});
   const doc = await loadingTask.promise;
   const lines = [];
   let viewReady = false, viewerError;
   try {
     if (doc.numPages > 300) throw new Error('This report exceeds the 300-page extraction limit.');
+    // Preserve reading-order line boundaries so adjacent numeric columns do not become one identifier.
     for (let n = 1; n <= doc.numPages; n++) {
       const page = await doc.getPage(n), content = await page.getTextContent();
       let line = '', lastY = null;

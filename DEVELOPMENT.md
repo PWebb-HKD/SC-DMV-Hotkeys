@@ -1,136 +1,127 @@
 # Maintaining SC DMV Hotkeys
 
-This guide describes first-party source. Read it alongside the module/function comments, then run the existing regression tests before changing behavior. No build is required to load extension/ as an unpacked extension.
+This guide covers first-party code. Start with the module overview, read each function's contract and cancellation/ownership comments, then run the relevant tests. The extension loads directly from `extension/`; development dependencies are not runtime requirements.
 
-## Start here
+## Module responsibilities
 
-| Change | Start in | Check |
+| Area | Modules | Contract and useful checks |
 | --- | --- | --- |
-| Commands and preferred shortcuts | extension/core.js, manifest.json | shortcuts tests |
-| Login or portal selectors | extension/automation.js, page.js | login tests; browser harness |
-| Customer queue / Stop / history | extension/background.js | queue and history tests |
-| PDF recognition and extraction | extension/core.js, results.js, reader.js | results and browser tests |
-| License/tag status rules | extension/status-alerts.js | status-alerts and report-layouts tests |
-| Barcode fields | extension/barcode-data.js | barcode unit and browser decoder tests |
-| Recorded voices / TTS | extension/voice-recordings.js, audio-alerts.js, audio-player.js | audio-alerts and browser tests |
-| DMV website theme | dmv-theme.css, dmv-theme.js, dmv-theme-start.js, dmv-theme-settings.js | DMV theme browser tests; settings/message authorization tests |
-| Toolbar / settings / About | extension/popup.html, popup.js, style.css | browser harness |
-| Prompt / alert / credential UI | extension/panel.html, panel.js | browser and queue tests |
+| Commands, URLs, report identifiers | `core.js` | Shared command IDs, input limits, report recognition, and history replay; core/shortcut tests. |
+| Worker orchestration | `background.js` | One active command, pending UI, queue commits, history, report snapshots, and message authorization; queue/history tests. |
+| Portal workflow | `automation.js`, `page.js` | Login, focus, form events, one-time initial recovery, and classified errors; login/browser tests. |
+| Results discovery | `results.js`, `pdf-routing.js` | Attribute changed tabs to Download and route only top-level attachments; results/routing tests. |
+| Cancellation | `run.js` | Guard API calls and continuations against replaced commands; run/queue tests. |
+| PDF extraction and display | `reader.js`, `pdf-dark-view.js`, `pdf-print.js` | Job-bound text extraction, continuous rendering, image preservation, selection, and immutable native printing; browser tests. |
+| Status evaluation | `status-alerts.js` | Pure South Carolina calendar/date rules and display-only alert data; status/report-layout tests. |
+| Barcode mapping and rendering | `barcode-data.js`, `barcode.js` | ASCII field mapping, framing, selected-party isolation, local PDF417 drawing; mapping/decoder tests. |
+| Vault and search protection | `vault.js`, `blacklist.js` | Serialized encrypted persistence, canonical identifiers, and mandatory blocking errors; vault/blacklist/queue tests. |
+| Alert preferences | `alert-settings.js` | Whitelisted persistent preferences and session mirrors; preference/queue tests. |
+| Audio | `voice-recordings.js`, `audio-alerts.js`, `audio-player.js` | Shared asset catalog, exclusive source selection, cancellation, and offscreen playback; audio/browser tests. |
+| DMV theme | `dmv-theme-start.js`, `dmv-theme.js`, `dmv-theme-settings.js`, `dmv-theme.css` | Early-paint styling and narrowly authorized appearance updates; theme-browser/queue tests. |
+| Extension UI | `popup.js`, `panel.js`, `shortcut-setup.js` and their HTML/CSS | Settings, prompt/status rendering, actual shortcut assignments, and user confirmations; browser tests. |
 
-## Execution contexts and boundaries
+## Execution contexts and trust boundaries
 
-- **background.js:** Manifest V3 service worker. Owns command orchestration, browser APIs, pending panels/readers, storage. The toolbar and browser shortcuts converge on dispatch().
-- **automation.js:** Portal transactions. Receives a context containing a SearchRun and worker callbacks. The table of transactions shares the same Page1 -> submit -> Page2 -> Download workflow.
-- **page.js:** A single serialized function injected into the website MAIN world. It cannot close over extension imports or variables. Its DOM setters and bubbling events notify website frameworks. Credential and PDF origin checks deliberately live inside this function as well as in the caller.
-- **popup/panel/barcode/shortcut-setup pages:** Extension-owned UI. Render report text with textContent, not HTML. Panels use unpredictable IDs to associate replies with worker jobs. Permission prompts request destination access from a user gesture.
-- **DMV website theme:** dmv-theme-start.js and its scoped stylesheet are registered at document_start only while enabled. The manifest controller is always available on DMV HTML documents for live preference changes. The dmv-theme-init message permits matching DMV content-script senders to receive only {enabled}, injects USER-origin CSS into their exact document, and keeps the normal private-message router closed to website contexts. Dark Reader is asked to yield through its own lock; generic competing styles are overridden by important user-origin layered rules. Never read form values or fetch stylesheets to theme the site.
-- **reader.js:** Bundled PDF.js in either a temporary inactive extraction tab or the same results tab redirected by pdf-routing.js when dark mode is enabled. The redirected document joins a capture bound to its tab ID and document ID; it replaces its URL with a job ID so reload cannot refetch a historical report. Nearby pages render on a continuous scrolling surface; image regions retain original pixels. This reads PDF bytes rather than attempting to inspect Chromium's internal PDF viewer. Text-only extraction cannot recover image-only scans.
-- **audio-player.js:** An offscreen document, because service workers have no Audio DOM. Only catalogued packaged recordings are accepted.
+The Manifest V3 worker owns browser APIs and private state. Popup, prompt, barcode, and setup pages are trusted extension contexts. Render report and error strings with `textContent`; no report text should be interpolated into HTML. Interactive panels use unpredictable job IDs, and the worker normalizes replies before acting.
 
-## A search from start to finish
+`pageOperation` is serialized into the website's MAIN world. Its helpers and origin literals must stay inside that function; imported extension bindings are unavailable after serialization. Native input setters and bubbling events synchronize portal frameworks. Credential injection is restricted to the DMV login URL, and PDF requests are restricted to same-origin attachment URLs. These checks deliberately repeat checks made by the worker because serialization crosses a context boundary.
 
-1. dispatch() starts a SearchRun. beginRun() cancels the old search, pending extraction, audio, and panels; cleanup finishes before new UI opens.
-2. Basic searches ask for a number. PDF commands select the focused report, or the newest tracked report, and use its captured text.
-3. automation.js reuses a non-PDF portal tab. It focuses the login window, uses extension credentials, allows form synchronization, and submits. A completed same-origin redirect away from logon.aspx, excluding ErrorPage.aspx, verifies login; the disclaimer needs no acknowledgment.
-4. The search form is filled using native setters and bubbling events. Visible portal validation messages stop the workflow.
-5. The results watcher is installed before Download is clicked. It accepts a new or navigated/reused PDF tab without waiting for the built-in viewer to report complete.
-6. Result discovery commits queue position and history before focusing the result. PDF text capture runs separately so the next command remains responsive.
-7. Enabled alerts analyze the captured snapshot. Settings are rechecked after extraction to suppress late alerts following Stop, a new query, or disabling alerts.
+The theme-init message is the only website-content-script path into the worker. It returns `{enabled}` and inserts USER-origin CSS into the exact authorized sender document. All other message requests require an extension-owned sender URL and extension ID. Theme code must never read credentials, form values, or hidden portal state. External theme-coexistence metadata and the test reference-engine API use fixed protocol identifiers; their literal names are compatibility requirements, not explanatory documentation.
 
-SearchRun.step() races work against cancellation and checks again after it resolves. guardedApi() applies this to browser APIs. Cancellation cannot undo a request already submitted to the website; it prevents further actions, stale focus, and stale messages. Keep these checks around any new awaits, especially window creation and result callbacks. Event listeners and temporary readers must be released in finally blocks.
+The reader's job ID is bound to its tab and, for same-tab viewers, committed document ID. Offscreen audio accepts extension messages and only catalogued packaged assets. SCUTTIES enters through the transaction-page link and automates only the declared DMV HTTPS origin. No optional host permissions or permission-request UI are present. A different origin is rejected before DOM inspection or input filling.
 
-The worker's panels/readers/captures Maps are live jobs, not durable job storage. Session data survives a worker restart, but pending callbacks do not. There is no automatic resumption of a partially submitted transaction.
+## Search lifecycle and failure handling
 
-## Storage and messages
+1. `dispatch` creates a `SearchRun`. `beginRun` cancels the previous command, capture work, panels, and announcements. New UI waits for cleanup.
+2. Basic commands ask for a number. PDF commands capture their source context and use its snapshot. A saved vault must be unlocked before protected identifiers can be checked.
+3. Automation focuses a non-PDF DMV tab and establishes a session using extension credentials. A completed same-origin non-error redirect away from login verifies sign-in; no disclaimer acknowledgment is needed.
+4. The first requested form may recover once through login before any identifier is submitted. A stale transaction menu uses logoff first. Repeated recovery is refused.
+5. Native setters and framework events fill the selected form. Blacklist authorization runs before navigation and again immediately before submission.
+6. Visible validation or public server errors stop the request. Dedicated error pages invalidate `lastQuery`. Search-phase errors become `PortalSearchError`; login, cancellation, and transport failures remain distinct.
+7. Install and arm the results watcher before clicking Download. It recognizes new or navigated named results, including related error tabs, and releases listeners in `finally`.
+8. Commit a successful or DMV-rejected queue attempt once. Record success/error history before presenting the result or error; do not automatically resubmit a transaction already sent to the portal.
+9. Capture PDF text separately so Next remains responsive. Recheck alert preferences after extraction before publishing optional alerts/audio.
 
-| Location | Keys / lifetime |
+`SearchRun.step` races work against abort and checks again afterward. `guardedApi` preserves each API method's receiver and applies that boundary recursively. Stop cannot recall an HTTP request already submitted; it suppresses further actions, stale focus, and stale messages. Keep guards around new asynchronous boundaries, especially window creation, storage commits, and result callbacks.
+
+Worker Maps hold live callbacks, not resumable jobs. Browser session data can survive worker suspension, but a restarted worker cannot resume an old callback or a partly submitted transaction.
+
+## Queue and replay invariants
+
+A queue stores `{values, index, sourceTabId}`. Values are canonical unique customer identifiers in report order. Before any attempt, index is zero. Thereafter it is the one-based position of the last completed/blocked attempt and the zero-based next candidate. Previous targets `index - 2` and never wraps.
+
+Collect on a residence report starts at index one when at least two customers exist, retaining the first customer for Previous. Empty Next and other report types start at zero. A residence title takes precedence over repeated driver-number page headers. Generic driving records remain invalid collection sources.
+
+`runSearch` consumes a queued position once on result discovery, `PortalSearchError`, or a blacklist block. Technical/login failures and cancellation preserve it. Visible DMV errors enter history with `outcome: 'error'` and `errorMessage`; blocked attempts do not become completed-search history. Replay looks up an existing session entry and validates it again; it does not move the customer queue. SCUTTIES replay carries the originating report identifiers, and identifier-free legacy replay is refused while blacklist entries exist.
+
+## Storage and cryptography
+
+| Location | Contents and lifetime |
 | --- | --- |
-| local | vault (salt/IV/ciphertext), pdfDarkMode |
-| session | history (last 20 attempts), credentials and blacklist (unlocked values), unlockedVault (ciphertext identity), portalId, lastQuery, queue, status |
-| local alertPreferences, mirrored to session | alertsEnabled, speechEnabled, suspendedClipEnabled, repeatSpeech; voiceSource/voiceGender/voiceName |
-| session report bookkeeping | tabCreated, pdfCreated, pdfSources, pdf:TAB_ID with text and capture timestamp |
-| session panels | panel:UUID, removed on submission/close/cancellation |
+| Persistent local storage | `vault` ciphertext/salt/IV, `dmvDarkMode`, `pdfDarkMode`, and whitelisted `alertPreferences`. |
+| Trusted session storage | Unlocked credentials/blacklist, `vaultKey`, ciphertext identity `unlockedVault`, portal ID, login hint, queue, history, and status. |
+| Report metadata in session | `tabCreated`, `pdfCreated`, `pdfSources`, `pdfViewSources`, and `pdf:TAB_ID` snapshots with capture time and optional document identity. |
+| Panel data in session | `panel:UUID`, removed when a panel completes, closes, or is cancelled. |
 
-Local/session access is restricted to trusted extension contexts. The vault derives an AES-GCM key from a user passphrase using PBKDF2. The passphrase is never retained. The derived AES key is held only in trusted storage.session for this browser session; it is never written to local storage. Vault version 2 encrypts credentials plus blacklist entries. Legacy credential-only vaults unlock with an empty blacklist and migrate on save. Vault writes serialize and decrypt the latest payload before merging edits. A saved vault must be unlocked before searches; the legacy forget-credentials action refuses deletion while locked or while blacklist entries remain. Confirmed reset deletes the vault, blacklist, and all private session state, then restores the non-sensitive alert preference mirrors.
+Local/session access is restricted to trusted extension contexts. The passphrase derives an AES-GCM key through PBKDF2-SHA-256 with 310,000 iterations and a random 16-byte salt. Each encryption uses a fresh 12-byte IV. Version-2 plaintext contains credentials and blacklist; version-1 credential-only payloads migrate when saved. The passphrase is never retained. Derived key material is exported only to trusted session storage so repeated blacklist edits do not ask for the passphrase again.
 
-The worker validates extension sender identity/URL. UI requests receive {ok: true, value} or {ok: false, error}; returning true from the listener keeps its asynchronous response channel open. Reader replies additionally bind their job ID to the temporary reader tab. The offscreen player has its own target and playback reply contract.
+Vault edits serialize, decrypt the latest matching ciphertext, merge the requested change, and re-encrypt. `unlockedVault` identifies salt/IV/ciphertext, preventing an old key cache from silently authorizing a changed vault. Alternate credentials replace the saved login while preserving blacklist/passphrase. Blacklist edits preserve the chosen active credentials.
 
-The queue contains {values, index, sourceTabId}. Values are canonical unique customer numbers in report order. index is zero before any completed attempt and otherwise the one-based position of the last result or DMV-rejected attempt; it is also the zero-based next candidate. Previous targets index - 2. Successful result discovery or a PortalSearchError commits the attempted cursor position; login, cancellation, and technical failures do not. Clearing or stopping does not erase history unless explicitly requested.
+Confirmed reset cancels work, drains tracking writes, serializes vault removal, clears all private session data, and restores only non-sensitive alert preference mirrors. New commands wait for reset to finish. The legacy forget-login action refuses to erase a locked/nonempty blacklist. Reset intentionally permits complete deletion after its explicit warning.
 
-## Report parsing invariants
+Alert preference writes have their own serialized lane. First migration preserves active legacy selections where no saved value exists. Saved choices win thereafter. Startup restores mirrors without replaying reports, history, or announcements. Do not allow arbitrary session properties into persistent preferences.
 
-The attachment URL is fixed while its contents change with the server session. Do not fetch an old tab's URL and assume its bytes still identify that tab's subject. Use captured text; when it is unavailable and a newer report exists, ask for the search to be rerun. Reused result tabs invalidate the older snapshot. Native printing is handled by pdf-print.js: doc.getData() supplies the original bytes to an in-memory Blob, and the pdf-native-print worker message accepts only a trusted reader frame and an extension-owned Blob URL, then opens it in a native PDF tab. The viewer supplies the text from that same document; printing must not depend on live capture callbacks, frame lookups, or the tab text cache. pdfViewSources values are true for dark readers or the exact Blob URL for native printing tabs; printing tabs receive their own text snapshot, without inheriting the reader documentId. Never reopen the shared DMV attachment URL to print an older report. Chromium MessageSender.url retains the document's original URL after history.replaceState; do not reintroduce equality checks against mutable tab URLs for local printing. For same-tab dark readers, cache entries include documentId; webNavigation.onCommitted checks the current top-level frame before cancelling a replaced reader or clearing its text. tabs.onUpdated loading notifications do not prove a new document: history.replaceState and late loading events must not cancel a reader for the current document.
+## PDF ownership, rendering, and printing
 
-Owner extraction preserves line boundaries to avoid merging adjacent numeric columns. Other parsers flatten whitespace for label matching. These approaches serve different layouts and should not be merged indiscriminately. Fixture changes must use invented/deidentified data, never checked-in personal records.
+The attachment URL is session-dependent; the same address can return another person's report later. Never fetch an old tab URL and assume it still represents that subject. Use the captured text or request a new search. Named-window reuse invalidates old snapshots. Creation timestamps and explicit Download attribution distinguish historical tabs from current results.
 
-Status rules use America/New_York calendar dates. An expiration today is valid; a dated suspension ending today is inactive under the configured rules. Suspended status takes precedence over credential type. Only Current credential data decides current license/ID validity; Prior rows never override it. Suspension reasons omit Ticket#: and following identifiers. Unreadable data yields a warning rather than a false valid status.
+Same-tab viewers bind captures to committed document IDs. A loading event alone can follow `history.replaceState` without replacing the document. Check the current top-level frame before cancelling a reader or clearing text in response to a delayed commit event.
 
-Barcode generation uses ASCII so directory offsets equal byte counts. Driver v09 and the observed SC registration v01 have different headers and fields. Preserve SC's RAG plate expiration and RBT decal expiration mapping, separate owner names (RBD/RBE), and state RBL. A blank driver license stays blank instead of using the customer number. ID class becomes I. T45V reports may append a space and a year that is not part of the plate. Ambiguous address splits fail; inferred splits are displayed for verification. Vendor encoder code and libraries remain unmodified.
+The viewer renders near-viewport canvases serially and evicts distant canvases while retaining lightweight selectable text layers. Color changes invalidate render generations. Neutral pixels are recolored only outside image footprints; unsupported image operations keep original colors. Cancellation releases observers, render/text tasks, and the PDF document.
 
-## Audio and shortcuts
+Printing owns the already-loaded document and text. `doc.getData()` creates an immutable extension-owned PDF Blob; the worker validates the trusted reader and Blob URL and opens/reuses a native PDF tab. Do not depend on background capture completion, mutable reader URLs, or current frame lookup to print. `pdfViewSources` is `true` for a same-tab viewer and an exact Blob URL for native-print tabs. Native-print snapshots inherit the loaded text, not the reader document ID.
 
-The special suspended clip overrides both normal sources and plays three times. Otherwise bundled recordings and Microsoft/local TTS are mutually exclusive. Missing or failed recordings fall back to a local voice of the selected gender. Normal playback is once, or twice with a one-second gap when enabled. A generation token cancels pending repeats; offscreen lifecycle operations are serialized without waiting for audio to finish.
+## Parsing contracts
 
-Browser assignments come from commands.getAll(); preferred Alt combinations are documentation recommendations, not manifest suggested_key assignments. Keep the manifest unbound as requested: users manually assign keys and set Global in the install guide. Chrome does not expose shortcut scope through getAll(). Browser shortcut validity and scope are managed by Chromium.
+Customer normalization also accepts a case-insensitive leading C0 prefix. DL/customer normalization removes spaces and leading zeroes before applying the nine/eight-digit limits. Manual input, history replay, report follow-ups, and blacklist entries use that canonical form. Decrypted vault entries are validated again, so legacy padded identifiers are normalized and duplicate variants collapse without changing encryption formats. Plate leading zeroes remain significant.
 
-## Tests and packaging
+Owner-number extraction preserves line breaks to avoid merging adjacent numeric columns. Label-based status/barcode parsing flattens whitespace. These serve different layouts and are intentionally separate. Fixture data must be synthetic; no private records or viewstate belong in source.
 
-Run from this directory:
+Dates are strict South Carolina calendar days. Month/year shifts clamp month ends. Temporary classes T45V/E45V/E60V use Plate Exp Date; a blank decal date inherits it only for temporary barcode mapping. Current credential fields take precedence over Prior entries. Unreadable required status data yields an explicit unavailable result.
 
-~~~powershell
-node --test tests\*.test.js
-node tools\check.mjs
-node tests\browser.mjs
-node tests\barcode-browser.mjs
-~~~
+Barcodes use ASCII so directory offsets equal byte counts. Driver v09 and SC registration v01 have different framing and field vocabularies. Keep SC's RAG plate-expiration/RBT decal-expiration mapping. A missing DL number stays blank; metadata absent from the report is not guessed. Registration initially binds name/address to the first numbered party. Mailing Address and Relationship labels are boundaries, not parts of identity fields. Incomplete data requires explicit user choice before selecting another party or emitting blank fields. Name punctuation remains a limited business/person heuristic, not reliable entity classification. Preserve field limits without silent truncation.
 
-Unit tests cover pure parsers, mocked worker workflows, cancellation races, audio policy, and crypto round trips. Browser tests use local fixtures with Chrome rather than live DMV queries; they exercise real DOM events, PDF.js, and packaged media. Barcode browser tests decode generated images and compare exact payloads. tests/runtime.mjs resolves installed dependencies first, then this development environment's bundled runtime. Other development machines must provide those dependencies locally (Playwright; Python zxing-cpp for barcode decoding).
+## Theme and audio boundaries
 
-Browser tests may require sandbox permission for localhost. No Windows helper is required.
+The DMV predicate is shared with portal URL recognition. Screen-only CSS preserves form/control visibility, image colors, and print appearance. Layered important user rules take priority over ordinary page styles; the coexistence marker asks compatible competing engines to yield. The startup marker and later controller remain separate because the first must run before paint and the second manages updates/observers.
 
-Update package.json and extension/manifest.json together for every release. tools/check.mjs validates version agreement, commands, syntax, and required assets. tools/package.ps1 creates the delivery ZIP. Only top-level test sources are included; tests/tmp, output, private attachments, and nested old distributions are not source. Never ship report samples or generated personal-data extracts. DEVELOPMENT.md belongs in the package alongside README.md.
+The recording catalog is shared by selection, offscreen validation, and asset checks. Audio policy chooses one source, and a generation token cancels stale speech/repeats. Offscreen document lifecycle is serialized separately from playback. Status text is derived once per announcement and excludes identifying details. Recheck cancellation after asynchronous voice/file operations.
 
-## Redundancy decisions in 1.4.3
+## Review and redundancy decisions
 
-Queue initialization is now shared by Collect and an empty Next. Audio selection, playback validation, and asset verification share voice-recordings.js. Small UI response wrappers and page-world checks remain local because they execute in different contexts or keep contracts explicit; merging them would add coupling without simplifying the workflows. Third-party code and generated assets are intentionally excluded from commenting/refactoring.
+The 1.8.6 review covers all first-party extension modules, UI/style files, tests, and maintenance scripts. Function comments now explain responsibilities, decisions, and ownership rather than development history.
 
-## Browser-only cleanup in 1.4.4
+- Reuse the shared DMV-tab predicate instead of maintaining an equivalent theme-specific implementation.
+- Resolve a requested DOM control once per state read, reuse parsed owner-name boundaries, and build the spoken phrase once per announcement.
+- Share credential validation across saved-login write paths and local-PDF browser setup across optional extraction checks. Local report checks do not assume the record count of one historical file.
+- Consolidate historical documentation into current contracts and remove provenance-specific descriptions.
+- Preserve independent vault, preference, tab-metadata, panel, and audio mutation lanes; combining them would couple unrelated lifetimes and error recovery.
+- Preserve pre-submit authorization, post-extraction preference checks, and page-world origin checks. They close distinct races or cross trust boundaries rather than duplicating work unnecessarily.
+- Keep small UI response wrappers local to separate extension documents. A shared abstraction would add coupling without reducing workflow complexity.
+- Keep third-party source, generated assets, and legal notices outside first-party refactoring. Compatibility/API identifiers remain literal where required by another component.
 
-The Windows host, native protocol tests, retry alarms, nativeMessaging/alarms permissions, and focus-restoration messages have been removed. onInstalled clears legacy local bindings and session nativeStatus/nativeErrors without altering browser assignments or search history. Browser Global shortcuts are the only shortcut registration mechanism. Extension updates do not delete an old host installation from the operating system, but the worker never connects to it. Packaging reads current source directly so retired files from an old staging directory cannot reenter the ZIP.
+## Validation and packaging
 
-## Scoped retention changes in 1.4.5
+Run `npm run check` and `npm test` from the repository root. Browser checks require Playwright; the pinned reference-theme engine is a test-only dependency installed with `npm ci --ignore-scripts`. Tests first resolve local modules and then a managed development runtime when present.
 
-History reads, writes, replay lookup, and clearing all use storage.session. Worker boot removes legacy storage.local history without migrating it, while leaving existing session history intact across service-worker suspension/restart. The browser clears session storage on extension reload/update/disable and browser restart. Barcode views start a single 90-second timer after rendering and cancel it on close; scale changes do not extend the deadline. No other reviewed security recommendations were implemented.
+```sh
+CHROME_PATH=/usr/bin/chromium node tests/browser.mjs
+CHROME_PATH=/usr/bin/chromium npm run test:dmv-theme
+CHROME_PATH=/usr/bin/chromium PYTHON=python3 node tests/barcode-browser.mjs
+```
 
+The barcode suite requires Python `zxing-cpp` and Pillow, independently decodes every generated image, and compares payload bytes. The main browser harness covers real DOM events, packaged audio, PDF.js extraction/rendering, selection, native printing, portal recovery, and UI behavior against local fixtures. The theme harness compares computed colors with a reference engine and tests competing styles, scope, toggles, and print behavior. Generated screenshots and decoder outputs are ignored artifacts.
 
-## Residence collection (1.5.1)
+The optional installed-extension blacklist smoke test requires a browser policy that permits unpacked extensions. Use it only on an authorized development browser; do not bypass a managed policy that prohibits installation.
 
-collectQueue is shared by Collect and empty Next. Only Collect opts into starting at index 1 for a report headed Customers at Same Residence with at least two unique customers. All values remain stored; index 1 treats the source customer as the initial position until the second lookup commits index 2. A visible DMV error on the second lookup commits index 2 so Next proceeds to the third. Technical failures leave index 1 for retry. Ordinary report collection and empty Next retain index 0 initialization.
-
-
-## Queued portal errors (1.5.3)
-
-PortalSearchError identifies visible DMV validation errors only on the requested Page1/Page2 search URLs. Login/SCUTTIES errors and technical exceptions remain ordinary errors. runSearch consumes the queued attempt once on either result discovery or PortalSearchError, rethrows the error for the existing alert, and records either the result or an outcome: error history entry with errorMessage. Error entries retain the original query for replay; replay does not mutate the customer queue. The advance callback remains run-guarded so Stop or replacement cannot commit stale queue state.
-
-
-## Blacklist boundary (1.6.0)
-
-blacklist.js canonicalizes the three identifier categories and extracts driver identifiers. vault.js persists a version-2 {credentials, blacklist} payload using the existing AES-GCM/PBKDF2 parameters. Unlock/save exports the derived key only to trusted session storage. Settings edits import that key, decrypt the latest vault, and re-encrypt with the same salt and a new random IV on every write; they never need the passphrase again within that browser session. Session unlockedVault is a stable identity of the current salt, IV and ciphertext, so credential-only caches cannot bypass a locked or changed vault. Storage property order is irrelevant.
-
-runSearch authorizes each identifier before portal navigation and supplies beforeSubmit for a second check immediately before the form is submitted. Same-address uses the DL category. SCUTTIES checks report identifiers and stores them in replayable history; legacy identifier-free replay is refused when entries exist. BlacklistedSearchError is handled as a mandatory record-alert with blacklist: true, bypassing optional alert-consent gates and alert-disable cleanup. Its queue attempt advances without a portal request or history result. New searches and Stop still cancel the warning. UI removal requires confirmation; the worker separately requires confirmed: true and a matching unlocked vault/session key.
-
-Settings can create the encrypted vault through an encryptedRequired/setupOnly credential panel without navigating to DMV. Search panels allow different credentials while still requiring an initial blacklist unlock if needed. Alternate credentials overwrite the old persisted login using the session key; blacklist edits preserve the selected session credentials. Never discard existing blacklist entries when replacing saved credentials.
-
-
-Validation commands: `npm test` includes blacklist normalization, encrypted-vault migration/updates, and worker enforcement tests. `CHROME_PATH=/usr/bin/chromium node tests/browser.mjs` exercises settings, confirmation dialogs, formatted-number validation, and warning rendering with local fixtures. `CHROME_PATH=/usr/bin/chromium node tests/blacklist-browser.mjs` is an optional installed-extension smoke test using a temporary profile and blocked HTTP traffic; it requires a browser policy that permits unpacked extensions. The managed cloud Chromium policy blocks all user-installed extensions, so that installed-extension test could not complete here. Do not bypass the policy. The test is intended to verify real storage persistence across browser restarts on an allowed development machine.
-
-
-The login popup reset uses clear-saved-user-info with confirmed: true. It cancels pending work, drains tracking writes, serializes vault deletion, clears storage.session (including the encryption key/history/reports), and closes panels. New commands wait for reset to complete before creating a new run. Reset intentionally allows deleting a locked vault and its blacklist without the old passphrase; the confirmation warns that those numbers will no longer be blocked.
-
-Alert preferences are whitelisted and serialized by `alert-settings.js`. Initial migration uses active session selections when no saved value exists; saved choices win on subsequent starts. Defaults apply only to unset preferences. Local storage contains popup/speech/clip/repeat flags and voice source/gender/name, never credentials, report data, or query history. The worker restores session mirrors at startup without replaying alerts.
-
-Residence classification uses the opening report title before rejecting repeated Driver License No headers. Barcode party boundaries include Mailing Address as a label so a mailing address cannot become part of the selected owner's street/city/ZIP. The synthetic footer fixture covers actual DMV footer class roles, panel borders, emblem-only filtering, and unchanged print/photo colors.
-
-The transaction theme fixture (`tests/fixtures/dmv-transactions.html`) covers DataTables `display` markup, display-only receipt spans, DMV `iFormsButton` roles, and `navigationFooter`. Browser checks compare computed colors with Dark Reader on the same synthetic light fixture, exercise hover/focus/filter/sort/redraw states, and verify that competing author CSS cannot restore white rows. Keep these changes in screen-only CSS: do not inspect customer values or override the portal's control visibility to style a page. Supplied DOM exports omit CSSOM-generated stylesheet contents, so screenshots and role-based synthetic comparisons provide the style reference; live portal rendering remains the final visual check.
-
-`pageOperation('state')` reports a visible `#ContentPlaceHolder1_errorMessagePublicText` in addition to the normal validation summary and returns a DMV-scoped `portalError` flag. `checkPageErrors` recognizes this flag or the known error-page URL, clears `lastQuery` for server failures, and classifies errors during submitted search/result waits as `PortalSearchError`. Login/initial-recovery errors remain ordinary errors. Do not retry a submitted transaction automatically. `watchResults.find()` can return `errorPage: true` for a new/navigated error tab belonging to the portal; the workflow waits for completion, focuses it, reads its public message, and disposes the watcher on failure. Untouched historical PDFs/error tabs and unrelated windows are excluded. Synthetic browser coverage mirrors the supplied error DOM without viewstate or identifying data.
+`tools/check.mjs` verifies synchronized package/manifest/lockfile versions, commands, asset presence, and first-party JS syntax. `tools/package.ps1` creates a source ZIP from an explicit allowlist, including synthetic fixtures and the dependency lockfile; private extracts, test outputs, attachments, and old distributions are excluded. `tools/build-assets.ps1 -PdfJsRoot PATH` copies a local PDF.js distribution and generates icons on a supported PowerShell/System.Drawing host. Bump the manifest, package, lockfile, and README release version together. Normal installation requires neither script. Test platform-specific maintenance scripts on their supported host before publishing their generated artifacts.

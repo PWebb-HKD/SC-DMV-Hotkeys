@@ -18,6 +18,7 @@ export function spokenStatus(alert) {
     return PHRASES[title] || title.toLowerCase();
   }).filter(Boolean))].join('. ');
 }
+/** Identify suspension headings to select the dedicated suspended-status clip. */
 export function isSuspended(alert) {
   return alert.sections?.some(section => ['TAG SUSPENDED', 'LICENSE SUSPENDED'].includes(section.title)) === true;
 }
@@ -38,7 +39,9 @@ export function availableVoices(api = chrome) {
   }));
 }
 
+/** Manage one cancellable announcement across packaged files, offscreen audio, and local speech. */
 export class AudioAlerts {
+  /** Accept a browser API adapter so playback policy can be tested independently of Chrome. */
   constructor(api = chrome) { this.api = api; this.generation = 0; this.offscreenTask = Promise.resolve(); }
   /** Invalidate pending speech/repeats immediately; close offscreen audio in lifecycle order. */
   stop() {
@@ -72,7 +75,8 @@ export class AudioAlerts {
       if (!current()) return;
       const useClip = settings.suspendedClipEnabled && isSuspended(alert);
       if (useClip) { await this.playFiles(['audio/suspended.mp3'], 3, current, true); return; }
-      if (settings.speechEnabled && !useClip && spokenStatus(alert)) {
+      const phrase = settings.speechEnabled ? spokenStatus(alert) : '';
+      if (phrase) {
         const recordedMode = settings.voiceSource !== 'microsoft';
         const files = recordedMode && statusRecordings(alert, settings.voiceGender);
         if (files) {
@@ -95,7 +99,7 @@ export class AudioAlerts {
           if (!current()) return;
           await new Promise((resolve, reject) => {
             this.finish = resolve;
-            this.api.tts.speak(spokenStatus(alert), {voiceName: voice.voiceName, lang: voice.lang || 'en-US', enqueue: false,
+            this.api.tts.speak(phrase, {voiceName: voice.voiceName, lang: voice.lang || 'en-US', enqueue: false,
               onEvent: event => {
                 if (event.type === 'error') reject(new Error(event.errorMessage || 'Speech playback failed.'));
                 else if (['end', 'interrupted', 'cancelled'].includes(event.type)) resolve();

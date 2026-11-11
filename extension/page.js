@@ -5,16 +5,21 @@
  */
 // Runs in the page's MAIN world so native setters and framework listeners see changes.
 export function pageOperation(op, args = {}) {
+  // These helpers must remain inside the serialized function to run in the website context.
   const visible = el => el && (el.getClientRects().length > 0) && getComputedStyle(el).visibility !== 'hidden';
   const find = selector => { const el = document.querySelector(selector); if (!el) throw new Error(`Page control not found: ${selector}`); return el; };
-  if (op === 'state') return {
-    url: location.href,
-    errors: [...new Set([...document.querySelectorAll(args.errorSelector || '.iFormsValidationSummary li span, #ContentPlaceHolder1_errorMessagePublicText')].filter(visible).map(x => x.textContent.trim()).filter(Boolean))],
-    portalError: location.origin === 'https://www.scdmvonline.com' && !!visible(document.querySelector('#ContentPlaceHolder1_errorMessagePublicText')),
-    present: args.selector ? !!document.querySelector(args.selector) : false,
-    enabled: args.selector ? !!document.querySelector(args.selector) && !document.querySelector(args.selector).disabled : false,
-    presentSelectors: args.selectors ? args.selectors.map(selector => !!document.querySelector(selector)) : []
-  };
+  // Return only control availability and visible errors; never scrape login field values.
+  if (op === 'state') {
+    const control = args.selector ? document.querySelector(args.selector) : null;
+    return {
+      url: location.href,
+      errors: [...new Set([...document.querySelectorAll(args.errorSelector || '.iFormsValidationSummary li span, #ContentPlaceHolder1_errorMessagePublicText')].filter(visible).map(x => x.textContent.trim()).filter(Boolean))],
+      portalError: location.origin === 'https://www.scdmvonline.com' && !!visible(document.querySelector('#ContentPlaceHolder1_errorMessagePublicText')),
+      present: !!control,
+      enabled: !!control && !control.disabled,
+      presentSelectors: args.selectors ? args.selectors.map(selector => !!document.querySelector(selector)) : []
+    };
+  }
   if (op === 'notifyInputs') {
     // Notify delegated form/framework listeners after related controls have
     // been populated. Preserve each control's existing value.
@@ -27,6 +32,7 @@ export function pageOperation(op, args = {}) {
     }
     return true;
   }
+  // Reassert extension-owned credentials before submit so browser autofill cannot switch accounts.
   if (op === 'extensionLogin') {
     if (location.origin === 'https://www.scdmvonline.com' && !/^\/SCTRNS\/Member\/logon\.aspx$/i.test(location.pathname)) return true;
     if (location.origin !== 'https://www.scdmvonline.com' || !/^\/SCTRNS\/Member\/logon\.aspx$/i.test(location.pathname)) {
@@ -55,6 +61,7 @@ export function pageOperation(op, args = {}) {
     }
     return true;
   }
+  // Native setters and bubbling events keep the portal framework synchronized with the filled value.
   if (op === 'fill') {
     const el = find(args.selector);
     if (el.disabled || el.readOnly) throw new Error('The website has disabled this input.');
@@ -68,6 +75,7 @@ export function pageOperation(op, args = {}) {
     return true;
   }
   if (op === 'click') { const el = find(args.selector); if (!visible(el) || el.disabled) throw new Error('The website control is not ready.'); el.click(); return true; }
+  // Fetch only same-origin attachment bytes and reject HTML/login responses before decoding.
   if (op === 'fetchPdf') return (async () => {
     if (location.origin !== 'https://www.scdmvonline.com') throw new Error('PDF fetch must use the DMV session.');
     const u = new URL(args.url);

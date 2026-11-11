@@ -12,6 +12,7 @@ function playerSource() {
 }
 const alert = (...titles) => ({sections: titles.map(title => ({title, lines: ['Private details must not be spoken'], items: ['Reason × 10']}))});
 const voices = [{voiceName: 'Microsoft David Desktop', lang: 'en-US'}, {voiceName: 'Microsoft Zira Desktop', lang: 'en-US'}, {voiceName: 'Remote', lang: 'en-US', remote: true}];
+/** Supply deterministic local voices, speech completion, and offscreen lifecycle events. */
 function mockApi() {
   const calls = [], messages = []; let exists = false;
   return {calls, messages, runtime: {get lastError() {return null;}, sendMessage: async message => {messages.push(message); return {ok: true};}},
@@ -92,7 +93,7 @@ test('stopping during offscreen creation prevents stale playback and closes the 
   audio.stop(); release(); await task; await audio.offscreenTask;
   assert.equal(api.messages.length, 0); assert.equal(exists, false);
 });
-test('offscreen player plays the supplied clip exactly three times, never concurrently', async () => {
+test('offscreen player plays the packaged clip exactly three times, never concurrently', async () => {
   let listener, playing = false, plays = 0;
   class Audio {
     constructor(url) {assert.equal(url, 'extension/audio/suspended.mp3');}

@@ -9,11 +9,12 @@ export const PDF_URL = `${MEMBER}Transactions/ViewAttachment.aspx`;
 export const LOGIN = `${MEMBER}logon.aspx`;
 export const DISCLAIMER = `${MEMBER}Disclaimer.aspx`;
 export const ERROR_SELECTOR = '#form1 > div.container > div.iFormsValidationSummary.alert.alert-danger > ul > li > span, #ContentPlaceHolder1_errorMessagePublicText';
+// Shared command IDs and limits are the contract between the manifest, worker, and extension views.
 export const COMMANDS = {
   plate: {label: 'Plate Search', key: 'Alt+P', prompt: 'Enter a license plate number', max: 8},
   license: {label: 'DL Number', key: 'Alt+L', prompt: "Enter a driver's license number", max: 9},
   customer: {label: 'Customer Number', key: 'Alt+O', prompt: 'Enter a customer number', max: 8},
-  owners: {label: 'PDF Customer/Owner Numbers', key: 'Alt+J'},
+  owners: {label: 'Get All Customer/Owner Numbers', key: 'Alt+J'},
   next: {label: 'Next Customer Number', key: 'Alt+N'},
   previous: {label: 'Previous Customer Number', key: 'Alt+M'},
   address: {label: 'Customers at Same Address', key: 'Alt+I'},
@@ -38,34 +39,41 @@ export function attachmentUrl(url = '', depth = 0) {
   } catch { /* Not a supported viewer URL. */ }
   return null;
 }
+/** Recognize attachment URLs directly or through supported browser-viewer wrappers. */
 export function isPdf(url = '') { return !!attachmentUrl(url); }
+/** Limit working tabs to the DMV HTTPS origin while excluding PDF attachment views. */
 export function isPortal(url = '') {
   try { return new URL(url).origin === ROOT && !isPdf(url); } catch { return false; }
 }
+/** Compare origin and case-insensitive path, deliberately ignoring query strings and fragments. */
 export function samePage(a, b) {
   try { const x = new URL(a), y = new URL(b); return x.origin === y.origin && x.pathname.toLowerCase() === y.pathname.toLowerCase(); } catch { return false; }
 }
+/** Recognize the dedicated DMV failure endpoint, including query and path-case variations. */
 export function isPortalErrorPage(url = '') { return samePage(url, `${MEMBER}ErrorPage.aspx`); }
+/** Accept a same-origin redirect away from login only when it is not the dedicated error endpoint. */
 export function loginSucceeded(url = '') {
   try { return new URL(url).origin === ROOT && !samePage(url, LOGIN) && !isPortalErrorPage(url); } catch { return false; }
 }
-/** Remove spaces, enforce command length, and canonicalize customer leading zeros. */
+/** Remove spaces and numeric leading zeroes before enforcing DL/customer length limits. */
 export function normalize(kind, input) {
   let v = String(input ?? '').replace(/\s+/g, '');
   if (!v) return '';
-  if (kind === 'customer') {
-    if (!/^\d+$/.test(v)) throw new Error('Customer numbers may contain only numbers and spaces.');
+  // Customer numbers copied with the C0 prefix share the same canonical numeric identifier.
+  if (kind === 'customer' && /^C0/i.test(v)) { v = v.slice(2); if (!v) return ''; }
+  if (kind === 'customer' || kind === 'license') {
+    if (!/^\d+$/.test(v)) throw new Error(`${kind === 'license' ? 'DL' : 'Customer'} numbers may contain only numbers and spaces.`);
     v = v.replace(/^0+(?=\d)/, '');
   }
   const max = kind === 'license' ? 9 : 8;
   if (v.length > max) throw new Error(`The DMV does not allow ${kind === 'plate' ? 'plates' : kind === 'license' ? 'DL numbers' : 'customer numbers'} with more than ${max} characters. Please re-enter the number.`);
   return kind === 'plate' ? v.toUpperCase() : v;
 }
+/** Read the first license-number/name heading using the same zero-trimming rule as manual DL searches. */
 export function driverLicense(text) {
   const match = text.match(/Driver\s+License\s+No\s*:\s*([\d\s]+?)\s*Name\s*:/i);
   if (!match) return null;
-  const value = match[1].replace(/\s/g, '');
-  return /^\d{1,9}$/.test(value) ? value : null;
+  try { return normalize('license', match[1]) || null; } catch { return null; }
 }
 /** The title distinguishes a residence listing from repeated driver-number header fields. */
 export function isResidenceReport(text) {return /^\s*Customers\s+at\s+Same\s+Residence\b/i.test(text);}
@@ -74,7 +82,7 @@ export function ownerNumbers(text) {
   if (!isResidenceReport(text) && /Driver\s+License\s+No\s*:/i.test(text)) throw new Error('This PDF is a driver record. Open a vehicle or residence results PDF to collect customer/owner numbers.');
   const results = [];
   // PDF text extraction preserves line breaks; never consume a following numeric column/line.
-  const regex = /\b(?:Owner|Customer|Registrant\s*\/\s*Lessee)\s+Number\s*:\s*(\d(?:[ \t]*\d)*)(?!\d)/gi;
+  const regex = /\b(?:Owner|Customer|Registrant\s*\/\s*Lessee)\s+Number\s*:\s*((?:C[ \t]*(?=0))?\d(?:[ \t]*\d)*)(?![A-Za-z0-9])/gi;
   for (const match of text.matchAll(regex)) {
     try { const v = normalize('customer', match[1]); if (v && !results.includes(v)) results.push(v); } catch { /* Ignore malformed identifiers. */ }
   }

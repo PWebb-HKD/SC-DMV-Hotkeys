@@ -28,6 +28,7 @@ try {
   let loginEvents = [], loginReapplied = [], loginWasFocused = false, loginSubmitted;
   const tabs = new Map(), local = {}, session = {}, permissions = new Set([`${ROOT}/*`]);
   let latestPdf = null, serverFailureStage='';
+  // Render transaction-specific local pages; their event handlers report actions to the browser mock.
   const render = async (page, url) => {
     const u = new URL(url); let html = '';
     if(u.pathname.endsWith('/ErrorPage.aspx'))return errorFixture;
@@ -77,6 +78,7 @@ try {
     const page = route.request().frame().page();
     await route.fulfill({contentType: 'text/html', body: await render(page, route.request().url())});
   });
+  /** Create a local fixture page and attach browser events to its simulated extension tab identity. */
   async function createTab(url, active = false, openerTabId) {
     const id = nextId++, page = await context.newPage();
     const tab = {id, url, active, openerTabId, windowId: 1, status: 'loading', lastAccessed: clock++};
@@ -115,13 +117,14 @@ try {
         }
       }
       else if (action === 'scutties') {
-        // A separate destination origin exercises just-in-time permission handling.
-        await updateTab(id, {url: 'https://scutties.fixture.test/search'});
+        // The transaction link establishes the DMV session before opening the SCUTTIES form.
+        await updateTab(id, {url: MEMBER+'Transactions/SCUTTIES/Search.aspx'});
       }
     });
     chrome.tabs.onCreated.emit({...tab});
     await page.goto(url); tab.status = 'complete'; return {...tab};
   }
+  /** Model redirects and tab notifications while preserving the focus state checked by automation. */
   async function updateTab(id, update) {
     const record = tabs.get(id); if (!record) throw new Error('No tab');
     if (update.url) {
@@ -136,7 +139,7 @@ try {
     if (update.active) { activated.push(id); for (const r of tabs.values()) r.tab.active = r.tab.id === id; }
     return {...record.tab};
   }
-  await context.route('https://scutties.fixture.test/**', route => route.fulfill({contentType:'text/html',body:`<div id="home"><div><div class="col-xs-12 row"><div></div><div></div><div><div class="panel-body"><div><div><input id="last"></div><div><input id="dob"></div><div class="col-xs-8"><button>Other</button><button id="scSearch" disabled>Search</button></div></div></div></div></div></div></div><script>
+  await context.route(`${MEMBER}Transactions/SCUTTIES/Search.aspx`, route => route.fulfill({contentType:'text/html',body:`<div id="home"><div><div class="col-xs-12 row"><div></div><div></div><div><div class="panel-body"><div><div><input id="last"></div><div><input id="dob"></div><div class="col-xs-8"><button>Other</button><button id="scSearch" disabled>Search</button></div></div></div></div></div></div></div><script>
     window.events=[];window.formModel={};window.delegatedEvents=[];
     const last=document.querySelector('#last'),dob=document.querySelector('#dob'),search=document.querySelector('#scSearch');
     for(const type of ['input','change','keyup','blur'])document.querySelector('#home').addEventListener(type,event=>{
@@ -167,8 +170,7 @@ try {
     permissions: {contains: async ({origins}) => origins.every(o => permissions.has(o))}
   };
   const ctx = {
-    status: () => {}, credentials: async () => {credentialPrompts++; return {user:'fictional-user',password:'fictional-password'};},
-    permission: async origin => permissions.add(origin)
+    status: () => {}, credentials: async () => {credentialPrompts++; return {user:'fictional-user',password:'fictional-password'};}
   };
   await tests('plate: extension-only login focuses the login tab and window before submitting', async () => {
     const result = await search('plate','ABC12345',ctx);
@@ -190,7 +192,7 @@ try {
     assert.equal(activated[focusBefore],session.portalId);
     assert.equal(submissions.at(-1).ContentPlaceHolder1_idNumberTextBox,'12345678');
   });
-  await tests('DL and same-address searches target their supplied fields', async () => {
+  await tests('DL and same-address searches target their transaction fields', async () => {
     await search('license','123456789',ctx);
     assert.equal(submissions.at(-1).ContentPlaceHolder1_dlNumberTextBox,'123456789');
     await search('address','987654321',ctx);
@@ -206,7 +208,7 @@ try {
     await assert.rejects(search('plate','ABC',ctx), /Invalid User ID Or Password/);
     assert.equal(loginClicks,2); loginInvalid = false;
   });
-  await tests('SCUTTIES follows destination, grants only its origin, emits framework input events', async () => {
+  await tests('SCUTTIES follows the DMV transaction link without extra permissions and emits framework input events', async () => {
     session.lastQuery = Date.now();
     // Reset portal to a valid authenticated page after the invalid-login case.
     await updateTab(session.portalId,{url:`${MEMBER}Transactions/TransactionList.aspx`});
@@ -221,7 +223,7 @@ try {
     for(const id of ['last','dob'])for(const type of ['input','change','keyup','blur']) {
       assert.ok(delegated.some(event=>event.id===id&&event.type===type&&event.bubbles&&event.complete),`${id} must notify the parent after both fields have values`);
     }
-    assert.ok(permissions.has('https://scutties.fixture.test/*'));
+    assert.deepEqual([...permissions],[`${ROOT}/*`]);
   });
   for (const mode of ['filled','delayed','concealed','early','last-moment']) {
     await tests(`extension-only login replaces ${mode} browser autofill with extension credentials`,async()=>{
@@ -440,7 +442,7 @@ try {
     });
     assert.ok(duration>0&&duration<90);await page.close();
   });
-  await tests('all 20 supplied male and female MP3 recordings decode locally in Chromium',async()=>{
+  await tests('all 20 packaged male and female MP3 recordings decode locally in Chromium',async()=>{
     const page=await ui.newPage();await page.goto(`${base}/popup.html`);
     const durations=await page.evaluate(async paths=>{
       const context=new OfflineAudioContext(1,44100,44100);
@@ -553,10 +555,13 @@ try {
     await page.locator('#blacklistKind').selectOption('license');
     await page.locator('#blacklistValue').fill('001 234 567');await page.locator('#blacklistAdd').click();
     await page.waitForFunction(()=>document.querySelectorAll('#blacklistEntries tr').length===1);
-    assert.equal(await page.evaluate(()=>window.requests.find(x=>x.type==='blacklist-add').value),'001234567');
+    assert.equal(await page.evaluate(()=>window.requests.find(x=>x.type==='blacklist-add').value),'1234567');
     await page.locator('#blacklistValue').fill('1234567890');await page.locator('#blacklistAdd').click();
     assert.match(await page.locator('#blacklistFeedback').textContent(),/more than 9/);
     assert.equal(await page.evaluate(()=>window.requests.filter(x=>x.type==='blacklist-add').length),1);
+    await page.locator('#blacklistKind').selectOption('customer');await page.locator('#blacklistValue').fill('C00012345678');await page.locator('#blacklistAdd').click();
+    await page.waitForFunction(()=>window.requests.filter(x=>x.type==='blacklist-add').length===2);
+    assert.equal(await page.evaluate(()=>window.requests.filter(x=>x.type==='blacklist-add').at(-1).value),'12345678');
     await page.close();
   });
   await tests('vault setup requires encryption and different credentials retain the blacklist-unlock requirement',async()=>{
@@ -648,6 +653,22 @@ try {
     const request=await page.evaluate(()=>window.requests.find(x=>x.type==='panel-submit'));
     assert.equal(request.value,'ABC123');
   });
+  await tests('DL and customer prompts strip leading zeroes before checking significant length',async()=>{
+    for(const [command,significant,limit,prefix] of [['license','123456789',9,'000 '],['customer','12345678',8,'000 '],['customer','12345678',8,'C000 ']]) {
+      const page=await ui.newPage();await page.addInitScript(command=>{
+        const original=chrome.runtime.sendMessage;
+        chrome.runtime.sendMessage=async message=>message.type==='panel-data'?{ok:true,value:{type:'input',command}}:original(message);
+      },command);
+      await page.goto(`${base}/panel.html?id=numeric-${command}`);
+      await page.locator('#value').fill(prefix+significant+'1');await page.keyboard.press('Enter');
+      assert.match(await page.locator('#error').textContent(),new RegExp('more than '+limit));
+      assert.equal(await page.evaluate(()=>window.requests.some(message=>message.type==='panel-submit')),false);
+      await page.locator('#value').fill(prefix+significant);await page.keyboard.press('Enter');
+      await page.waitForFunction(()=>window.requests.some(message=>message.type==='panel-submit'));
+      assert.equal(await page.evaluate(()=>window.requests.find(message=>message.type==='panel-submit').value),significant);
+      await page.close();
+    }
+  });
   await tests('empty Enter, Escape, and the 90-second deadline cancel without a query',async()=>{
     for (const action of ['empty','escape','timeout']) {
       const page=await ui.newPage();
@@ -699,6 +720,7 @@ try {
   });
   const fixedNow=new Date('2026-10-28T16:00:00Z');
   const currentHeader='Type Class Function Issued Expires Printed Date Restr.Endor.Document Identifier Current (ACN / DDN)';
+  /** Render a status panel from worker display data for text, layout, and lifetime assertions. */
   async function statusPage(payload){
     const page=await ui.newPage();await page.setViewportSize({width:580,height:700});await page.clock.install();
     await page.addInitScript(payload=>{
@@ -752,11 +774,21 @@ try {
     const payloads=[plateStatus('Plate Class: ABC Decal Exp Date: 10/28/2026',fixedNow),licenseStatus(`Status - DL: NO SUSPENSION Driver License No:123456789 Name: FICTIONAL, PERSON ${currentHeader} DL Renewal 01/01/2020 10/28/2026 01/01/2020`,fixedNow)];
     for(const payload of payloads){const page=await statusPage(payload);assert.equal(await page.locator('.record-status-title').evaluate(el=>getComputedStyle(el).color),'rgb(67, 220, 121)');await page.clock.fastForward(9000);assert.equal(await page.evaluate(()=>window.closedByAlert),false);await page.clock.fastForward(1000);assert.equal(await page.evaluate(()=>window.closedByAlert),true);await page.close();}
   });
-  await tests('DMV website dark mode starts enabled and changes independently of the PDF preference',async()=>{
+  await tests('combined Dark Mode group exposes two keyboard-accessible independent saved switches',async()=>{
     const page=await ui.newPage();await page.goto(base+'/popup.html');await page.locator('#settingsTab').click();
-    assert.equal(await page.locator('#dmvDarkMode').isChecked(),true);await page.locator('#dmvDarkMode').uncheck();
+    const group=page.locator('#appearanceSettings');assert.equal(await group.getByRole('heading',{name:'Dark Mode',exact:true}).count(),1);
+    assert.equal(await group.getByRole('switch').count(),2);assert.equal(await group.getByRole('checkbox').count(),0);
+    assert.equal(await page.locator('#dmvDarkMode').isChecked(),true);assert.equal(await page.locator('#pdfDarkMode').isChecked(),false);
+    await page.locator('#dmvDarkMode').focus();await page.keyboard.press('Space');
     assert.deepEqual(await page.evaluate(()=>window.requests.find(x=>x.type==='dmv-display-settings')),{type:'dmv-display-settings',enabled:false});
-    assert.equal(await page.locator('#pdfDarkMode').isChecked(),false);assert.equal(await page.evaluate(()=>window.requests.some(x=>x.type==='run')),false);await page.close();
+    assert.equal(await page.locator('#pdfDarkMode').isChecked(),false);
+    await page.locator('#pdfDarkMode').focus();await page.keyboard.press('Space');
+    assert.deepEqual(await page.evaluate(()=>window.requests.find(x=>x.type==='pdf-display-settings')),{type:'pdf-display-settings',enabled:true});
+    assert.equal(await page.locator('#dmvDarkMode').isChecked(),false);
+    await page.locator('#aboutTab').click();await page.locator('#settingsTab').click();
+    assert.equal(await page.locator('#dmvDarkMode').isChecked(),false);assert.equal(await page.locator('#pdfDarkMode').isChecked(),true);
+    assert.equal(await page.evaluate(()=>window.requests.some(x=>x.type==='run')),false);
+    await page.screenshot({path:join(screenshots,'settings-wording-v1.8.8.png'),fullPage:true});await page.close();
   });
   await tests('PDF dark-view setting is opt-in and changes only the PDF preference',async()=>{
     const page=await ui.newPage();await page.goto(`${base}/popup.html`);await page.locator('#history tr').first().waitFor();await page.locator('#settingsTab').click();
@@ -923,48 +955,35 @@ try {
       await page.close();
     }
   });
+  /** Read one optional local PDF through the actual browser worker, without logging report contents. */
+  async function localPdfText(path) {
+    const base64=(await readFile(path)).toString('base64'),page=await ui.newPage();
+    try {
+      await page.addInitScript(base64=>{chrome.runtime.sendMessage=async message=>{
+        if(message.type==='reader-start')return {ok:true,value:{base64}};
+        if(message.type==='reader-result'){window.pdfResult=message;return {ok:true,value:true};}
+        return {ok:true};
+      };},base64);
+      await page.goto(base+'/reader.html?id=local-report-regression');await page.waitForFunction(()=>window.pdfResult,{timeout:20000});
+      const result=await page.evaluate(()=>window.pdfResult);assert.equal(result.error,undefined,result.error);return result.text;
+    } finally {await page.close();}
+  }
   const residenceIndex=process.argv.indexOf('--residence-pdf');
-  if(residenceIndex>=0)await tests('supplied residence PDF is recognized and its customer numbers are collected',async()=>{
-    const base64=(await readFile(process.argv[residenceIndex+1])).toString('base64'),page=await ui.newPage();
-    await page.addInitScript(base64=>{chrome.runtime.sendMessage=async message=>{
-      if(message.type==='reader-start')return {ok:true,value:{base64}};
-      if(message.type==='reader-result'){window.pdfResult=message;return {ok:true,value:true};}
-      return {ok:true};
-    };},base64);
-    await page.goto(base+'/reader.html?id=residence-regression');await page.waitForFunction(()=>window.pdfResult,{timeout:20000});
-    const result=await page.evaluate(()=>window.pdfResult);assert.equal(result.error,undefined,result.error);assert.equal(isResidenceReport(result.text),true);
-    const numbers=ownerNumbers(result.text);assert.ok(numbers.length>0);console.log(`Residence PDF check: ${numbers.length} unique customer numbers; identifiers are not logged.`);await page.close();
+  if(residenceIndex>=0)await tests('local report: residence recognition and customer collection',async()=>{
+    const text=await localPdfText(process.argv[residenceIndex+1]);assert.equal(isResidenceReport(text),true);
+    const numbers=ownerNumbers(text);assert.ok(numbers.length>0);console.log(`Residence PDF check: ${numbers.length} unique customer numbers; identifiers are not logged.`);
   });
   const barcodeIndex=process.argv.indexOf('--barcode-pdf');
-  if(barcodeIndex>=0)await tests('supplied barcode PDF extracts and generates a vehicle payload',async()=>{
-    const base64=(await readFile(process.argv[barcodeIndex+1])).toString('base64'),page=await ui.newPage();
-    await page.addInitScript(base64=>{chrome.runtime.sendMessage=async message=>{
-      if(message.type==='reader-start')return {ok:true,value:{base64}};
-      if(message.type==='reader-result'){window.pdfResult=message;return {ok:true,value:true};}
-      return {ok:true};
-    };},base64);
-    await page.goto(base+'/reader.html?id=barcode-regression');await page.waitForFunction(()=>window.pdfResult,{timeout:20000});
-    const result=await page.evaluate(()=>window.pdfResult);assert.equal(result.error,undefined,result.error);
-    const barcode=reportBarcode(result.text);assert.equal(barcode.kind,'vehicle');assert.ok(barcode.payload.startsWith('@\n'));
-    console.log('Supplied barcode PDF generated successfully; identifiers are not logged.');await page.close();
+  if(barcodeIndex>=0)await tests('local report: vehicle barcode mapping',async()=>{
+    const text=await localPdfText(process.argv[barcodeIndex+1]),barcode=reportBarcode(text);
+    assert.equal(barcode.kind,'vehicle');assert.ok(barcode.payload.startsWith('@\n'));
+    console.log('Local barcode PDF generated successfully; identifiers are not logged.');
   });
-  const sampleIndex=process.argv.indexOf('--sample-pdf');
-  if(sampleIndex>=0)await tests('supplied local PDF: browser worker extracts all 12 unique customer numbers',async()=>{
-    const base64=(await readFile(process.argv[sampleIndex+1])).toString('base64');
-    const page=await ui.newPage();
-    await page.addInitScript(base64=>{
-      const original=chrome.runtime.sendMessage;
-      chrome.runtime.sendMessage=async message=>{
-        if(message.type==='reader-start')return {ok:true,value:{base64,url:'https://www.scdmvonline.com/SCTRNS/Member/Transactions/ViewAttachment.aspx'}};
-        if(message.type==='reader-result'){window.pdfResult=message;return {ok:true,value:true};}
-        return original(message);
-      };
-    },base64);
-    await page.goto(`${base}/reader.html?id=local-sample`);
-    await page.waitForFunction(()=>window.pdfResult,{timeout:20000});
-    const result=await page.evaluate(()=>window.pdfResult);assert.equal(result.error,undefined,result.error);
-    assert.equal(ownerNumbers(result.text).length,12);
-    await page.close();
+  // Retain the legacy CLI spelling without retaining a report-specific expected count.
+  const customerIndex=process.argv.findIndex(arg=>['--customer-pdf','--sample-pdf'].includes(arg));
+  if(customerIndex>=0)await tests('local report: unique customer collection',async()=>{
+    const numbers=ownerNumbers(await localPdfText(process.argv[customerIndex+1]));assert.ok(numbers.length>0);
+    console.log(`Customer PDF check: ${numbers.length} unique numbers; identifiers are not logged.`);
   });
   await ui.close(); await new Promise(resolve=>server.close(resolve));
   await writeFile(join(screenshots,'browser-tests.txt'),`${passed} browser/fixture checks passed. No live database requests were made.\n`);

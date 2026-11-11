@@ -6,9 +6,12 @@ import {fileURLToPath} from 'node:url';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const manifest = JSON.parse(readFileSync(join(root, 'extension/manifest.json'), 'utf8'));
 const project = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
+const lock = JSON.parse(readFileSync(join(root, 'package-lock.json'), 'utf8'));
 const {COMMANDS} = await import('../extension/core.js');
 const {RECORDING_PATHS} = await import('../extension/voice-recordings.js');
 for (const path of RECORDING_PATHS) if (!existsSync(join(root, 'extension', path))) throw new Error(`Missing voice recording: ${path}`);
+// A source release must reproduce the same version through its manifest, package, and lockfile.
+if (lock.version !== project.version || lock.packages?.['']?.version !== project.version) throw new Error('Package and lockfile versions differ.');
 if (project.version !== manifest.version) throw new Error('Package and extension versions differ.');
 if (manifest.manifest_version !== 3 || JSON.stringify(Object.keys(manifest.commands).sort()) !== JSON.stringify(Object.keys(COMMANDS).sort())) throw new Error('Manifest commands are incomplete.');
 if (Object.values(manifest.commands).filter(v => v.suggested_key).length > 4) throw new Error('Chromium allows at most four suggested shortcuts.');

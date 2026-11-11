@@ -23,23 +23,23 @@
       <table><thead><tr><th scope="col">Search type</th><th scope="col">Number / details</th></tr></thead><tbody id="history"></tbody></table>
       <p id="empty" class="empty" hidden>No searches yet. Start with a plate, DL, or customer number.</p>
       <div class="footer"><small id="queue"></small><button id="clearHistory" class="secondary">Clear history</button></div>
-      <button id="clearQueue" class="secondary" hidden>Clear customer queue</button>
+      <button id="clearQueue" class="secondary" hidden>Clear queued and saved customer numbers</button>
     </section>
     <section id="settingsView" role="tabpanel" aria-labelledby="settingsTab" hidden>
     <div class="alerts-setting">
-      <label class="alerts-toggle" for="alertsToggle"><span>Plate & license status alerts<small>Saved between sessions · Off until enabled</small></span><span class="switch-control"><input id="alertsToggle" type="checkbox" role="switch"><span class="switch-track" aria-hidden="true"></span></span></label>
+      <label class="alerts-toggle" for="alertsToggle"><span>Plate & license status alerts<small>Enable for status popups displaying the status of a Driver's License or Licens Plate. Popups auto close after 90 seconds and 10 seconds if they are valid.</small></span><span class="switch-control"><input id="alertsToggle" type="checkbox" role="switch"><span class="switch-track" aria-hidden="true"></span></span></label>
     </div>
     <div class="alerts-setting">
-      <label class="alerts-toggle" for="speechToggle"><span>Voice status alerts<small>Plays once · Saved between sessions</small></span><span class="switch-control"><input id="speechToggle" type="checkbox" role="switch"><span class="switch-track" aria-hidden="true"></span></span></label>
+      <label class="alerts-toggle" for="speechToggle"><span>Voice status alerts<small>Plays voice alerts of the status of a Driver's License or License Plate.</small></span><span class="switch-control"><input id="speechToggle" type="checkbox" role="switch"><span class="switch-track" aria-hidden="true"></span></span></label>
       <label for="voiceSource">Announcement source</label>
       <select id="voiceSource"><option value="recordings">Bundled voice recordings</option><option value="microsoft">Microsoft text to speech</option></select>
-      <label class="alerts-toggle repeat-speech" for="repeatSpeechToggle"><span>Repeat voice announcement<small>Play twice with a one-second pause · Applies to recordings and speech</small></span><span class="switch-control"><input id="repeatSpeechToggle" type="checkbox" role="switch"><span class="switch-track" aria-hidden="true"></span></span></label>
+      <label class="alerts-toggle repeat-speech" for="repeatSpeechToggle"><span>Repeat voice announcement<small>Toggle between the voice alerts playing once or repeating a second time.</small></span><span class="switch-control"><input id="repeatSpeechToggle" type="checkbox" role="switch"><span class="switch-track" aria-hidden="true"></span></span></label>
       <label for="voiceGender">Voice</label>
       <select id="voiceGender"><option value="female">Female</option><option value="male">Male</option></select>
       <label for="voiceName">Microsoft voice (optional override)</label>
       <select id="voiceName"><option value="">Automatic for selected voice</option></select>
-      <small id="voiceHelp">A status without a matching recording uses Microsoft speech with the selected gender. Voice settings are saved between browser sessions.</small>
-      <label class="alerts-toggle" for="clipToggle"><span>Suspended audio clip<small>Replaces other voice alerts for suspended results · Plays three times · Saved between sessions</small></span><span class="switch-control"><input id="clipToggle" type="checkbox" role="switch"><span class="switch-track" aria-hidden="true"></span></span></label>
+      <small id="voiceHelp">A status without a matching recording uses Microsoft speech with the selected gender.</small>
+      <label class="alerts-toggle" for="clipToggle"><span>Suspended audio clip<small>Replaces other voice alerts for suspended results.</small></span><span class="switch-control"><input id="clipToggle" type="checkbox" role="switch"><span class="switch-track" aria-hidden="true"></span></span></label>
       <button id="stopAudio" class="secondary">Stop audio</button>
     </div>
       <section class="section blacklist-settings" aria-labelledby="blacklistTitle">
@@ -61,8 +61,11 @@
         </form>
         <p id="blacklistFeedback" role="status"></p>
       </section>
-      <div class="section"><h2>DMV website</h2><label class="check"><input id="dmvDarkMode" type="checkbox">Dark DMV website</label><p class="binding-note">On by default. Applies only to the SCDMV website and takes priority over styles from other dark mode extensions. PDF results use the separate setting below. Reload DMV tabs after turning this off to let another dark mode extension reapply.</p></div>
-      <div class="section"><h2>PDF results</h2><label class="check"><input id="pdfDarkMode" type="checkbox">Dark PDF results (keep photos unchanged)</label><p class="binding-note">Applies to newly opened PDF results in the same results tab. Pages scroll continuously. Image-only portions retain their original colors.</p></div>
+      <section id="appearanceSettings" class="alerts-setting appearance-settings" aria-labelledby="appearanceTitle">
+        <h2 id="appearanceTitle">Dark Mode</h2>
+        <label class="alerts-toggle" for="dmvDarkMode"><span>Darkmode for the DMV website<small>Toggle to enable or disable dark mode across the dmv website pages</small></span><span class="switch-control"><input id="dmvDarkMode" type="checkbox" role="switch"><span class="switch-track" aria-hidden="true"></span></span></label>
+        <label class="alerts-toggle" for="pdfDarkMode"><span>Toggle dark mode on or off for pdf results pages.<small>Applies to newly opened PDF results in the same results tab. Pages scroll continuously. Image-only portions retain their original colors.</small></span><span class="switch-control"><input id="pdfDarkMode" type="checkbox" role="switch"><span class="switch-track" aria-hidden="true"></span></span></label>
+      </section>
       <div class="section">
         <h2>Set up your shortcuts</h2>
         <p class="about-instructions">Open the keyboard shortcut settings below and find <strong>SC DMV Hotkeys</strong>. Click the edit icon or shortcut box for each command, then press your preferred key combination using a modifier such as Alt or Ctrl. For each search shortcut, change the <strong>Scope</strong> setting from <strong>In Chrome</strong> to <strong>Global</strong> so it works while another application is focused or the browser is minimized. The browser must remain running.</p>

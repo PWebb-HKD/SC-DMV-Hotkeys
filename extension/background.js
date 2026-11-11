@@ -88,6 +88,7 @@ async function ask(data, run) {
   }, 180000);
   return run ? run.step(() => promise) : promise;
 }
+/** Open a noninteractive message panel using the same cancellation checks as other worker-owned UI. */
 async function notice(message, extra = {}, run) { await createPanel({type: 'notice', message, ...extra}, {}, run); }
 /** Publish only errors belonging to the current run; AbortError is expected control flow. */
 async function report(error, tabId, run) {
@@ -99,6 +100,7 @@ async function report(error, tabId, run) {
     await notice(message, {}, run);
   } catch (e) { if (!isCancelled(e)) throw e; }
 }
+/** Capture the focused tab once so follow-up commands retain their original report context. */
 async function sourceTab() {
   const active = await chrome.tabs.query({active: true, lastFocusedWindow: true});
   return active[0];
@@ -174,7 +176,7 @@ async function capturePdf(tab, portalId, forceDirect = false) {
   finally { if (captures.get(tab.id) === capture) captures.delete(tab.id); }
 }
 /** The redirected document joins its tab-bound capture; it never opens a second results tab. */
-async function attachDarkReader(sender) {
+async function attachPdfViewer(sender) {
   const readerUrl = chrome.runtime.getURL('reader.html'), source = darkResultSource(sender.url, readerUrl);
   if (!source || sender.tab?.id == null || sender.frameId !== 0 || new URL(sender.url).searchParams.has('id')) throw new Error('Unknown PDF results page. Run its search again.');
   const tab = await chrome.tabs.get(sender.tab.id);
@@ -268,10 +270,7 @@ function context(run) {
   return {
     run,
     status: message => guardedApi(chrome, run).storage.session.set({status: message}).catch(() => {}),
-    credentials: tabId => credentials(tabId, run),
-    permission: async origin => {
-      if (!await ask({type: 'permission', origin, message: `Allow access to ${origin} so the extension can enter the SCUTTIES search?`}, run)) throw new Error('SCUTTIES site access cancelled.');
-    }
+    credentials: tabId => credentials(tabId, run)
   };
 }
 /** Never navigate to a search while a saved blacklist is still encrypted. */
@@ -285,11 +284,13 @@ async function unlockedBlacklist(run) {
   }
   return current.entries;
 }
+/** Require an unlocked vault and reject every protected identifier immediately before portal submission. */
 async function authorizeIdentifiers(identifiers, run, requireIdentifiers = false) {
   const entries = await unlockedBlacklist(run);
   if (entries.length && requireIdentifiers && !identifiers.length) throw new Error('Run SCUTTIES from the driver report so its identifiers can be checked against your blacklist.');
   for (const entry of identifiers) checkBlacklist(entries, entry.kind, entry.value);
 }
+/** Display the mandatory blocking warning independently of optional status-alert preferences. */
 async function showBlacklistWarning(error, run) {
   await guardedApi(chrome, run).storage.session.set({status: error.message});
   await createPanel({type: 'record-alert', blacklist: true, tone: 'danger', autoCloseMs: 90000,
@@ -303,9 +304,11 @@ async function runSearch(kind, value, ctx, advance) {
   const identifier = {kind: kind === 'address' ? 'license' : kind, value};
   ctx.beforeSubmit = () => authorizeIdentifiers([identifier], ctx.run);
   let captured, advanced = false;
+  // Results and portal errors share this commit; either outcome may consume the position only once.
   const advanceQueue = async () => {
     if (advance && !advanced) { await advance(); advanced = true; }
   };
+  // Publish attempt state first, then start capture independently of the next command.
   ctx.resultReady = async result => {
     // Commit queue progress before focusing results. An immediate Alt+N must
     // select the following person even while PDF.js is still extracting text.
@@ -460,11 +463,13 @@ async function dispatch(command, options = {}) {
     } else await execute(command, options.value || '', source, options, run);
   } catch (error) { await report(error, undefined, run); }
 }
+// Browser shortcuts and popup buttons share dispatch so both obey cancellation and blacklist gates.
 chrome.commands.onCommand.addListener(command => dispatch(command).catch(e => report(e)));
 chrome.runtime.onConnect.addListener(port => {
   if (port.name !== 'panel') return;
   port.onMessage.addListener(() => {}); // Panel heartbeats keep pending interactive flows alive.
 });
+// Window closure completes pending prompts as cancellation and releases their stored panel data.
 chrome.windows.onRemoved.addListener(async windowId => {
   for (const [id, entry] of panels) if (entry.windowId === windowId) {
     if (entry.data.type === 'record-alert') audioAlerts.stop();
@@ -520,6 +525,7 @@ chrome.webNavigation.onCommitted.addListener(async details => {
     await chrome.storage.session.remove(key);
   });
 });
+// Remove closed-tab snapshots and ownership metadata after cancelling any in-flight capture.
 chrome.tabs.onRemoved.addListener(async id => {
   captures.get(id)?.run.cancel();
   await track(async () => {
@@ -559,13 +565,14 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
   (async () => {
     await boot;
     switch (message.type) {
+      // Reader requests are bound to the extraction job and its tab/document identity.
       case 'reader-start': {
         const reader = readers.get(message.id);
         if (!reader || reader.tabId != null && sender.tab?.id !== reader.tabId || reader.documentId && reader.documentId !== sender.documentId) throw new Error('Unknown PDF reader.');
         reader.tabId = sender.tab.id;
         return {base64: reader.base64, url: reader.url};
       }
-      case 'reader-direct-start': return attachDarkReader(sender);
+      case 'reader-direct-start': return attachPdfViewer(sender);
       case 'pdf-native-print': return openNativePrint(sender,message.url,message.text);
       case 'reader-result': {
         const reader = readers.get(message.id);
@@ -574,6 +581,7 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
         if (message.error) reader.reject(new Error(message.error)); else reader.resolve(message.text);
         return true;
       }
+      // Panel replies are normalized and authorized again before they can continue a workflow.
       case 'panel-data': {
         return (await chrome.storage.session.get(`panel:${message.id}`))[`panel:${message.id}`];
       }
@@ -598,10 +606,6 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
             await chrome.storage.session.set({lastQuery: 0});
           }
         }
-        if (data.type === 'permission') {
-          if (!await chrome.permissions.contains({origins: [data.origin]})) throw new Error('Website access has not been granted.');
-          result = true;
-        }
         entry.run?.check();
         clearTimeout(entry.timer); panels.delete(message.id); await chrome.storage.session.remove(`panel:${message.id}`);
         entry.resolve?.(result);
@@ -615,6 +619,7 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
         }
         return true;
       }
+      // Start a command or resolve an existing session history entry before replay; arbitrary saved input is refused.
       case 'run': dispatch(message.command).catch(e => report(e)); return true;
       case 'rerun': {
         const {history = []} = await chrome.storage.session.get('history');
@@ -627,17 +632,21 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
         dispatch(query.kind, {...query, ...(entry.identifiers ? {identifiers: validateBlacklist(entry.identifiers)} : {}), replay: true}).catch(error => report(error));
         return true;
       }
+      // These snapshots are restricted to extension-owned pages by the router above.
       case 'state': return {blacklist: await blacklistState(), ...await chrome.storage.local.get(['vault','pdfDarkMode','dmvDarkMode']), ...await chrome.storage.session.get(['history', 'queue', 'status', 'alertsEnabled', 'speechEnabled', 'repeatSpeech', 'suspendedClipEnabled', 'voiceSource', 'voiceGender', 'voiceName']), voices: await availableVoices().catch(() => []), commands: await chrome.commands.getAll(), extensionId: chrome.runtime.id};
+      // Appearance updates persist independently of credentials and query state.
       case 'dmv-display-settings': {
         await chrome.storage.local.set({dmvDarkMode:message.enabled===true});await configureDmvTheme();await refreshDmvThemeTabs();return message.enabled===true;
       }
       case 'pdf-display-settings': await setPdfRouting(message.enabled === true); await chrome.storage.local.set({pdfDarkMode: message.enabled === true}); return message.enabled === true;
+      // Reset cancels workflows and drains metadata writes before deleting private session state.
       case 'clear-saved-user-info': {
         if (message.confirmed !== true) throw new Error('Confirm deletion of saved user information and the vault.');
         const reset = (async () => { const run = beginRun(); await run.cleanup; await tracking; const {pdfViewSources = {}} = await chrome.storage.session.get('pdfViewSources'); for (const id of Object.keys(pdfViewSources)) await chrome.tabs.remove(+id).catch(() => {}); await tracking; await clearSavedUserInfo(true); await restoreAlertPreferences(); })();
         resettingUserInfo = reset;
         try { await reset; return true; } finally { if (resettingUserInfo === reset) resettingUserInfo = null; }
       }
+      // Vault mutations are serialized inside vault.js and require an unlocked matching session key.
       case 'blacklist-setup': {
         if ((await blacklistState()).hasVault) throw new Error('A vault already exists. Unlock it to manage your blacklist.');
         const run = beginRun(); await run.step(() => run.cleanup);
@@ -655,6 +664,7 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
         return true;
       }
       case 'shortcut-setup': await openShortcutSetup(); return true;
+      // Validate user choices at the message boundary before updating their persistent whitelist.
       case 'audio-settings': {
         const settings = {};
         for (const key of ['speechEnabled', 'repeatSpeech', 'suspendedClipEnabled']) if (key in message) settings[key] = message[key] === true;
