@@ -22,6 +22,8 @@ This guide covers first-party code. Start with the module overview, read each fu
 
 ## Execution contexts and trust boundaries
 
+The manifest requires Chrome 140 or newer because worker startup restricts both local and session storage to `TRUSTED_CONTEXTS`. `StorageArea.setAccessLevel` existed for session storage earlier, but support for local storage starts in Chrome 140 ([compatibility reference](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/storage/StorageArea/setAccessLevel#browser_compatibility)). Keep the minimum aligned with this requirement; skipping the local-storage restriction would change the storage access policy.
+
 The Manifest V3 worker owns browser APIs and private state. Popup, prompt, barcode, and setup pages are trusted extension contexts. Render report and error strings with `textContent`; no report text should be interpolated into HTML. Interactive panels use unpredictable job IDs, and the worker normalizes replies before acting.
 
 `pageOperation` is serialized into the website's MAIN world. Its helpers and origin literals must stay inside that function; imported extension bindings are unavailable after serialization. Native input setters and bubbling events synchronize portal frameworks. Credential injection is restricted to the DMV login URL, and PDF requests are restricted to same-origin attachment URLs. These checks deliberately repeat checks made by the worker because serialization crosses a context boundary.

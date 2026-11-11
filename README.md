@@ -1,8 +1,12 @@
 # SC DMV Hotkeys
 
-A Chromium Manifest V3 extension for authorized SCDMV member searches, PDF follow-ups, status alerts, and PDF417 data-entry barcodes. Current version: **1.8.13**.
+A Chromium Manifest V3 extension for authorized SCDMV member searches, PDF follow-ups, status alerts, and PDF417 data-entry barcodes. Current version: **1.8.14**.
 
 ## Install and update
+
+**Google Chrome 140 or newer is required.** The extension uses `chrome.storage.local.setAccessLevel` to restrict vault storage to trusted extension contexts; local-storage support for this method starts in Chrome 140. Chromium-based browsers must provide the same required extension APIs.
+
+If installation reports `chrome.storage.local.setAccessLevel is not a function` or service-worker registration status 15 with that error, open `chrome://settings/help`, update Chrome, relaunch it, and reload the unpacked extension. Check the version there if updating is managed by your organization.
 
 1. Extract the source package to a permanent folder.
 2. Open `chrome://extensions`, enable Developer mode, and choose **Load unpacked**.
