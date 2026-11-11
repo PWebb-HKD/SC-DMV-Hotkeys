@@ -352,7 +352,7 @@ try {
   await new Promise(resolve => server.listen(0,'127.0.0.1',resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
   const ui = await browser.newContext({viewport:{width:540,height:900},deviceScaleFactor:1});
-  await ui.addInitScript(() => {
+  const uiMocks = () => {
     window.requests=[];window.runtimeListeners=[];
     window.panelClosed=false;window.close=()=>{window.panelClosed=true;};
     window.openedTabs=[];
@@ -381,10 +381,14 @@ try {
         return {ok:true,value:true};
       }}, commands:{getAll:async()=>window.commandShortcuts},windows:{create:async options=>{window.openedTabs.push(options);}}, storage:{onChanged:{addListener:listener=>window.storageListeners.push(listener)}},tabs:{create:async options=>{window.openedTabs.push(options);}},permissions:{request:async()=>true}
     };
-  });
-  /** Mock only browser window APIs; real DOM measurements drive menu sizing. */
-  async function shortcutMenuPage({height=900,minimumWidth=0,clock=false,failOnce=false}={}) {
-    const page=await ui.newPage();await page.setViewportSize({width:360,height:600});
+  };
+  await ui.addInitScript(uiMocks);
+  /** Mock browser window APIs while applying accepted dimensions to a real viewport. */
+  async function shortcutMenuPage({height=900,minimumWidth=0,clock=false,failOnce=false,touch=false}={}) {
+    const context=touch?await browser.newContext({hasTouch:true,viewport:{width:360,height:600},deviceScaleFactor:1}):ui;
+    if(touch)await context.addInitScript(uiMocks);
+    const page=await context.newPage();await page.setViewportSize({width:360,height:600});
+    await page.exposeFunction('resizeMenuViewport',async({width,height})=>page.setViewportSize({width:width-16,height:height-40}));
     if(clock)await page.clock.install();
     await page.addInitScript(({height,minimumWidth,failOnce})=>{
       Object.defineProperties(screen,{availLeft:{value:-1280},availTop:{value:24},availWidth:{value:1280},availHeight:{value:height}});
@@ -392,7 +396,9 @@ try {
       chrome.windows.getCurrent=async()=>({...window.menuCurrent});
       chrome.windows.update=async(id,bounds)=>{
         window.menuUpdates.push({id,...bounds});Object.assign(window.menuCurrent,bounds);
-        window.menuCurrent.width=Math.max(minimumWidth,window.menuCurrent.width);return {...window.menuCurrent};
+        window.menuCurrent.width=Math.max(minimumWidth,window.menuCurrent.width);
+        if(bounds.width!==undefined||bounds.height!==undefined)await window.resizeMenuViewport(window.menuCurrent);
+        return {...window.menuCurrent};
       };
       const original=chrome.runtime.sendMessage;
       chrome.runtime.sendMessage=async message=>{
@@ -406,23 +412,50 @@ try {
     return page;
   }
   await tests('shortcut menu fits a vertical column to its content and the usable right screen edge',async()=>{
-    for(const config of [{},{height:400},{minimumWidth:400}]) {
+    for(const config of [{},{height:600},{height:400},{minimumWidth:400}]) {
       const page=await shortcutMenuPage(config),buttons=page.locator('#actions button');
       assert.equal(await buttons.count(),9);assert.equal(await page.locator('#error').textContent(),'');
       assert.equal(await page.evaluate(()=>document.activeElement.dataset.command),'plate');
-      const dimensions=await page.evaluate(()=>({bounds:window.menuCurrent,bodyWidth:document.body.offsetWidth,bodyHeight:document.body.getBoundingClientRect().height,compact:document.body.classList.contains('compact')}));
+      const dimensions=await page.evaluate(()=>({bounds:window.menuCurrent,bodyWidth:document.body.offsetWidth,bodyHeight:document.body.getBoundingClientRect().height,compact:document.body.classList.contains('compact'),scrolling:document.body.classList.contains('scrolling')}));
       assert.equal(dimensions.bounds.left+dimensions.bounds.width,0);
       assert.ok(dimensions.bounds.top>=24);assert.ok(dimensions.bounds.top+dimensions.bounds.height<=24+(config.height||900));
       if(!config.minimumWidth)assert.equal(dimensions.bounds.width,Math.ceil(dimensions.bodyWidth)+16);
       await page.setViewportSize({width:dimensions.bounds.width-16,height:dimensions.bounds.height-40});
-      const boxes=await buttons.evaluateAll(nodes=>nodes.map(node=>{const r=node.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,bottom:r.bottom};}));
-      for(let i=1;i<boxes.length;i++){assert.equal(boxes[i].x,boxes[0].x);assert.equal(boxes[i].width,boxes[0].width);assert.ok(boxes[i].y>boxes[i-1].bottom);}
-      assert.ok(boxes.at(-1).bottom<=dimensions.bounds.height-40,'all action buttons must fit without scrolling');
+      const boxes=await buttons.evaluateAll(nodes=>nodes.map(node=>{const r=node.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,bottom:r.bottom};}));
+      for(const box of boxes){assert.ok(box.width>=44);assert.ok(box.height>=44);}
+      for(let i=1;i<boxes.length;i++){assert.equal(boxes[i].x,boxes[0].x);assert.equal(boxes[i].width,boxes[0].width);assert.ok(boxes[i].y-boxes[i-1].bottom>=8);}
+      if(dimensions.scrolling)assert.equal(await page.locator('main').evaluate(el=>el.scrollHeight>el.clientHeight),true);
+      else assert.ok(boxes.at(-1).bottom<=dimensions.bounds.height-40,'all actions fit when usable height permits');
+      const close=await page.locator('#close').boundingBox();assert.ok(close.width>=44&&close.height>=44);
       assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
       if(config.height)assert.equal(dimensions.compact,true);
-      await page.screenshot({path:join(screenshots,config.height?'shortcut-menu-compact.png':'shortcut-menu.png'),fullPage:true});
+      await page.screenshot({path:join(screenshots,config.minimumWidth?'shortcut-menu-window-minimum.png':dimensions.scrolling?'shortcut-menu-scrolling.png':dimensions.compact?'shortcut-menu-compact.png':'shortcut-menu.png'),fullPage:true});
       await page.keyboard.press('Escape');assert.equal(await page.evaluate(()=>window.panelClosed),true);await page.close();
     }
+  });
+  await tests('shortcut menu touch scrolling keeps Close and the clock visible without firing an action',async()=>{
+    const page=await shortcutMenuPage({height:400,touch:true});
+    try {
+      assert.equal(await page.locator('body').evaluate(el=>el.classList.contains('scrolling')),true);
+      const closeBefore=await page.locator('#close').boundingBox(),clockBefore=await page.locator('#countdown').boundingBox();
+      const region=await page.locator('main').boundingBox(),x=Math.round(region.x+region.width/2);
+      const start=Math.round(region.y+region.height-24),end=Math.round(region.y+24);
+      const cdp=await page.context().newCDPSession(page);
+      await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y:start}]});
+      for(let step=1;step<=8;step++)await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x,y:Math.round(start+(end-start)*step/8)}]});
+      await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+      await page.waitForFunction(()=>document.querySelector('main').scrollTop>20);
+      assert.equal(await page.evaluate(()=>window.requests.some(message=>message.type==='shortcut-menu-run')),false);
+      assert.equal(await page.evaluate(()=>window.panelClosed),false);
+      assert.deepEqual(await page.locator('#close').boundingBox(),closeBefore);
+      assert.deepEqual(await page.locator('#countdown').boundingBox(),clockBefore);
+      assert.ok(clockBefore.y+clockBefore.height<=400-40);
+      await page.locator('#actions [data-command="barcode"]').tap();await page.waitForFunction(()=>window.panelClosed);
+      assert.deepEqual(await page.evaluate(()=>window.requests.filter(message=>message.type==='shortcut-menu-run')),[{type:'shortcut-menu-run',id:'menu-fixture',command:'barcode'}]);
+    } finally {await page.context().close();}
+    const close=await shortcutMenuPage({touch:true});
+    try {await close.locator('#close').tap();assert.equal(await close.evaluate(()=>window.panelClosed),true);assert.equal(await close.evaluate(()=>window.requests.some(message=>message.type==='shortcut-menu-run')),false);}
+    finally {await close.context().close();}
   });
   await tests('shortcut menu buttons dispatch each search and report action exactly once',async()=>{
     for(const command of ['plate','license','customer','owners','next','previous','address','scutties','barcode']) {

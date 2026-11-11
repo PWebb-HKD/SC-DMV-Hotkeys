@@ -26,7 +26,7 @@ The packaged extension needs no build or npm installation. PDF.js and the barcod
 | SCUTTIES search | Alt+U | Read the driver's surname and date of birth from the PDF. |
 | Generate PDF417 | Alt+B | Create an import barcode from the selected driver or vehicle report. |
 
-The shortcut menu has one vertical column of action buttons and sizes itself to their labels and the available screen height. It retains the tab that was focused when opened for report follow-ups. Opening the menu leaves the current function running; selecting an action starts that function and closes the menu. Escape or its 90-second timeout dismisses it.
+The shortcut menu has one vertical column of action buttons and sizes itself to their labels and the available screen height. Buttons have at least 44-pixel touch targets with 8-pixel gaps. On short displays the actions scroll, with Close and the countdown kept visible. It retains the tab that was focused when opened for report follow-ups. Opening the menu leaves the current function running; selecting an action starts that function and closes the menu. Escape or its 90-second timeout dismisses it.
 
 These are recommendations, not automatic assignments. Chromium owns key validity, conflicts, assignments, and Global scope. The setup guide shows actual assignments; the extension cannot read their scope. Toolbar buttons run the same workflows. **Stop current function** cancels pending automation, prompts, extraction, and announcements; it cannot recall a request already submitted to the DMV. The extension uses no native desktop companion.
 

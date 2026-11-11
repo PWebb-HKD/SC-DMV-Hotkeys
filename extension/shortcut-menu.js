@@ -25,13 +25,20 @@ async function fitWindow() {
   const win = await chrome.windows.getCurrent();
   const frameWidth = Math.max(0,win.width-innerWidth), frameHeight = Math.max(0,win.height-innerHeight);
   const available = {availLeft:screen.availLeft,availTop:screen.availTop,availWidth:screen.availWidth,availHeight:screen.availHeight};
+  // Measure natural content before applying viewport-dependent scrolling. Compact
+  // mode reduces surrounding padding, never the size or separation of touch targets.
+  document.body.style.width = '';
+  document.body.classList.remove('compact','scrolling');
   document.body.classList.toggle('compact',document.body.getBoundingClientRect().height+frameHeight > screen.availHeight);
+  document.body.classList.toggle('scrolling',document.body.getBoundingClientRect().height+frameHeight > screen.availHeight);
   const bounds = shortcutMenuBounds({contentWidth:document.body.offsetWidth,contentHeight:document.body.getBoundingClientRect().height,frameWidth,frameHeight,...available});
   const resized = await chrome.windows.update(win.id,{width:bounds.width,height:bounds.height});
   // Window managers may impose a minimum width or height. Position using the
   // accepted outer size so those minimums do not move the right edge off screen.
   const actual = shortcutMenuBounds({contentWidth:resized.width,contentHeight:resized.height,...available});
   await chrome.windows.update(win.id,{left:actual.left,top:actual.top});
+  // Fill an OS-enforced minimum width while retaining content-based sizing above.
+  document.body.style.width = '100%';
 }
 /** Select one action once; the worker retrieves the source stored when this menu
  * opened, rather than treating the launcher itself as the focused report tab. */
@@ -43,7 +50,7 @@ async function run(command) {
   catch(error) {
     submitting = false; $('error').textContent = error.message;
     for (const button of $('actions').children) button.disabled = false;
-    await fitWindow().catch(()=>{});
+    await fitWindow().catch(()=>{});$('error').scrollIntoView({block:'nearest'});
   }
 }
 /** Show the deadline without extending it while the user browses menu actions. */
