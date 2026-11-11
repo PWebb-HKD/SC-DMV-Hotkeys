@@ -12,14 +12,15 @@ export const ERROR_SELECTOR = '#form1 > div.container > div.iFormsValidationSumm
 // Shared command IDs and limits are the contract between the manifest, worker, and extension views.
 export const COMMANDS = {
   plate: {label: 'Plate Search', key: 'Alt+P', prompt: 'Enter a license plate number', max: 8},
-  license: {label: 'DL Number', key: 'Alt+L', prompt: "Enter a driver's license number", max: 9},
-  customer: {label: 'Customer Number', key: 'Alt+O', prompt: 'Enter a customer number', max: 8},
-  owners: {label: 'Get All Customer/Owner Numbers', key: 'Alt+J'},
-  next: {label: 'Next Customer Number', key: 'Alt+N'},
-  previous: {label: 'Previous Customer Number', key: 'Alt+M'},
+  license: {label: 'DL Number', menuLabel: 'Driver’s License Search', key: 'Alt+L', prompt: "Enter a driver's license number", max: 9},
+  customer: {label: 'Customer Number', menuLabel: 'Customer Number Search', key: 'Alt+O', prompt: 'Enter a customer number', max: 8},
+  owners: {label: 'Get All Customer/Owner Numbers', menuLabel: 'Collect Customer/Owner Numbers', key: 'Alt+J'},
+  next: {label: 'Next Customer Number', menuLabel: 'Next Queued Customer', key: 'Alt+N'},
+  previous: {label: 'Previous Customer Number', menuLabel: 'Previous Queued Customer', key: 'Alt+M'},
   address: {label: 'Customers at Same Address', key: 'Alt+I'},
   scutties: {label: 'SCUTTIES Driver Search', key: 'Alt+U'},
-  barcode: {label: 'Generate PDF417 Barcode', key: 'Alt+B'}
+  barcode: {label: 'Generate PDF417 Barcode', key: 'Alt+B'},
+  help: {label: 'Open Shortcut Menu', key: 'Alt+H'}
 };
 /** Unwrap recognized Chromium PDF viewer URLs with bounded recursion; reject other origins. */
 export function attachmentUrl(url = '', depth = 0) {

@@ -50,11 +50,13 @@
         <label class="alerts-toggle" for="dmvDarkMode"><span>Darkmode for the DMV website<small>Toggle to enable or disable dark mode across the dmv website pages</small></span><span class="switch-control"><input id="dmvDarkMode" type="checkbox" role="switch"><span class="switch-track" aria-hidden="true"></span></span></label>
         <label class="alerts-toggle" for="pdfDarkMode"><span>Toggle dark mode on or off for pdf results pages.<small>Applies to newly opened PDF results in the same results tab. Pages scroll continuously. Image-only portions retain their original colors.</small></span><span class="switch-control"><input id="pdfDarkMode" type="checkbox" role="switch"><span class="switch-track" aria-hidden="true"></span></span></label>
       </section>
-      <div class="section">
+      <div class="section shortcut-settings">
         <h2>Set up your shortcuts</h2>
-        <p class="about-instructions">Open the keyboard shortcut settings below and find <strong>SC DMV Hotkeys</strong>. Click the edit icon or shortcut box for each command, then press your preferred key combination using a modifier such as Alt or Ctrl. For each search shortcut, change the <strong>Scope</strong> setting from <strong>In Chrome</strong> to <strong>Global</strong> so it works while another application is focused or the browser is minimized. The browser must remain running.</p>
-        <a id="browserShortcuts" href="chrome://extensions/shortcuts">Open browser keyboard shortcut settings</a>
-        <p class="binding-note"><button id="shortcutSetup" class="secondary">Open shortcut setup guide</button></p>
+        <p class="about-instructions">For a simple setup, assign only <strong>Open Shortcut Menu</strong> to <strong>Alt+H</strong> and leave other commands unassigned. Optionally assign individual functions to the recommended keys in the setup guide or to keys of your choice. Open the keyboard shortcut settings below and find <strong>SC DMV Hotkeys</strong>. Click the edit icon or shortcut box for each command, then press your preferred key combination using a modifier such as Alt or Ctrl. For each shortcut you assign, change the <strong>Scope</strong> setting from <strong>In Chrome</strong> to <strong>Global</strong> so it works while another application is focused or the browser is minimized. The browser must remain running.</p>
+        <div class="shortcut-setup-links">
+          <a id="browserShortcuts" href="chrome://extensions/shortcuts">Open browser keyboard shortcut settings</a>
+          <button id="shortcutSetup" class="secondary">Open shortcut setup guide</button>
+        </div>
       </div>
     </section>
     <section id="blacklistView" class="blacklist-settings" role="tabpanel" aria-labelledby="blacklistTab" hidden>

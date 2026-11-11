@@ -728,3 +728,44 @@ test('a second parsing error preserves the explicit choice to leave incomplete o
   const f=Object.fromEntries(barcodeData().draftFields);for(const key of ['RBI','RBK','RBL','RBM'])assert.equal(f[key],'');
   assert.equal(f.RAM,'TOO-LONG-PLATE');
 });
+
+/** Retrieve a live launcher's ID without treating its tab as a report source. */
+function menuId() {return new URL(panel('shortcut-menu').url).searchParams.get('id');}
+test('help shortcut opens one menu without cancelling a pending search, and closing it leaves that search usable',async()=>{
+  await send({type:'stop'});await send({type:'run',command:'customer'});await wait(()=>panel('input'));
+  const inputId=new URL(panel('input').url).searchParams.get('id'),before=submittedQueries.length;
+  await chrome.commands.onCommand.listeners[0]('help');await wait(()=>panel('shortcut-menu'));
+  const win=panel('shortcut-menu'),count=windows.length,id=menuId();
+  assert.match(win.url,/shortcut-menu\.html/);assert.ok(session[`panel:${inputId}`]);assert.equal(submittedQueries.length,before);
+  await chrome.commands.onCommand.listeners[0]('help');assert.equal(windows.length,count);
+  for(const listener of chrome.windows.onRemoved.listeners)await listener(win.id);
+  assert.equal(session[`panel:${id}`],undefined);assert.ok(session[`panel:${inputId}`]);
+  await send({type:'panel-submit',id:inputId,value:'82000001'});await wait(()=>session.history[0]?.value==='82000001');
+});
+test('shortcut menu uses the report focused before opening even when a newer report exists and its own tab is focused',async()=>{
+  await send({type:'stop'});barcodeSource(driverReport);const before=submittedQueries.length;
+  await send({type:'run',command:'help'});await wait(()=>panel('shortcut-menu'));const id=menuId(),win=panel('shortcut-menu');
+  assert.equal(session[`panel:${id}`].sourceId,2);
+  const newer={id:nextId++,url:PDF_URL,windowId:1,status:'complete',active:false};tabs.set(newer.id,newer);session[`pdf:${newer.id}`]={text:driverReport.replace('123456789','987654321')};
+  const launcher={id:nextId++,url:win.url,windowId:win.id,status:'complete',active:true};for(const tab of tabs.values())tab.active=false;tabs.set(launcher.id,launcher);
+  await send({type:'shortcut-menu-run',id,command:'barcode',sourceId:newer.id});await wait(barcodeData);
+  assert.match(barcodeData().payload,/DAQ123456789/);assert.doesNotMatch(barcodeData().payload,/DAQ987654321/);
+  assert.ok(removedWindows.includes(win.id));assert.equal(session[`panel:${id}`],undefined);assert.equal(submittedQueries.length,before);
+});
+test('shortcut menu rejects invalid actions, expired IDs and input-panel IDs; valid actions use the normal prompt',async()=>{
+  await send({type:'run',command:'help'});await wait(()=>panel('shortcut-menu'));const id=menuId();
+  for(const command of ['help','constructor','not-a-command'])await assert.rejects(send({type:'shortcut-menu-run',id,command}),/Unknown shortcut menu action/);
+  await assert.rejects(send({type:'shortcut-menu-run',id:'expired',command:'license'}),/expired/);
+  await send({type:'shortcut-menu-run',id,command:'license'});await wait(()=>panel('input'));
+  const inputId=new URL(panel('input').url).searchParams.get('id');assert.equal(session[`panel:${inputId}`].command,'license');
+  await assert.rejects(send({type:'shortcut-menu-run',id:inputId,command:'barcode'}),/expired/);
+  await send({type:'stop'});
+});
+test('Stop cancels a menu still capturing its source and prevents its late window from appearing',async()=>{
+  const original=chrome.tabs.query;let release,started=false;const before=windows.length;
+  chrome.tabs.query=async options=>{started=true;return new Promise(resolve=>{release=()=>resolve([...tabs.values()].filter(tab=>!options.active||tab.active));});};
+  try {
+    await send({type:'run',command:'help'});await wait(()=>started);await send({type:'stop'});release();
+    await new Promise(resolve=>setTimeout(resolve,20));assert.equal(windows.length,before);assert.equal(panel('shortcut-menu'),undefined);
+  } finally {chrome.tabs.query=original;}
+});

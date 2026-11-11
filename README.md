@@ -1,13 +1,13 @@
 # SC DMV Hotkeys
 
-A Chromium Manifest V3 extension for authorized SCDMV member searches, PDF follow-ups, status alerts, and PDF417 data-entry barcodes. Current version: **1.8.11**.
+A Chromium Manifest V3 extension for authorized SCDMV member searches, PDF follow-ups, status alerts, and PDF417 data-entry barcodes. Current version: **1.8.13**.
 
 ## Install and update
 
 1. Extract the source package to a permanent folder.
 2. Open `chrome://extensions`, enable Developer mode, and choose **Load unpacked**.
 3. Select the `extension` folder, then pin the toolbar action if desired.
-4. Open **Settings → Shortcut setup** and assign the preferred shortcuts in the browser. Set their scope to **Global** if they must work outside the active browser window.
+4. Open **Settings → Shortcut setup**. For simple setup, assign only **Open Shortcut Menu** to **Alt+H** and leave the other commands unassigned. Optionally assign individual functions to recommended keys or keys of your choice. Set their scope to **Global** if they must work outside the active browser window.
 
 The packaged extension needs no build or npm installation. PDF.js and the barcode encoder run locally. For updates, replace files in the same folder and click **Reload** on the extension card. Keeping the folder preserves the extension ID and persistent settings. Run a fresh search after reloading; history, unlocked credentials, queue state, and captured reports belong to the current browser session.
 
@@ -15,6 +15,7 @@ The packaged extension needs no build or npm installation. PDF.js and the barcod
 
 | Function | Preferred shortcut | Behavior |
 | --- | --- | --- |
+| Open shortcut menu | Alt+H | Open a compact menu of search and report action buttons at the right edge of the screen. |
 | Plate search | Alt+P | Ask for a plate number and open its vehicle record. |
 | DL search | Alt+L | Ask for a driver license number. |
 | Customer search | Alt+O | Ask for a customer number. |
@@ -24,6 +25,8 @@ The packaged extension needs no build or npm installation. PDF.js and the barcod
 | Customers at same residence | Alt+I | Read the DL number from a driving-record PDF and search the residence. |
 | SCUTTIES search | Alt+U | Read the driver's surname and date of birth from the PDF. |
 | Generate PDF417 | Alt+B | Create an import barcode from the selected driver or vehicle report. |
+
+The shortcut menu has one vertical column of action buttons and sizes itself to their labels and the available screen height. Buttons have at least 44-pixel touch targets with 8-pixel gaps. On short displays the actions scroll, with Close and the countdown kept visible. It retains the tab that was focused when opened for report follow-ups. Opening the menu leaves the current function running; selecting an action starts that function and closes the menu. Escape or its 90-second timeout dismisses it.
 
 These are recommendations, not automatic assignments. Chromium owns key validity, conflicts, assignments, and Global scope. The setup guide shows actual assignments; the extension cannot read their scope. Toolbar buttons run the same workflows. **Stop current function** cancels pending automation, prompts, extraction, and announcements; it cannot recall a request already submitted to the DMV. The extension uses no native desktop companion.
 

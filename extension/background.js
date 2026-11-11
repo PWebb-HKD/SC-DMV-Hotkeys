@@ -21,6 +21,7 @@ const audioAlerts = new AudioAlerts();
 // resumable jobs. openingPanel and tracking serialize two independent mutation streams.
 let resettingUserInfo = null;
 let activeRun = null, openingPanel = Promise.resolve(), tracking = Promise.resolve();
+let openingShortcutMenu = null, shortcutMenuRun = null;
 const panels = new Map(), readers = new Map(), captures = new Map();
 const boot = Promise.all([
   chrome.storage.local.setAccessLevel({accessLevel: 'TRUSTED_CONTEXTS'}),
@@ -37,12 +38,14 @@ const boot = Promise.all([
 /** Replace the active command and cancel its readers, audio, and panels. Callers await
  * run.cleanup before opening new UI; late-created windows also check this run. */
 function beginRun() {
+  shortcutMenuRun?.cancel();
   audioAlerts.stop();
   activeRun?.cancel();
   for (const capture of captures.values()) capture.run.cancel();
   const run = new SearchRun(); activeRun = run;
   const cleanup = [];
   for (const [id, entry] of panels) {
+    entry.run?.cancel();
     clearTimeout(entry.timer); panels.delete(id); entry.resolve?.(null);
     cleanup.push(chrome.storage.session.remove(`panel:${id}`));
     if (entry.windowId != null) cleanup.push(chrome.windows.remove(entry.windowId).catch(() => {}));
@@ -67,7 +70,7 @@ async function createPanel(data, callbacks = {}, run) {
     panels.delete(id); await chrome.storage.session.remove(`panel:${id}`); run?.check(); return null;
   }
   let win;
-  try { run?.check(); win = await chrome.windows.create({url: chrome.runtime.getURL(`${data.type === 'barcode' ? 'barcode' : 'panel'}.html?id=${id}`), type: 'popup', width: data.type === 'barcode' ? 1020 : (data.type === 'record-alert' || data.type === 'barcode-owner-incomplete') ? 580 : 460, height: data.type === 'barcode' ? 800 : data.type === 'credentials' ? 720 : data.type === 'barcode-owner-incomplete' ? 520 : data.type === 'record-alert' ? 620 : 430, focused: true}); }
+  try { run?.check(); win = await chrome.windows.create({url: chrome.runtime.getURL(`${data.type === 'barcode' ? 'barcode' : data.type === 'shortcut-menu' ? 'shortcut-menu' : 'panel'}.html?id=${id}`), type: 'popup', width: data.type === 'shortcut-menu' ? 360 : data.type === 'barcode' ? 1020 : (data.type === 'record-alert' || data.type === 'barcode-owner-incomplete') ? 580 : 460, height: data.type === 'shortcut-menu' ? 600 : data.type === 'barcode' ? 800 : data.type === 'credentials' ? 720 : data.type === 'barcode-owner-incomplete' ? 520 : data.type === 'record-alert' ? 620 : 430, focused: true}); }
   catch (e) { panels.delete(id); await chrome.storage.session.remove(`panel:${id}`); throw e; }
   entry.windowId = win.id;
   if (run?.signal.aborted || entry.cancelled) {
@@ -75,6 +78,22 @@ async function createPanel(data, callbacks = {}, run) {
     await chrome.windows.remove(win.id).catch(() => {}); run?.check(); return null;
   }
   return {id, entry};
+}
+/** Open one launcher without interrupting current work. Capture its source before
+ * focusing it; a later action starts the same workflow as a direct shortcut. */
+function openShortcutMenu() {
+  if (openingShortcutMenu) return openingShortcutMenu;
+  openingShortcutMenu = (async()=>{
+    const run = new SearchRun(); shortcutMenuRun = run;
+    try {
+      await run.step(()=>boot);
+      const existing = [...panels.values()].find(entry=>entry.data.type === 'shortcut-menu');
+      if (existing) {await run.step(()=>chrome.windows.update(existing.windowId,{focused:true,state:'normal'}));return;}
+      const source = await run.step(()=>sourceTab());
+      await createPanel({type:'shortcut-menu',sourceId:source?.id},{},run);
+    } finally {if (shortcutMenuRun === run) shortcutMenuRun = null;}
+  })().finally(()=>{openingShortcutMenu = null;});
+  return openingShortcutMenu;
 }
 /** Open an interactive panel and await its reply, cancellation, close, or timeout. */
 async function ask(data, run) {
@@ -449,15 +468,17 @@ async function execute(command, value, source, options, run) {
     await report(e, ctx.tabId, run);
   }
 }
-/** Common entry point for shortcuts, quick actions, and history replay. A new command
- * always replaces the previous run, including one waiting for user input. */
+/** Common entry point for shortcuts, quick actions, and history replay. Search
+ * and report actions replace the previous run, including one awaiting user input.
+ * The launcher opens independently until its user selects an action. */
 async function dispatch(command, options = {}) {
   if (!COMMANDS[command]) throw new Error('Unknown command.');
   if (resettingUserInfo) await resettingUserInfo;
+  if (command === 'help') return openShortcutMenu();
   const run = beginRun();
   try {
     await run.step(() => boot); await run.step(() => run.cleanup);
-    const source = await run.step(() => sourceTab());
+    const source = await run.step(() => options.sourceId != null ? chrome.tabs.get(options.sourceId).catch(()=>null) : sourceTab());
     if (['plate', 'license', 'customer'].includes(command) && !options.replay) {
       openingPanel = openingPanel.catch(() => {}).then(async () => {
         run.check();
@@ -477,6 +498,7 @@ chrome.runtime.onConnect.addListener(port => {
 chrome.windows.onRemoved.addListener(async windowId => {
   for (const [id, entry] of panels) if (entry.windowId === windowId) {
     if (entry.data.type === 'record-alert') audioAlerts.stop();
+    if (entry.data.type === 'shortcut-menu') entry.run?.cancel();
     clearTimeout(entry.timer); panels.delete(id); await chrome.storage.session.remove(`panel:${id}`);
     entry.resolve?.(null);
   }
@@ -625,6 +647,14 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
       }
       // Start a command or resolve an existing session history entry before replay; arbitrary saved input is refused.
       case 'run': dispatch(message.command).catch(e => report(e)); return true;
+      case 'shortcut-menu-run': {
+        const entry = panels.get(message.id);
+        if (!entry || entry.data.type !== 'shortcut-menu') throw new Error('This shortcut menu has expired. Open it again.');
+        if (message.command === 'help' || !Object.hasOwn(COMMANDS,message.command)) throw new Error('Unknown shortcut menu action.');
+        entry.run.check();
+        dispatch(message.command,{sourceId:entry.data.sourceId}).catch(error=>report(error));
+        return true;
+      }
       case 'rerun': {
         const {history = []} = await chrome.storage.session.get('history');
         const requested = message.search;
