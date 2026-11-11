@@ -39,7 +39,7 @@ async function send(page, message) {
 }
 try {
   let page = await launch();
-  await page.locator('#settingsTab').click();
+  await page.locator('#blacklistTab').click();
   const setup = await panel(() => page.locator('#blacklistSetup').click());
   await setup.locator('#user').fill('SYNTHETIC-USER');await setup.locator('#password').fill('synthetic-password');await setup.locator('#savePass').fill(phrase);
   assert.equal(await setup.locator('#save').isChecked(), true);
@@ -64,7 +64,7 @@ try {
   assert.equal((await send(page, {type: 'state'})).queue.index, 1);
   assert.equal(httpRequests, 0);
   await context.close(); context = null;
-  page = await launch();await page.locator('#settingsTab').click();
+  page = await launch();await page.locator('#blacklistTab').click();
   const locked = (await send(page, {type: 'state'})).blacklist;
   assert.equal(locked.hasVault, true);assert.equal(locked.unlocked, false);assert.deepEqual(locked.entries, []);
   await page.locator('#blacklistPassphrase').fill(phrase);await page.locator('#blacklistUnlock').click();

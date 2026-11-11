@@ -1,6 +1,6 @@
 # SC DMV Hotkeys
 
-A Chromium Manifest V3 extension for authorized SCDMV member searches, PDF follow-ups, status alerts, and PDF417 data-entry barcodes. Current version: **1.8.10**.
+A Chromium Manifest V3 extension for authorized SCDMV member searches, PDF follow-ups, status alerts, and PDF417 data-entry barcodes. Current version: **1.8.11**.
 
 ## Install and update
 
@@ -49,7 +49,7 @@ Successful results, visible DMV search failures, and blocked blacklist attempts 
 
 ## Encrypted vault and blacklist
 
-Open **Settings → Blacklist** to create an encrypted vault without running a search. Save the DMV login with a vault passphrase of at least twelve characters. At the beginning of a browser session, unlock the vault in Settings or the login prompt. A saved, locked vault prevents searches until its blacklist can be checked.
+Open the **Blacklist** tab to create an encrypted vault without running a search. Save the DMV login with a vault passphrase of at least twelve characters. At the beginning of a browser session, unlock the vault in the Blacklist tab or the login prompt. A saved, locked vault prevents searches until its blacklist can be checked.
 
 Add plate, DL, or customer numbers below the entry table. Unlocking once permits repeated additions and removals for the session. Entries are encrypted alongside the saved login; they survive browser restarts. Searches are checked before navigation and again immediately before submission. A match displays a mandatory red warning independently of optional alerts. SCUTTIES follow-ups also check the originating report's identifiers.
 
@@ -67,7 +67,7 @@ Driver rules prioritize suspended status. Active suspensions begin on or before 
 
 Dates use South Carolina calendar days. Green alerts close after ten seconds; other status alerts after ninety seconds. Escape, Close, Stop, and a new search dismiss the current alert.
 
-Bundled recordings are the default voice source. A missing recording falls back to a matching-gender local voice. Microsoft text to speech is an alternative source with an optional installed-voice override. Remote voices are excluded. Announcements speak status headings without identifiers or suspension details, once by default or twice with a one-second pause when repetition is enabled. The optional suspended-status clip replaces speech for suspended results and plays exactly three times.
+Additional voice settings appear only while **Voice status alerts** is enabled. Turning alerts off hides these controls without clearing their saved selections. Bundled recordings are the default voice source. A missing recording falls back to a matching-gender local voice. Microsoft text to speech is an alternative source with an optional installed-voice override. Remote voices are excluded. Announcements speak status headings without identifiers or suspension details, once by default or twice with a one-second pause when repetition is enabled. The optional suspended-status clip replaces speech for suspended results and plays exactly three times.
 
 ## Native dark modes and PDF follow-ups
 

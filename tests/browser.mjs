@@ -408,6 +408,16 @@ try {
     await page.locator('#settingsTab').click();assert.equal(await page.locator('#alertsToggle').isVisible(),true);
     assert.equal(await page.locator('#speechToggle').isVisible(),true);assert.equal(await page.locator('#browserShortcuts').isVisible(),true);
     assert.equal(await page.locator('#aboutView #browserShortcuts').count(),0);
+    assert.equal(await page.locator('#settingsView #blacklistForm').count(),0);
+    assert.equal(await page.locator('#blacklistView').isVisible(),false);
+    await page.getByRole('tab',{name:'Blacklist',exact:true}).click();
+    assert.equal(await page.locator('#blacklistForm').isVisible(),true);
+    assert.equal(await page.locator('#settingsView').isVisible(),false);
+    assert.equal(await page.getByRole('tab',{name:'Blacklist',exact:true}).getAttribute('aria-selected'),'true');
+    assert.equal(await page.locator('[role="tab"][aria-selected="true"]').count(),1);
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+    await page.locator('#settingsTab').click();
+    assert.equal(await page.locator('#blacklistView').isVisible(),false);
     await page.screenshot({path:join(screenshots,'settings.png'),fullPage:true});
     await page.locator('#aboutTab').click();assert.equal(await page.locator('#alertsToggle').isVisible(),false);
     await page.locator('#historyTab').click();await page.getByRole('button',{name:'Previous customer',exact:true}).click();
@@ -420,11 +430,18 @@ try {
     assert.equal(await page.locator('#voiceSource').inputValue(),'recordings');
     assert.equal(await page.locator('#voiceSource option').first().getAttribute('value'),'recordings');
     assert.equal(await page.locator('#voiceName').isDisabled(),true);
+    assert.equal(await page.locator('#voiceSettings').isVisible(),false);
+    await page.locator('#speechToggle').check();
+    await page.locator('#voiceSettings').waitFor({state:'visible'});
     await page.locator('#voiceSource').selectOption('microsoft');
     assert.equal(await page.locator('#repeatSpeechToggle').isChecked(),false);
     await page.locator('#repeatSpeechToggle').check();
-    await page.locator('#speechToggle').check();await page.locator('#clipToggle').check();
+    await page.locator('#clipToggle').check();
     await page.locator('#voiceGender').selectOption('male');await page.locator('#voiceName').selectOption('Microsoft David Desktop');
+    await page.locator('#speechToggle').uncheck();
+    await page.locator('#voiceSettings').waitFor({state:'hidden'});
+    await page.locator('#speechToggle').check();
+    await page.locator('#voiceSettings').waitFor({state:'visible'});
     await page.locator('#aboutTab').click();
     await page.locator('#settingsTab').click();
     assert.equal(await page.locator('#speechToggle').isChecked(),true);assert.equal(await page.locator('#clipToggle').isChecked(),true);
@@ -433,7 +450,15 @@ try {
     assert.equal(await page.locator('#voiceSource').inputValue(),'microsoft');
     await page.locator('#voiceSource').selectOption('recordings');assert.equal(await page.locator('#voiceName').isDisabled(),true);
     await page.locator('#stopAudio').click();assert.equal(await page.evaluate(()=>window.requests.at(-1).type),'stop-audio');
-    await page.screenshot({path:join(screenshots,'audio-settings.png'),fullPage:true});await page.close();
+    await page.screenshot({path:join(screenshots,'audio-settings.png'),fullPage:true});
+    // Changes from another extension context must also collapse and expand the group.
+    for(const enabled of [false,true]) {
+      await page.evaluate(enabled=>window.storageListeners.forEach(listener=>listener({speechEnabled:{newValue:enabled}},'session')),enabled);
+      assert.equal(await page.locator('#voiceSettings').isVisible(),enabled);
+    }
+    assert.equal(await page.locator('#repeatSpeechToggle').isChecked(),true);
+    assert.equal(await page.locator('#voiceGender').inputValue(),'male');
+    await page.close();
   });
   await tests('packaged suspended MP3 decodes in Chromium',async()=>{
     const page=await ui.newPage();await page.goto(`${base}/popup.html`);
@@ -483,6 +508,16 @@ try {
     assert.match(await page.locator('.about-instructions').textContent(),/In Chrome.*Global/);
     assert.match(await page.locator('.about-license').textContent(),/perpetual basis.*Preston Webb/s);
     assert.equal(await page.locator('#aboutView #browserShortcuts').count(),0);
+    assert.equal(await page.locator('#settingsView #blacklistForm').count(),0);
+    assert.equal(await page.locator('#blacklistView').isVisible(),false);
+    await page.getByRole('tab',{name:'Blacklist',exact:true}).click();
+    assert.equal(await page.locator('#blacklistForm').isVisible(),true);
+    assert.equal(await page.locator('#settingsView').isVisible(),false);
+    assert.equal(await page.getByRole('tab',{name:'Blacklist',exact:true}).getAttribute('aria-selected'),'true');
+    assert.equal(await page.locator('[role="tab"][aria-selected="true"]').count(),1);
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+    await page.locator('#settingsTab').click();
+    assert.equal(await page.locator('#blacklistView').isVisible(),false);
     await page.locator('#settingsTab').click();
     await page.locator('#browserShortcuts').click();
     assert.deepEqual(await page.evaluate(()=>window.openedTabs),[{url:'chrome://extensions/shortcuts'}]);
@@ -508,8 +543,8 @@ try {
     assert.equal(await page.evaluate(()=>window.requests.find(x=>x.type==='rerun').search.id),'failed-fixture');
     await page.close();
   });
-  await tests('Blacklist settings unlock, validate identifiers, add entries and confirm trash removal',async()=>{
-    const page=await ui.newPage();await page.goto(`${base}/popup.html`);await page.locator('#history tr').first().waitFor();await page.locator('#settingsTab').click();
+  await tests('Blacklist tab supports unlocking, identifier validation, entry creation and confirmed removal',async()=>{
+    const page=await ui.newPage();await page.goto(`${base}/popup.html`);await page.locator('#history tr').first().waitFor();await page.locator('#blacklistTab').click();
     assert.equal(await page.locator('#blacklistAdd').isDisabled(),true);
     assert.equal(await page.locator('#blacklistSetup').isVisible(),true);
     await page.locator('#blacklistSetup').click();
@@ -547,7 +582,7 @@ try {
     assert.equal(await page.locator('#blacklistEmpty').isVisible(),true);await page.close();
   });
   await tests('formatted blacklist numbers are normalized without silent input truncation',async()=>{
-    const page=await ui.newPage();await page.goto(`${base}/popup.html`);await page.locator('#history tr').first().waitFor();await page.locator('#settingsTab').click();
+    const page=await ui.newPage();await page.goto(`${base}/popup.html`);await page.locator('#history tr').first().waitFor();await page.locator('#blacklistTab').click();
     await page.evaluate(()=>{
       window.blacklistData={hasVault:true,unlocked:true,entries:[]};
       for(const listener of window.storageListeners)listener({vault:{newValue:{ciphertext:'fixture'}}},'local');

@@ -12,6 +12,7 @@
   <nav class="tabs" role="tablist" aria-label="Extension views">
     <button id="historyTab" role="tab" aria-selected="true" aria-controls="historyView">Recent searches</button>
     <button id="settingsTab" role="tab" aria-selected="false" aria-controls="settingsView">Settings</button>
+    <button id="blacklistTab" role="tab" aria-selected="false" aria-controls="blacklistView">Blacklist</button>
     <button id="aboutTab" role="tab" aria-selected="false" aria-controls="aboutView">About</button>
   </nav>
   <main>
@@ -30,37 +31,20 @@
       <label class="alerts-toggle" for="alertsToggle"><span>Plate & license status alerts<small>Enable for status popups displaying the status of a Driver's License or Licens Plate. Popups auto close after 90 seconds and 10 seconds if they are valid.</small></span><span class="switch-control"><input id="alertsToggle" type="checkbox" role="switch"><span class="switch-track" aria-hidden="true"></span></span></label>
     </div>
     <div class="alerts-setting">
-      <label class="alerts-toggle" for="speechToggle"><span>Voice status alerts<small>Plays voice alerts of the status of a Driver's License or License Plate.</small></span><span class="switch-control"><input id="speechToggle" type="checkbox" role="switch"><span class="switch-track" aria-hidden="true"></span></span></label>
-      <label for="voiceSource">Announcement source</label>
-      <select id="voiceSource"><option value="recordings">Bundled voice recordings</option><option value="microsoft">Microsoft text to speech</option></select>
-      <label class="alerts-toggle repeat-speech" for="repeatSpeechToggle"><span>Repeat voice announcement<small>Toggle between the voice alerts playing once or repeating a second time.</small></span><span class="switch-control"><input id="repeatSpeechToggle" type="checkbox" role="switch"><span class="switch-track" aria-hidden="true"></span></span></label>
-      <label for="voiceGender">Voice</label>
-      <select id="voiceGender"><option value="female">Female</option><option value="male">Male</option></select>
-      <label for="voiceName">Microsoft voice (optional override)</label>
-      <select id="voiceName"><option value="">Automatic for selected voice</option></select>
-      <small id="voiceHelp">A status without a matching recording uses Microsoft speech with the selected gender.</small>
-      <label class="alerts-toggle" for="clipToggle"><span>Suspended audio clip<small>Replaces other voice alerts for suspended results.</small></span><span class="switch-control"><input id="clipToggle" type="checkbox" role="switch"><span class="switch-track" aria-hidden="true"></span></span></label>
-      <button id="stopAudio" class="secondary">Stop audio</button>
+      <label class="alerts-toggle" for="speechToggle"><span>Voice status alerts<small>Plays voice alerts of the status of a Driver's License or License Plate.</small></span><span class="switch-control"><input id="speechToggle" type="checkbox" role="switch" aria-controls="voiceSettings"><span class="switch-track" aria-hidden="true"></span></span></label>
+      <div id="voiceSettings" class="voice-settings" hidden>
+        <label for="voiceSource">Announcement source</label>
+        <select id="voiceSource"><option value="recordings">Bundled voice recordings</option><option value="microsoft">Microsoft text to speech</option></select>
+        <label class="alerts-toggle repeat-speech" for="repeatSpeechToggle"><span>Repeat voice announcement<small>Toggle between the voice alerts playing once or repeating a second time.</small></span><span class="switch-control"><input id="repeatSpeechToggle" type="checkbox" role="switch"><span class="switch-track" aria-hidden="true"></span></span></label>
+        <label for="voiceGender">Voice</label>
+        <select id="voiceGender"><option value="female">Female</option><option value="male">Male</option></select>
+        <label for="voiceName">Microsoft voice (optional override)</label>
+        <select id="voiceName"><option value="">Automatic for selected voice</option></select>
+        <small id="voiceHelp">A status without a matching recording uses Microsoft speech with the selected gender.</small>
+        <label class="alerts-toggle" for="clipToggle"><span>Suspended audio clip<small>Replaces other voice alerts for suspended results.</small></span><span class="switch-control"><input id="clipToggle" type="checkbox" role="switch"><span class="switch-track" aria-hidden="true"></span></span></label>
+        <button id="stopAudio" class="secondary">Stop audio</button>
+      </div>
     </div>
-      <section class="section blacklist-settings" aria-labelledby="blacklistTitle">
-        <h2 id="blacklistTitle">Blacklist</h2>
-        <p id="blacklistState" role="status"></p>
-        <p class="binding-note">Add every known identifier for each protected person. Matching is by number and category; the extension cannot infer a person's other numbers.</p>
-        <table id="blacklistTable"><thead><tr><th scope="col">Number type</th><th scope="col">Number</th><th scope="col">Remove</th></tr></thead><tbody id="blacklistEntries"></tbody></table>
-        <p id="blacklistEmpty" class="binding-note" hidden>No blacklisted entries.</p>
-        <form id="blacklistForm">
-          <label for="blacklistKind">Number type</label>
-          <select id="blacklistKind"><option value="plate">Plate number</option><option value="license">DL number</option><option value="customer">Customer number</option></select>
-          <label for="blacklistValue">Number</label>
-          <input id="blacklistValue" type="text" autocomplete="off" spellcheck="false" aria-describedby="blacklistLimit">
-          <small id="blacklistLimit">Up to 8 letters or digits. Spaces are ignored.</small>
-          <div id="blacklistUnlockFields"><label for="blacklistPassphrase">Vault passphrase</label>
-          <input id="blacklistPassphrase" type="password" autocomplete="off">
-          <small>Unlock once per browser session to add and remove entries without re-entering your passphrase.</small></div>
-          <div class="actions"><button id="blacklistSetup" class="secondary" type="button">Create encrypted vault</button><button id="blacklistUnlock" class="secondary" type="button">Unlock vault</button><button id="blacklistAdd" type="submit">Add to blacklist</button></div>
-        </form>
-        <p id="blacklistFeedback" role="status"></p>
-      </section>
       <section id="appearanceSettings" class="alerts-setting appearance-settings" aria-labelledby="appearanceTitle">
         <h2 id="appearanceTitle">Dark Mode</h2>
         <label class="alerts-toggle" for="dmvDarkMode"><span>Darkmode for the DMV website<small>Toggle to enable or disable dark mode across the dmv website pages</small></span><span class="switch-control"><input id="dmvDarkMode" type="checkbox" role="switch"><span class="switch-track" aria-hidden="true"></span></span></label>
@@ -72,6 +56,25 @@
         <a id="browserShortcuts" href="chrome://extensions/shortcuts">Open browser keyboard shortcut settings</a>
         <p class="binding-note"><button id="shortcutSetup" class="secondary">Open shortcut setup guide</button></p>
       </div>
+    </section>
+    <section id="blacklistView" class="blacklist-settings" role="tabpanel" aria-labelledby="blacklistTab" hidden>
+      <h2 id="blacklistTitle">Blacklist</h2>
+      <p id="blacklistState" role="status"></p>
+      <p class="binding-note">Add every known identifier for each protected person. Matching is by number and category; the extension cannot infer a person's other numbers.</p>
+      <table id="blacklistTable"><thead><tr><th scope="col">Number type</th><th scope="col">Number</th><th scope="col">Remove</th></tr></thead><tbody id="blacklistEntries"></tbody></table>
+      <p id="blacklistEmpty" class="binding-note" hidden>No blacklisted entries.</p>
+      <form id="blacklistForm">
+        <label for="blacklistKind">Number type</label>
+        <select id="blacklistKind"><option value="plate">Plate number</option><option value="license">DL number</option><option value="customer">Customer number</option></select>
+        <label for="blacklistValue">Number</label>
+        <input id="blacklistValue" type="text" autocomplete="off" spellcheck="false" aria-describedby="blacklistLimit">
+        <small id="blacklistLimit">Up to 8 letters or digits. Spaces are ignored.</small>
+        <div id="blacklistUnlockFields"><label for="blacklistPassphrase">Vault passphrase</label>
+        <input id="blacklistPassphrase" type="password" autocomplete="off">
+        <small>Unlock once per browser session to add and remove entries without re-entering your passphrase.</small></div>
+        <div class="actions"><button id="blacklistSetup" class="secondary" type="button">Create encrypted vault</button><button id="blacklistUnlock" class="secondary" type="button">Unlock vault</button><button id="blacklistAdd" type="submit">Add to blacklist</button></div>
+      </form>
+      <p id="blacklistFeedback" role="status"></p>
     </section>
     <section id="aboutView" role="tabpanel" aria-labelledby="aboutTab" hidden>
       <h2>Your keyboard shortcuts</h2>
