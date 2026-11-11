@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "SC DMV Hotkeys",
-  "version": "1.8.11",
+  "version": "1.8.12",
   "minimum_chrome_version": "120",
   "description": "Keyboard shortcuts for automating user-input searches through the SCDMV online portal and customizing CSS dark mode styling.",
   "permissions": [
@@ -64,6 +64,10 @@
     },
     "barcode": {
       "description": "Generate PDF417 barcode for scanning (preferred Alt + B)",
+      "global": true
+    },
+    "help": {
+      "description": "Open Shortcut Menu (preferred Alt+H)",
       "global": true
     },
     "previous": {

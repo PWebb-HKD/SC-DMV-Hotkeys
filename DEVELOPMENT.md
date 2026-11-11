@@ -18,7 +18,7 @@ This guide covers first-party code. Start with the module overview, read each fu
 | Alert preferences | `alert-settings.js` | Whitelisted persistent preferences and session mirrors; preference/queue tests. |
 | Audio | `voice-recordings.js`, `audio-alerts.js`, `audio-player.js` | Shared asset catalog, exclusive source selection, cancellation, and offscreen playback; audio/browser tests. |
 | DMV theme | `dmv-theme-start.js`, `dmv-theme.js`, `dmv-theme-settings.js`, `dmv-theme.css` | Early-paint styling and narrowly authorized appearance updates; theme-browser/queue tests. |
-| Extension UI | `popup.js`, `panel.js`, `shortcut-setup.js` and their HTML/CSS | Settings, prompt/status rendering, actual shortcut assignments, and user confirmations; browser tests. |
+| Extension UI | `popup.js`, `panel.js`, `shortcut-setup.js`, `shortcut-menu.js` and their HTML/CSS | Settings, prompt/status rendering, actual shortcut assignments, and user confirmations; browser tests. |
 
 ## Execution contexts and trust boundaries
 
@@ -43,6 +43,8 @@ The reader's job ID is bound to its tab and, for same-tab viewers, committed doc
 9. Capture PDF text separately so Next remains responsive. Recheck alert preferences after extraction before publishing optional alerts/audio.
 
 `SearchRun.step` races work against abort and checks again afterward. `guardedApi` preserves each API method's receiver and applies that boundary recursively. Stop cannot recall an HTTP request already submitted; it suppresses further actions, stale focus, and stale messages. Keep guards around new asynchronous boundaries, especially window creation, storage commits, and result callbacks.
+
+The `help` command opens a singleton shortcut menu without calling `beginRun`. Its separate `SearchRun` lets Stop or a selected command cancel even a late window creation. The menu captures the active tab before taking focus; `shortcut-menu-run` resolves that stored source ID and then dispatches through the normal command entry point. It never accepts an arbitrary source supplied by its page. Reopening focuses the existing menu without replacing its source. Closing it does not cancel an already running search. `shortcut-menu-layout.js` sizes content plus window decoration and aligns the accepted outer size to the current display's usable right edge, including displays with negative coordinates.
 
 Worker Maps hold live callbacks, not resumable jobs. Browser session data can survive worker suspension, but a restarted worker cannot resume an old callback or a partly submitted transaction.
 

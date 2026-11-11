@@ -15,6 +15,7 @@ const DESCRIPTIONS = {
   previous: 'Search the previous saved customer number. Stops at the first customer without wrapping around.',
   address: "Read the driver's license number from a driving-record PDF and find customers at the same address.",
   scutties: "Read the driver's last name and date of birth from the open PDF and search SCUTTIES.",
+  help: 'Open a compact shortcut menu with a button for each search and report action.',
   barcode: 'Generate a PDF417 data-entry barcode from the focused driver/vehicle report, or the newest report when none is focused.'
 };
 /** Send a privileged UI request and return its value or throw the worker's displayed error. */
@@ -189,7 +190,7 @@ $('alertsToggle').onchange = async event => {
   finally { input.disabled = false; }
 };
 $('aboutTab').onclick = () => { tab('about'); refresh().catch(error => feedback(error.message)); };
-for (const [id, label] of [['plate', "Plate Search"], ['license', "DL # Search"], ['customer', "Customer # Search"], ['owners', "Get Customer #'s \nfrom current page"], ['previous', 'Previous customer'], ['next', 'Next customer'], ['address', 'Same address'], ['scutties', 'SCUTTIES'], ['barcode', 'Barcode']]) {
+for (const [id, label] of [['plate', "Plate Search"], ['license', "DL # Search"], ['customer', "Customer # Search"], ['owners', "Get Customer #'s \nfrom current page"], ['previous', 'Previous customer'], ['next', 'Next customer'], ['address', 'Same address'], ['scutties', 'SCUTTIES'], ['barcode', 'Barcode'], ['help', 'Shortcut Menu']]) {
   const button = document.createElement('button'); button.textContent = label;
   button.onclick = async () => { try { await send({type: 'run', command: id}); window.close(); } catch (error) { feedback(error.message); } };
   $('quick').append(button);

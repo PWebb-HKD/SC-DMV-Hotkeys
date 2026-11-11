@@ -382,14 +382,78 @@ try {
       }}, commands:{getAll:async()=>window.commandShortcuts},windows:{create:async options=>{window.openedTabs.push(options);}}, storage:{onChanged:{addListener:listener=>window.storageListeners.push(listener)}},tabs:{create:async options=>{window.openedTabs.push(options);}},permissions:{request:async()=>true}
     };
   });
+  /** Mock only browser window APIs; real DOM measurements drive menu sizing. */
+  async function shortcutMenuPage({height=900,minimumWidth=0,clock=false,failOnce=false}={}) {
+    const page=await ui.newPage();await page.setViewportSize({width:360,height:600});
+    if(clock)await page.clock.install();
+    await page.addInitScript(({height,minimumWidth,failOnce})=>{
+      Object.defineProperties(screen,{availLeft:{value:-1280},availTop:{value:24},availWidth:{value:1280},availHeight:{value:height}});
+      window.menuUpdates=[];window.menuCurrent={id:42,width:innerWidth+16,height:innerHeight+40};
+      chrome.windows.getCurrent=async()=>({...window.menuCurrent});
+      chrome.windows.update=async(id,bounds)=>{
+        window.menuUpdates.push({id,...bounds});Object.assign(window.menuCurrent,bounds);
+        window.menuCurrent.width=Math.max(minimumWidth,window.menuCurrent.width);return {...window.menuCurrent};
+      };
+      const original=chrome.runtime.sendMessage;
+      chrome.runtime.sendMessage=async message=>{
+        if(message.type==='panel-data')return {ok:true,value:{type:'shortcut-menu',sourceId:123}};
+        if(message.type==='shortcut-menu-run'&&failOnce){failOnce=false;window.requests.push(message);return {ok:false,error:'Unable to launch this action.'};}
+        return original(message);
+      };
+    },{height,minimumWidth,failOnce});
+    await page.goto(`${base}/shortcut-menu.html?id=menu-fixture`);
+    await page.waitForFunction(()=>window.menuUpdates.length>=2);
+    return page;
+  }
+  await tests('shortcut menu fits a vertical column to its content and the usable right screen edge',async()=>{
+    for(const config of [{},{height:400},{minimumWidth:400}]) {
+      const page=await shortcutMenuPage(config),buttons=page.locator('#actions button');
+      assert.equal(await buttons.count(),9);assert.equal(await page.locator('#error').textContent(),'');
+      assert.equal(await page.evaluate(()=>document.activeElement.dataset.command),'plate');
+      const dimensions=await page.evaluate(()=>({bounds:window.menuCurrent,bodyWidth:document.body.offsetWidth,bodyHeight:document.body.getBoundingClientRect().height,compact:document.body.classList.contains('compact')}));
+      assert.equal(dimensions.bounds.left+dimensions.bounds.width,0);
+      assert.ok(dimensions.bounds.top>=24);assert.ok(dimensions.bounds.top+dimensions.bounds.height<=24+(config.height||900));
+      if(!config.minimumWidth)assert.equal(dimensions.bounds.width,Math.ceil(dimensions.bodyWidth)+16);
+      await page.setViewportSize({width:dimensions.bounds.width-16,height:dimensions.bounds.height-40});
+      const boxes=await buttons.evaluateAll(nodes=>nodes.map(node=>{const r=node.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,bottom:r.bottom};}));
+      for(let i=1;i<boxes.length;i++){assert.equal(boxes[i].x,boxes[0].x);assert.equal(boxes[i].width,boxes[0].width);assert.ok(boxes[i].y>boxes[i-1].bottom);}
+      assert.ok(boxes.at(-1).bottom<=dimensions.bounds.height-40,'all action buttons must fit without scrolling');
+      assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+      if(config.height)assert.equal(dimensions.compact,true);
+      await page.screenshot({path:join(screenshots,config.height?'shortcut-menu-compact.png':'shortcut-menu.png'),fullPage:true});
+      await page.keyboard.press('Escape');assert.equal(await page.evaluate(()=>window.panelClosed),true);await page.close();
+    }
+  });
+  await tests('shortcut menu buttons dispatch each search and report action exactly once',async()=>{
+    for(const command of ['plate','license','customer','owners','next','previous','address','scutties','barcode']) {
+      const page=await shortcutMenuPage();
+      assert.equal(await page.locator('#actions [data-command="help"]').count(),0);
+      const button=page.locator(`#actions [data-command="${command}"]`);
+      if(command==='license'){await button.focus();await page.keyboard.press('Enter');}else await button.click();
+      await page.waitForFunction(()=>window.panelClosed);
+      assert.deepEqual(await page.evaluate(()=>window.requests.filter(request=>request.type==='shortcut-menu-run')),[{type:'shortcut-menu-run',id:'menu-fixture',command}]);
+      await page.close();
+    }
+  });
+  await tests('shortcut menu permits retry after an error and expires without running any action',async()=>{
+    const retry=await shortcutMenuPage({failOnce:true});await retry.locator('#actions button').first().click();
+    await retry.waitForFunction(()=>document.querySelector('#error').textContent.includes('Unable to launch'));
+    assert.equal(await retry.locator('#actions button:disabled').count(),0);assert.equal(await retry.evaluate(()=>window.panelClosed),false);
+    await retry.locator('#actions button').first().click();await retry.waitForFunction(()=>window.panelClosed);await retry.close();
+    const timeout=await shortcutMenuPage({clock:true});await timeout.clock.fastForward(90000);
+    assert.equal(await timeout.evaluate(()=>window.panelClosed),true);assert.equal(await timeout.evaluate(()=>window.requests.some(request=>request.type==='shortcut-menu-run')),false);await timeout.close();
+  });
   await tests('shortcut setup lists actual assignments and preferred keys, opens settings, refreshes and dismisses',async()=>{
     const page=await ui.newPage();await page.setViewportSize({width:900,height:820});
     await page.addInitScript(()=>{window.setupClosed=false;window.close=()=>{window.setupClosed=true;};});
     await page.goto(`${base}/shortcut-setup.html`);await page.locator('#assignments tr').first().waitFor();
-    assert.equal(await page.locator('#assignments tr').count(),9);
+    assert.equal(await page.locator('#assignments tr').count(),10);
     assert.match(await page.locator('main').textContent(),/In Chrome.*Global/s);
     assert.match(await page.locator('[data-command="plate"]').textContent(),/Alt\+P.*Ctrl\+Shift\+7/);
     assert.match(await page.locator('[data-command="barcode"]').textContent(),/Alt\+B.*Not assigned/);
+    assert.match(await page.locator('[data-command="help"]').textContent(),/Alt\+H.*Not assigned/);
+    assert.match(await page.locator('main').textContent(),/Simple setup:.*Assign only.*Alt\+H.*leave the other commands unassigned/s);
+    assert.match(await page.locator('main').textContent(),/Additional shortcuts \(optional\):.*recommended keys.*keys of your choice/s);
     await page.locator('#openShortcuts').click();
     assert.deepEqual(await page.evaluate(()=>window.openedTabs),[{url:'chrome://extensions/shortcuts',type:'normal',focused:true}]);
     await page.evaluate(()=>window.commandShortcuts=[{name:'barcode',shortcut:'Alt+B'}]);await page.locator('#refresh').click();
@@ -498,7 +562,7 @@ try {
     await page.screenshot({path:join(screenshots,'history.png')});
     await page.locator('#aboutTab').click();
     assert.equal(await page.locator('#aboutTab').textContent(),'About');
-    assert.equal(await page.locator('.shortcut-entry').count(),10);
+    assert.equal(await page.locator('.shortcut-entry').count(),11);
     assert.equal(await page.locator('[data-command="selected"]').count(),0);
     assert.equal(await page.locator('[data-command="plate"] kbd').textContent(),'Ctrl+Shift+7');
     assert.equal(await page.locator('[data-command="license"] kbd').textContent(),'Not assigned');
