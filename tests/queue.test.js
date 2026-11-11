@@ -701,3 +701,30 @@ test('worker-side DL and customer submissions strip padding before portal fill a
     assert.equal(submittedQueries.at(-1),value);assert.equal(submissions.at(-1),value);
   }
 });
+
+
+test('barcode parsing errors open a correctable draft without submitting a search',async()=>{
+  barcodeSource(driverReport.replace('123 EXAMPLE ROAD','X'.repeat(50)));const before=submittedQueries.length;
+  await send({type:'run',command:'barcode'});await wait(barcodeData);
+  assert.equal(barcodeData().payload,undefined);assert.match(barcodeData().parseError,/35-character/);
+  assert.equal(Object.fromEntries(barcodeData().draftFields).DAG,'X'.repeat(50));
+  assert.equal(submittedQueries.length,before);assert.match(session.status,/Review and correct/);
+});
+test('reviewing an incomplete owner preserves its data and does not switch to a later party',async()=>{
+  barcodeSource(vehicleReport.replace('123 EXAMPLE ROAD, COLUMBIA SC 292010123','UNSPLIT ADDRESS').replace('Last Transaction:','Owner Number: 9999 Owner Name: LATER, PERSON Owner Address: 456 NEXT ROAD, NEXT CITY SC 12345 Last Transaction:'));
+  await send({type:'run',command:'barcode'});await wait(()=>panel('barcode-owner-incomplete'));
+  const id=new URL(panel('barcode-owner-incomplete').url).searchParams.get('id');
+  await send({type:'panel-submit',id,value:'edit'});await wait(barcodeData);
+  const f=Object.fromEntries(barcodeData().draftFields);assert.equal(f.RBD,'EXAMPLE-SAMPLE');assert.equal(f.RBI,'UNSPLIT ADDRESS');assert.equal(f.RBK,'');assert.equal(barcodeData().payload,undefined);
+});
+
+
+test('a second parsing error preserves the explicit choice to leave incomplete owner fields blank',async()=>{
+  barcodeSource(vehicleReport.replace('123 EXAMPLE ROAD, COLUMBIA SC 292010123','UNPARSEABLE ADDRESS').replace('TEST123','TOO-LONG-PLATE'));
+  await send({type:'run',command:'barcode'});await wait(()=>panel('barcode-owner-incomplete'));
+  const id=new URL(panel('barcode-owner-incomplete').url).searchParams.get('id');
+  await send({type:'panel-submit',id,value:'blank'});await wait(barcodeData);
+  assert.equal(barcodeData().allowIncompleteParty,true);assert.equal(barcodeData().payload,undefined);
+  const f=Object.fromEntries(barcodeData().draftFields);for(const key of ['RBI','RBK','RBL','RBM'])assert.equal(f[key],'');
+  assert.equal(f.RAM,'TOO-LONG-PLATE');
+});

@@ -25,8 +25,10 @@ async function send(message) {
 }
 /** Write feedback as text so worker messages cannot introduce markup. */
 function feedback(message) { $('feedback').textContent = message; }
-/** Enable controls appropriate to the announcement source and explain persistent voice preferences. */
+/** Collapse voice options when alerts are off without changing saved selections;
+ * enable source-specific controls and explain the selected announcement behavior. */
 function voiceSourceUI() {
+  $('voiceSettings').hidden = !$('speechToggle').checked;
   const recorded = $('voiceSource').value === 'recordings';
   $('voiceName').disabled = recorded;
   $('voiceHelp').textContent = recorded
@@ -35,7 +37,7 @@ function voiceSourceUI() {
 }
 /** Select one popup view and keep its accessible tab state synchronized. */
 function tab(selected) {
-  for (const name of ['history', 'settings', 'about']) {
+  for (const name of ['history', 'settings', 'blacklist', 'about']) {
     $(`${name}View`).hidden = name !== selected;
     $(`${name}Tab`).setAttribute('aria-selected', String(name === selected));
   }
@@ -159,6 +161,7 @@ $('dmvDarkMode').onchange = async () => { try { await send({type:'dmv-display-se
 $('pdfDarkMode').onchange = async () => { try { await send({type:'pdf-display-settings',enabled:$('pdfDarkMode').checked}); feedback(''); } catch(error) { feedback(error.message); await refresh(); } };
 $('historyTab').onclick = () => tab('history');
 $('settingsTab').onclick = () => { tab('settings'); refresh().catch(error => feedback(error.message)); };
+$('blacklistTab').onclick = () => { tab('blacklist'); refresh().catch(error => feedback(error.message)); };
 $('stopFunction').onclick = async () => {
   $('stopFunction').disabled = true;
   try { await send({type: 'stop'}); $('status').textContent = 'Stopped'; feedback(''); }
@@ -205,7 +208,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'session' && changes.history) refresh().catch(error => feedback(error.message));
   if (area === 'session' && changes.status) $('status').textContent = changes.status.newValue;
   if (area === 'session' && changes.alertsEnabled) $('alertsToggle').checked = changes.alertsEnabled.newValue === true;
-  if (area === 'session' && changes.speechEnabled) $('speechToggle').checked = changes.speechEnabled.newValue === true;
+  if (area === 'session' && changes.speechEnabled) { $('speechToggle').checked = changes.speechEnabled.newValue === true; voiceSourceUI(); }
   if (area === 'session' && changes.repeatSpeech) $('repeatSpeechToggle').checked = changes.repeatSpeech.newValue === true;
   if (area === 'session' && changes.suspendedClipEnabled) $('clipToggle').checked = changes.suspendedClipEnabled.newValue === true;
   if (area === 'session' && (changes.voiceGender || changes.voiceName)) refresh().catch(error => feedback(error.message));

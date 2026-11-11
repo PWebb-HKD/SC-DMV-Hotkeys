@@ -5,6 +5,10 @@
 <main><p id="profile"></p><p>Scan into your reporting software and verify the imported fields against the source record.</p>
 <div class="barcode-controls"><label for="scale">Barcode size</label><select id="scale"><option value="2">Small</option><option value="3" selected>Medium</option><option value="4">Large</option></select><button id="close">Close · Esc</button></div>
 <small id="countdown">Closes in 90 seconds. Press Esc to dismiss.</small>
-<div id="scanArea"><canvas id="barcode" aria-label="PDF417 import barcode"></canvas></div>
-<p id="error" class="error" role="alert"></p><ul id="warnings"></ul><p class="muted">Generated from the open DMV report for data entry. This is not a replacement credential or proof of driving privileges.</p></main>
+<div id="scanArea" hidden><canvas id="barcode" aria-label="PDF417 import barcode"></canvas></div>
+<p id="error" class="error" role="alert"></p>
+<section id="editor" hidden aria-labelledby="editorTitle"><div class="editor-heading"><h2 id="editorTitle">Parsed Data</h2><button id="edit" type="button" aria-pressed="false">Edit Data</button></div>
+<p class="muted">Review these values against the report. Click Edit Data to correct them. The barcode updates as valid changes are entered. Each change restarts the 90-second countdown. Edits apply only to this popup.</p>
+<div id="fields" class="barcode-fields"></div></section>
+<section id="notes" hidden><h2>Original Parsing Notes</h2><ul id="warnings"></ul></section><p class="muted">Generated from the open DMV report for data entry. This is not a replacement credential or proof of driving privileges.</p></main>
 <script src="vendor/bwip-js-min.js"></script><script type="module" src="barcode.js"></script></body></html>

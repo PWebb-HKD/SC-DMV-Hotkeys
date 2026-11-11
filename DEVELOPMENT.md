@@ -13,7 +13,7 @@ This guide covers first-party code. Start with the module overview, read each fu
 | Cancellation | `run.js` | Guard API calls and continuations against replaced commands; run/queue tests. |
 | PDF extraction and display | `reader.js`, `pdf-dark-view.js`, `pdf-print.js` | Job-bound text extraction, continuous rendering, image preservation, selection, and immutable native printing; browser tests. |
 | Status evaluation | `status-alerts.js` | Pure South Carolina calendar/date rules and display-only alert data; status/report-layout tests. |
-| Barcode mapping and rendering | `barcode-data.js`, `barcode.js` | ASCII field mapping, framing, selected-party isolation, local PDF417 drawing; mapping/decoder tests. |
+| Barcode mapping and rendering | `barcode-data.js`, `barcode-editor.js`, `barcode.js` | ASCII field mapping, framing, selected-party isolation, popup-local corrections, local PDF417 drawing; mapping/decoder tests. |
 | Vault and search protection | `vault.js`, `blacklist.js` | Serialized encrypted persistence, canonical identifiers, and mandatory blocking errors; vault/blacklist/queue tests. |
 | Alert preferences | `alert-settings.js` | Whitelisted persistent preferences and session mirrors; preference/queue tests. |
 | Audio | `voice-recordings.js`, `audio-alerts.js`, `audio-player.js` | Shared asset catalog, exclusive source selection, cancellation, and offscreen playback; audio/browser tests. |
@@ -90,6 +90,10 @@ Owner-number extraction preserves line breaks to avoid merging adjacent numeric 
 Dates are strict South Carolina calendar days. Month/year shifts clamp month ends. Temporary classes T45V/E45V/E60V use Plate Exp Date; a blank decal date inherits it only for temporary barcode mapping. Current credential fields take precedence over Prior entries. Unreadable required status data yields an explicit unavailable result.
 
 Barcodes use ASCII so directory offsets equal byte counts. Driver v09 and SC registration v01 have different framing and field vocabularies. Keep SC's RAG plate-expiration/RBT decal-expiration mapping. A missing DL number stays blank; metadata absent from the report is not guessed. Registration initially binds name/address to the first numbered party. Mailing Address and Relationship labels are boundaries, not parts of identity fields. Incomplete data requires explicit user choice before selecting another party or emitting blank fields. Name punctuation remains a limited business/person heuristic, not reliable entity classification. Preserve field limits without silent truncation.
+
+`barcode-editor.js` reads the single-subfile directory and exposes human-readable fields without mutating worker-owned data. Untouched values retain their original bytes, including padding, unavailable markers, and credential inventory. Valid corrections rebuild the directory through `frameAamva`; field limits and ASCII/date/number validation apply before rendering. A recognized parsing failure produces an unencoded draft using the same report extraction. Drafts retain invalid values for review, preserve the selected party, and require validation before scanning. Unknown report types still stop with an error.
+
+The barcode view starts read-only and unlocks through Edit Data. Invalid input or rendering errors hide the canvas to avoid scanning an older payload. Data input events renew its ninety-second deadline, including invalid edits; size changes and the edit/lock button do not. Corrections live only in the popup and never update report snapshots, history, the vault, or DMV pages.
 
 ## Theme and audio boundaries
 

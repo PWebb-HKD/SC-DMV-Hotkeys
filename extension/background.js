@@ -14,7 +14,7 @@ import {initializeAlertPreferences, saveAlertPreferences, restoreAlertPreference
 import {AudioAlerts, availableVoices} from './audio-alerts.js';
 import {configureDmvTheme, initDmvTheme, refreshDmvThemeTabs, isDmvThemePage} from './dmv-theme-settings.js';
 import {darkResultSource, setPdfRouting, isNativePrintUrl} from './pdf-routing.js';
-import {reportBarcode, VehiclePartyError} from './barcode-data.js';
+import {reportBarcode, reportBarcodeDraft, VehiclePartyError} from './barcode-data.js';
 const audioAlerts = new AudioAlerts();
 
 // In-memory Maps hold live callbacks. Session storage holds view/report data, not
@@ -415,15 +415,19 @@ async function execute(command, value, source, options, run) {
         run.check();
         try { barcode = reportBarcode(text, {partyIndex}); }
         catch (error) {
-          if (!(error instanceof VehiclePartyError)) throw error;
-          const choice = await ask({type: 'barcode-owner-incomplete', hasNext: error.hasNext, message: `${error.message}\nYou can generate this barcode with incomplete owner fields left blank.${error.hasNext ? " Another owner/customer/registrant is listed; you can choose Use next owner instead." : ''}`}, run);
-          if (choice === 'blank') barcode = reportBarcode(text, {partyIndex, allowIncompleteParty: true});
+          if (!(error instanceof VehiclePartyError)) { barcode = reportBarcodeDraft(text, {partyIndex, error:error.message}); break; }
+          const choice = await ask({type: 'barcode-owner-incomplete', hasNext: error.hasNext, message: `${error.message}\nYou can review and correct the parsed data, or generate this barcode with incomplete owner fields left blank.${error.hasNext ? " Another owner/customer/registrant is listed; you can choose Use next owner instead." : ''}`}, run);
+          if (choice === 'edit') barcode = reportBarcodeDraft(text, {partyIndex, error:error.message});
+          else if (choice === 'blank') {
+            try { barcode = reportBarcode(text, {partyIndex, allowIncompleteParty:true}); }
+            catch (parseError) { barcode = reportBarcodeDraft(text, {partyIndex, error:parseError.message, allowIncompleteParty:true}); }
+          }
           else if (choice === 'next' && error.hasNext) partyIndex = error.nextPartyIndex;
           else { await api.storage.session.set({status: 'Barcode generation cancelled; owner information is incomplete'}); return; }
         }
       }
       await createPanel(barcode, {}, run);
-      await api.storage.session.set({status: 'Import barcode ready; verify the scanned fields against the report'});
+      await api.storage.session.set({status: barcode.draftFields ? 'Review and correct parsed data before generating the barcode' : 'Import barcode ready; verify the scanned fields against the report'});
     } else if (command === 'address') {
       const dl = options.replay ? normalize('license', value) : driverLicense(await pdfText(source, run));
       if (!dl) throw new Error("A driver's license number was not detected. A driver's license number is required to run customers at the same residence.");
