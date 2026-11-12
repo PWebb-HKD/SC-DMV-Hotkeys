@@ -22,6 +22,7 @@ const audioAlerts = new AudioAlerts();
 let resettingUserInfo = null;
 let activeRun = null, openingPanel = Promise.resolve(), tracking = Promise.resolve();
 let openingShortcutMenu = null, shortcutMenuRun = null;
+let savingShortcutMenuSettings = Promise.resolve();
 const panels = new Map(), readers = new Map(), captures = new Map();
 const boot = Promise.all([
   chrome.storage.local.setAccessLevel({accessLevel: 'TRUSTED_CONTEXTS'}),
@@ -90,7 +91,8 @@ function openShortcutMenu() {
       const existing = [...panels.values()].find(entry=>entry.data.type === 'shortcut-menu');
       if (existing) {await run.step(()=>chrome.windows.update(existing.windowId,{focused:true,state:'normal'}));return;}
       const source = await run.step(()=>sourceTab());
-      await createPanel({type:'shortcut-menu',sourceId:source?.id},{},run);
+      const {shortcutMenuNoTimeout,shortcutMenuAlwaysOnTop} = await run.step(()=>chrome.storage.local.get(['shortcutMenuNoTimeout','shortcutMenuAlwaysOnTop']));
+      await createPanel({type:'shortcut-menu',sourceId:source?.id,noTimeout:shortcutMenuNoTimeout===true||shortcutMenuAlwaysOnTop===true,alwaysOnTop:shortcutMenuAlwaysOnTop===true},{},run);
     } finally {if (shortcutMenuRun === run) shortcutMenuRun = null;}
   })().finally(()=>{openingShortcutMenu = null;});
   return openingShortcutMenu;
@@ -667,10 +669,22 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
         return true;
       }
       // These snapshots are restricted to extension-owned pages by the router above.
-      case 'state': return {blacklist: await blacklistState(), ...await chrome.storage.local.get(['vault','pdfDarkMode','dmvDarkMode']), ...await chrome.storage.session.get(['history', 'queue', 'status', 'alertsEnabled', 'speechEnabled', 'repeatSpeech', 'suspendedClipEnabled', 'voiceSource', 'voiceGender', 'voiceName']), voices: await availableVoices().catch(() => []), commands: await chrome.commands.getAll(), extensionId: chrome.runtime.id};
+      case 'state': return {blacklist: await blacklistState(), ...await chrome.storage.local.get(['vault','pdfDarkMode','dmvDarkMode','shortcutMenuNoTimeout','shortcutMenuAlwaysOnTop']), ...await chrome.storage.session.get(['history', 'queue', 'status', 'alertsEnabled', 'speechEnabled', 'repeatSpeech', 'suspendedClipEnabled', 'voiceSource', 'voiceGender', 'voiceName']), voices: await availableVoices().catch(() => []), commands: await chrome.commands.getAll(), extensionId: chrome.runtime.id};
       // Appearance updates persist independently of credentials and query state.
       case 'dmv-display-settings': {
         await chrome.storage.local.set({dmvDarkMode:message.enabled===true});await configureDmvTheme();await refreshDmvThemeTabs();return message.enabled===true;
+      }
+      case 'shortcut-menu-settings': {
+        // Serialize preference edits so enabling pinning always retains no-timeout mode.
+        const task = savingShortcutMenuSettings.then(async()=>{
+          const saved = await chrome.storage.local.get(['shortcutMenuAlwaysOnTop','shortcutMenuNoTimeout']);
+          const alwaysOnTop = Object.hasOwn(message,'alwaysOnTop') ? message.alwaysOnTop === true : saved.shortcutMenuAlwaysOnTop === true;
+          const noTimeout = alwaysOnTop || (Object.hasOwn(message,'noTimeout') ? message.noTimeout === true : saved.shortcutMenuNoTimeout === true);
+          await chrome.storage.local.set({shortcutMenuAlwaysOnTop:alwaysOnTop,shortcutMenuNoTimeout:noTimeout});
+          return {alwaysOnTop,noTimeout};
+        });
+        savingShortcutMenuSettings = task.catch(()=>{});
+        return task;
       }
       case 'pdf-display-settings': await setPdfRouting(message.enabled === true); await chrome.storage.local.set({pdfDarkMode: message.enabled === true}); return message.enabled === true;
       // Reset cancels workflows and drains metadata writes before deleting private session state.

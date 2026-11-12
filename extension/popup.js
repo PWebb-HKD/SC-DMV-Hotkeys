@@ -120,6 +120,9 @@ async function refresh() {
   renderBlacklist(data.blacklist);
   $('dmvDarkMode').checked = data.dmvDarkMode !== false;
   $('pdfDarkMode').checked = data.pdfDarkMode === true;
+  $('shortcutMenuAlwaysOnTop').checked = data.shortcutMenuAlwaysOnTop === true;
+  $('shortcutMenuNoTimeout').checked = data.shortcutMenuNoTimeout === true || data.shortcutMenuAlwaysOnTop === true;
+  $('shortcutMenuNoTimeout').disabled = data.shortcutMenuAlwaysOnTop === true;
   $('alertsToggle').checked = data.alertsEnabled === true;
   $('speechToggle').checked = data.speechEnabled === true;
   $('repeatSpeechToggle').checked = data.repeatSpeech === true;
@@ -158,6 +161,8 @@ async function refresh() {
   renderShortcuts(data.commands);
 }
 // UI events send worker requests; they never mutate the queue or submit website forms.
+$('shortcutMenuAlwaysOnTop').onchange = async () => { try { await send({type:'shortcut-menu-settings',alwaysOnTop:$('shortcutMenuAlwaysOnTop').checked}); feedback(''); await refresh(); } catch(error) { feedback(error.message); await refresh(); } };
+$('shortcutMenuNoTimeout').onchange = async () => { try { await send({type:'shortcut-menu-settings',noTimeout:$('shortcutMenuNoTimeout').checked}); feedback(''); } catch(error) { feedback(error.message); await refresh(); } };
 $('dmvDarkMode').onchange = async () => { try { await send({type:'dmv-display-settings',enabled:$('dmvDarkMode').checked}); feedback(''); } catch(error) { feedback(error.message); await refresh(); } };
 $('pdfDarkMode').onchange = async () => { try { await send({type:'pdf-display-settings',enabled:$('pdfDarkMode').checked}); feedback(''); } catch(error) { feedback(error.message); await refresh(); } };
 $('historyTab').onclick = () => tab('history');
@@ -205,7 +210,7 @@ for (const [id, type] of [['clearHistory', 'clear-history'], ['clearQueue', 'cle
 }
 // Update session controls while this short-lived popup remains open.
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && (changes.vault || changes.pdfDarkMode || changes.dmvDarkMode) || area === 'session' && (changes.blacklist || changes.unlockedVault)) refresh().catch(error => feedback(error.message));
+  if (area === 'local' && (changes.vault || changes.pdfDarkMode || changes.dmvDarkMode || changes.shortcutMenuNoTimeout || changes.shortcutMenuAlwaysOnTop) || area === 'session' && (changes.blacklist || changes.unlockedVault)) refresh().catch(error => feedback(error.message));
   if (area === 'session' && changes.history) refresh().catch(error => feedback(error.message));
   if (area === 'session' && changes.status) $('status').textContent = changes.status.newValue;
   if (area === 'session' && changes.alertsEnabled) $('alertsToggle').checked = changes.alertsEnabled.newValue === true;

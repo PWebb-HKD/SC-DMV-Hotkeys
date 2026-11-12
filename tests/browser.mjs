@@ -354,15 +354,16 @@ try {
   const ui = await browser.newContext({viewport:{width:540,height:900},deviceScaleFactor:1});
   const uiMocks = () => {
     window.requests=[];window.runtimeListeners=[];
-    window.panelClosed=false;window.close=()=>{window.panelClosed=true;};
+    window.panelClosed=false;const nativeClose=window.close.bind(window);
+    window.close=()=>{if(matchMedia('(display-mode: picture-in-picture)').matches)nativeClose();else window.panelClosed=true;};
     window.openedTabs=[];
-    window.sessionAlerts=false;window.pdfDarkMode=false;window.dmvDarkMode=true;window.blacklistData={hasVault:false,unlocked:false,entries:[]};window.historyErrors=[];window.storageListeners=[];
+    window.sessionAlerts=false;window.pdfDarkMode=false;window.dmvDarkMode=true;window.shortcutMenuNoTimeout=false;window.shortcutMenuAlwaysOnTop=false;window.blacklistData={hasVault:false,unlocked:false,entries:[]};window.historyErrors=[];window.storageListeners=[];
     window.audioSettings={};
     window.commandShortcuts=[{name:'plate',shortcut:'Ctrl+Shift+7'},{name:'next',shortcut:'Alt+N'},{name:'_execute_action',shortcut:'Alt+Period'}];
     window.chrome = {
       runtime:{onMessage:{addListener:fn=>window.runtimeListeners.push(fn)},getURL:path=>`${location.origin}/${path}`,connect:()=>({postMessage:()=>{}}),sendMessage:async message=>{
         window.requests.push(message);
-        if(message.type==='state')return {ok:true,value:{dmvDarkMode:window.dmvDarkMode,pdfDarkMode:window.pdfDarkMode,blacklist:window.blacklistData,history:[...window.historyErrors,{kind:'plate',value:'ABC12345',at:Date.now()},{kind:'license',value:'123456789',at:Date.now()}],queue:{values:['123','456'],index:1},commands:window.commandShortcuts,alertsEnabled:window.sessionAlerts,...window.audioSettings,voices:[{voiceName:'Microsoft David Desktop',lang:'en-US'},{voiceName:'Microsoft Zira Desktop',lang:'en-US'}]}};
+        if(message.type==='state')return {ok:true,value:{shortcutMenuAlwaysOnTop:window.shortcutMenuAlwaysOnTop,shortcutMenuNoTimeout:window.shortcutMenuNoTimeout,dmvDarkMode:window.dmvDarkMode,pdfDarkMode:window.pdfDarkMode,blacklist:window.blacklistData,history:[...window.historyErrors,{kind:'plate',value:'ABC12345',at:Date.now()},{kind:'license',value:'123456789',at:Date.now()}],queue:{values:['123','456'],index:1},commands:window.commandShortcuts,alertsEnabled:window.sessionAlerts,...window.audioSettings,voices:[{voiceName:'Microsoft David Desktop',lang:'en-US'},{voiceName:'Microsoft Zira Desktop',lang:'en-US'}]}};
         if(message.type==='blacklist-unlock'){
           if(message.passphrase!=='fixture passphrase')return {ok:false,error:'Could not unlock the vault. Check the passphrase.'};
           window.blacklistData.unlocked=true;return {ok:true,value:window.blacklistData};
@@ -374,6 +375,7 @@ try {
           window.blacklistData.entries=window.blacklistData.entries.filter(x=>x.kind!==message.kind||x.value!==message.value);return {ok:true,value:window.blacklistData};
         }
         if(message.type==='dmv-display-settings'){window.dmvDarkMode=message.enabled;return {ok:true,value:window.dmvDarkMode};}
+        if(message.type==='shortcut-menu-settings'){if('alwaysOnTop' in message)window.shortcutMenuAlwaysOnTop=message.alwaysOnTop;if('noTimeout' in message)window.shortcutMenuNoTimeout=message.noTimeout;if(window.shortcutMenuAlwaysOnTop)window.shortcutMenuNoTimeout=true;return {ok:true,value:{alwaysOnTop:window.shortcutMenuAlwaysOnTop,noTimeout:window.shortcutMenuNoTimeout}};}
         if(message.type==='pdf-display-settings'){window.pdfDarkMode=message.enabled;return {ok:true,value:window.pdfDarkMode};}
         if(message.type==='audio-settings'){Object.assign(window.audioSettings,message);return {ok:true,value:true};}
         if(message.type==='alerts'){window.sessionAlerts=message.enabled;return {ok:true,value:message.enabled};}
@@ -384,13 +386,13 @@ try {
   };
   await ui.addInitScript(uiMocks);
   /** Mock browser window APIs while applying accepted dimensions to a real viewport. */
-  async function shortcutMenuPage({height=900,minimumWidth=0,clock=false,failOnce=false,touch=false}={}) {
+  async function shortcutMenuPage({height=900,minimumWidth=0,clock=false,failOnce=false,touch=false,noTimeout=false,alwaysOnTop=false}={}) {
     const context=touch?await browser.newContext({hasTouch:true,viewport:{width:360,height:600},deviceScaleFactor:1}):ui;
     if(touch)await context.addInitScript(uiMocks);
     const page=await context.newPage();await page.setViewportSize({width:360,height:600});
     await page.exposeFunction('resizeMenuViewport',async({width,height})=>page.setViewportSize({width:width-16,height:height-40}));
     if(clock)await page.clock.install();
-    await page.addInitScript(({height,minimumWidth,failOnce})=>{
+    await page.addInitScript(({height,minimumWidth,failOnce,noTimeout,alwaysOnTop})=>{
       Object.defineProperties(screen,{availLeft:{value:-1280},availTop:{value:24},availWidth:{value:1280},availHeight:{value:height}});
       window.menuUpdates=[];window.menuCurrent={id:42,width:innerWidth+16,height:innerHeight+40};
       chrome.windows.getCurrent=async()=>({...window.menuCurrent});
@@ -402,15 +404,80 @@ try {
       };
       const original=chrome.runtime.sendMessage;
       chrome.runtime.sendMessage=async message=>{
-        if(message.type==='panel-data')return {ok:true,value:{type:'shortcut-menu',sourceId:123}};
+        if(message.type==='panel-data')return {ok:true,value:{type:'shortcut-menu',sourceId:123,noTimeout,alwaysOnTop}};
         if(message.type==='shortcut-menu-run'&&failOnce){failOnce=false;window.requests.push(message);return {ok:false,error:'Unable to launch this action.'};}
         return original(message);
       };
-    },{height,minimumWidth,failOnce});
+    },{height,minimumWidth,failOnce,noTimeout,alwaysOnTop});
     await page.goto(`${base}/shortcut-menu.html?id=menu-fixture`);
     await page.waitForFunction(()=>window.menuUpdates.length>=2);
     return page;
   }
+  await tests('shortcut menu persistent setting removes expiry, updates live, and keeps Escape and action dismissal',async()=>{
+    const page=await shortcutMenuPage({clock:true,noTimeout:true});
+    assert.match(await page.locator('#countdown').textContent(),/No time limit/);
+    await page.clock.fastForward(180000);assert.equal(await page.evaluate(()=>window.panelClosed),false);
+    await page.evaluate(()=>window.storageListeners.forEach(listener=>listener({shortcutMenuNoTimeout:{newValue:false}},'local')));
+    assert.match(await page.locator('#countdown').textContent(),/Closes in 90/);
+    await page.clock.fastForward(89000);assert.equal(await page.evaluate(()=>window.panelClosed),false);
+    await page.clock.fastForward(1000);assert.equal(await page.evaluate(()=>window.panelClosed),true);await page.close();
+    for(const action of ['escape','run']) {
+      const menu=await shortcutMenuPage({clock:true,noTimeout:true});
+      if(action==='escape')await menu.keyboard.press('Escape');
+      else await menu.locator('[data-command="plate"]').click();
+      assert.equal(await menu.evaluate(()=>window.panelClosed),true);await menu.close();
+    }
+    const toggle=await shortcutMenuPage({clock:true});await toggle.clock.fastForward(89000);
+    await toggle.evaluate(()=>window.storageListeners.forEach(listener=>listener({shortcutMenuNoTimeout:{newValue:true}},'local')));
+    await toggle.clock.fastForward(180000);assert.equal(await toggle.evaluate(()=>window.panelClosed),false);await toggle.close();
+  });
+  await tests('Settings hotkey menu timeout toggle saves its preference and renders the saved value',async()=>{
+    const page=await ui.newPage();await page.goto(base+'/popup.html');await page.locator('#settingsTab').click();
+    await page.locator('#shortcutMenuNoTimeout').check();
+    await page.waitForFunction(()=>window.shortcutMenuNoTimeout===true);
+    await page.locator('#settingsTab').click();assert.equal(await page.locator('#shortcutMenuNoTimeout').isChecked(),true);
+    await page.locator('#shortcutMenuNoTimeout').uncheck();await page.waitForFunction(()=>window.shortcutMenuNoTimeout===false);await page.close();
+  });
+  await tests('shortcut menu always-on-top uses real Document PiP after a click and closing it dismisses the owner',async()=>{
+    const page=await shortcutMenuPage({alwaysOnTop:true});
+    assert.equal(await page.evaluate(()=>!!window.documentPictureInPicture),true);
+    await page.locator('#pinMenu').click();
+    await page.waitForFunction(()=>documentPictureInPicture.window?.document.querySelectorAll('#actions button').length===9);
+    assert.equal(await page.evaluate(()=>documentPictureInPicture.window.document.querySelector('#countdown').textContent),'No time limit. Esc to close.');
+    await page.evaluate(()=>documentPictureInPicture.window.document.querySelector('[data-command="plate"]').click());
+    await page.waitForFunction(()=>window.panelClosed);
+    assert.equal(await page.evaluate(()=>window.requests.filter(m=>m.type==='shortcut-menu-run').length),1);await page.close();
+    const close=await shortcutMenuPage({alwaysOnTop:true});await close.locator('#pinMenu').click();
+    await close.waitForFunction(()=>!!documentPictureInPicture.window);
+    await close.evaluate(()=>documentPictureInPicture.window.close());await close.waitForFunction(()=>window.panelClosed);await close.close();
+    const unpin=await shortcutMenuPage({alwaysOnTop:true});await unpin.locator('#pinMenu').click();
+    await unpin.waitForFunction(()=>!!documentPictureInPicture.window);
+    await unpin.evaluate(()=>window.storageListeners.forEach(listener=>listener({shortcutMenuAlwaysOnTop:{newValue:false}},'local')));
+    await unpin.waitForFunction(()=>!documentPictureInPicture.window);
+    assert.equal(await unpin.locator('#actions button').count(),9);assert.equal(await unpin.evaluate(()=>window.panelClosed),false);await unpin.close();
+  });
+  await tests('shortcut menu stays usable when Picture-in-Picture is denied or unavailable',async()=>{
+    for(const unavailable of [false,true]) {
+      const page=await shortcutMenuPage({alwaysOnTop:true});
+      await page.evaluate(unavailable=>{
+        if(unavailable)Object.defineProperty(window,'documentPictureInPicture',{value:undefined});
+        else documentPictureInPicture.requestWindow=async()=>{throw new DOMException('A click is required.','NotAllowedError');};
+      },unavailable);
+      await page.locator('#pinMenu').click();
+      assert.match(await page.locator('#pinHelp').textContent(),unavailable?/unavailable/:/Select Keep on top/);
+      assert.equal(await page.evaluate(()=>window.panelClosed),false);
+      await page.locator('[data-command="plate"]').click();await page.waitForFunction(()=>window.panelClosed);await page.close();
+    }
+  });
+  await tests('Settings always-on-top toggle enables no timeout and keeps it enabled after pinning is turned off',async()=>{
+    const page=await ui.newPage();await page.goto(base+'/popup.html');await page.locator('#settingsTab').click();
+    await page.locator('#shortcutMenuAlwaysOnTop').check();
+    await page.waitForFunction(()=>document.querySelector('#shortcutMenuNoTimeout').disabled);
+    assert.equal(await page.locator('#shortcutMenuNoTimeout').isChecked(),true);
+    await page.locator('#shortcutMenuAlwaysOnTop').uncheck();
+    await page.waitForFunction(()=>!document.querySelector('#shortcutMenuNoTimeout').disabled);
+    assert.equal(await page.locator('#shortcutMenuNoTimeout').isChecked(),true);await page.close();
+  });
   await tests('shortcut menu fits a vertical column to its content and the usable right screen edge',async()=>{
     for(const config of [{},{height:600},{height:400},{minimumWidth:400}]) {
       const page=await shortcutMenuPage(config),buttons=page.locator('#actions button');

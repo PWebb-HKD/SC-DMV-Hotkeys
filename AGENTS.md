@@ -6,6 +6,16 @@ Treat this file as development context and recorded project preferences. Histori
 
 Keep this file in the repository root and update it as extension development continues. Record meaningful behavior changes, decisions, release history, verified checks, and unresolved issues. Clearly distinguish current facts from historical observations and hypotheses. Reconcile stale entries when their outcomes are verified, and never include credentials, private reports, or customer data. Documentation-only context updates do not require a release-version bump.
 
+## v1.8.16 Patch Test Branch — 2026-11-12
+
+- Branch: fix/v1.8.16-shortcut-menu-settings, created from main after the v1.8.15 merge. This is patch development, not a merge to main.
+- Settings → Hotkey Menu now has Always on top and Do not time out toggles. Preferences persist in local storage. Always-on-top automatically enables no timeout and prevents switching it off until always-on-top is disabled. Disabling always-on-top leaves no timeout enabled.
+- Always-on-top uses Document Picture-in-Picture. Chrome requires a document user gesture, so the user opens the menu and selects Keep on top. An extension hotkey opening a new window does not supply this gesture. Do not claim that ordinary chrome.windows.create/update can set alwaysOnTop.
+- PiP retains the owning extension window and captured source tab. Closing PiP dismisses the menu; disabling the preference moves controls back to the ordinary menu. Menu actions, Stop, Close, and Escape retain their normal behavior. Chrome controls PiP placement and window controls.
+- The user explicitly accepted closing and reopening the floating menu instead of minimizing it. No native helper or OS utility is required.
+- Non-floating menus retain the default 90-second timeout unless no timeout is enabled. Preferences apply to open menus; turning no timeout off starts a fresh 90 seconds. PiP unavailability or denial leaves the ordinary menu usable.
+- Verified repository checks, 232 unit tests, and all 66 browser/fixture checks. Real Chromium PiP fixture checks cover action dispatch, closing PiP, restoring normal controls, and unavailable/denied fallback. Installed-extension validation remains blocked by managed browser policy; do not bypass it.
+
 ## v1.8.15 Merge — 2026-11-12
 
 - The user explicitly authorized merging v1.8.15 into main and deleting both v1.8.15 and v1.8.14 test branches after main is pushed.
