@@ -112,6 +112,26 @@ test('address splitting preserves units, PO boxes, and existing comma formats wi
   assert.equal(ownerAddress('123 UNKNOWN ROCK HILL SC, 29732'), null);
   assert.equal(ownerAddress('123 EXAMPLE DR SOME WAY CITY SC, 29732'), null);
 });
+test('trace street endings preserve the street, units, multiword city, and ZIP boundaries', () => {
+  for (const [address, street, city, state, zip] of [
+    ['123 EXAMPLE TRCE DURHAM NC, 277011234', '123 EXAMPLE TRCE', 'DURHAM', 'NC', '277011234'],
+    ['123 EXAMPLE TRACE ROCK HILL SC 29732', '123 EXAMPLE TRACE', 'ROCK HILL', 'SC', '29732'],
+    ['123 EXAMPLE TRCE. ROCK HILL SC, 29732', '123 EXAMPLE TRCE.', 'ROCK HILL', 'SC', '29732'],
+    ['123 example trce durham nc, 27701', '123 example trce', 'durham', 'NC', '27701'],
+    ['123 EXAMPLE TRCE APT 4 ROCK HILL SC, 29732', '123 EXAMPLE TRCE APT 4', 'ROCK HILL', 'SC', '29732'],
+    ['123 TRACE ROAD ROCK HILL SC, 29732', '123 TRACE ROAD', 'ROCK HILL', 'SC', '29732']
+  ]) assert.deepEqual(ownerAddress(address), {street, city, state, zip, inferred:true});
+  assert.equal(ownerAddress('123 EXAMPLE TRCE SOME WAY CITY SC, 29732'), null);
+});
+test('trace registration barcode uses the first party address and preserves the parsed state and ZIP', () => {
+  const text = vehicleReport.replace('123 EXAMPLE ROAD, COLUMBIA SC 292010123', '123 EXAMPLE TRCE DURHAM NC, 277011234')
+    .replace('Last Transaction:', 'Owner Number: 2222 Owner Name: LATER, PERSON Owner Address: 456 OTHER ROAD, OTHER CITY SC 29202 Last Transaction:');
+  const barcode = vehicleBarcode(text), f = registrationFields(barcode.payload);
+  assert.equal(f.RBI, '123 EXAMPLE TRCE'); assert.equal(f.RBK, 'DURHAM');
+  assert.equal(f.RBL, 'NC'); assert.equal(f.RBM, '277011234');
+  assert.equal(f.RBD, 'EXAMPLE-SAMPLE'); assert.doesNotMatch(barcode.payload, /LATER|OTHER CITY/);
+  assert.ok(barcode.warnings.some(warning => /Verify owner address/.test(warning)));
+});
 test('record detection rejects unrelated documents; non-ASCII input cannot corrupt subfile offsets', () => {
   assert.equal(reportBarcode(driverReport).kind, 'driver'); assert.equal(reportBarcode(vehicleReport).kind, 'vehicle');
   assert.throws(() => reportBarcode('unrelated text'), /No driver or vehicle/);

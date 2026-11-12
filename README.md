@@ -1,6 +1,6 @@
 # SC DMV Hotkeys
 
-A Chromium Manifest V3 extension for authorized SCDMV member searches, PDF follow-ups, status alerts, and PDF417 data-entry barcodes. Current version: **1.8.14**.
+A Chromium Manifest V3 extension for authorized SCDMV member searches, PDF follow-ups, status alerts, and PDF417 data-entry barcodes. Current version: **1.8.15**.
 
 ## Install and update
 
@@ -94,7 +94,7 @@ Alt+B maps a driver or vehicle report to a local PDF417 image. Parsed fields app
 
 Driver/ID mapping uses the version-09 profile. It separates name suffixes, preserves a blank driver license number rather than substituting a customer number, and leaves unavailable credential-only metadata blank or marked `unavl`. SCUTTIES uses the surname without a generational suffix.
 
-Vehicle mapping uses the SC registration v01 single RG subfile. Plate expiration is RAG, decal expiration is RBT, and owner names/address use RBD/RBE and RBI/RBK/RBL/RBM. Temporary plates use Plate Exp Date when their decal date is blank; appended display years are excluded from the tag. Mailing Address and party Relationship labels delimit fields rather than becoming part of a name or owner address. Field lengths are enforced without silently truncating data.
+Vehicle mapping uses the SC registration v01 single RG subfile. Plate expiration is RAG, decal expiration is RBT, and owner names/address use RBD/RBE and RBI/RBK/RBL/RBM. Temporary plates use Plate Exp Date when their decal date is blank; appended display years are excluded from the tag. Mailing Address and party Relationship labels delimit fields rather than becoming part of a name or owner address. Field lengths are enforced without silently truncating data. Owner addresses recognize both TRACE and its TRCE abbreviation when identifying the street/city boundary.
 
 Only the first numbered owner/customer/registrant is used initially. Missing data is not borrowed from a later party. If that party is incomplete, the user may explicitly choose a later listed party when one exists, review and correct that party’s parsed data, or generate with incomplete fields blank. Ambiguous address boundaries require that decision; inferred boundaries are displayed for verification.
 
