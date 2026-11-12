@@ -6,6 +6,15 @@ Treat this file as development context and recorded project preferences. Histori
 
 Keep this file in the repository root and update it as extension development continues. Record meaningful behavior changes, decisions, release history, verified checks, and unresolved issues. Clearly distinguish current facts from historical observations and hypotheses. Reconcile stale entries when their outcomes are verified, and never include credentials, private reports, or customer data. Documentation-only context updates do not require a release-version bump.
 
+## v1.8.17 Multiracial Barcode Patch Test Branch — 2026-11-12
+
+- Branch: fix/v1.8.17-multiracial-barcode, based on merged v1.8.16 main. Release files declare patch version 1.8.17; this work is not merged to main.
+- The report race label MLT RA was unrecognized and DCL was omitted. It now maps to MR, along with MR, MULTIRACIAL, MULTI RACIAL, and normalized case/spacing/hyphen variants.
+- MR is the Coplogic import code specified by the user. Encode it in DCL as `MR ` (one trailing space). Retain the existing driver/ID v09 framing and legacy mappings for other races; do not describe MR as a verified member of the legacy DDVRAC code list.
+- The editor shows Multiracial, accepts manual corrections using the same aliases, and preserves unedited bytes. Unknown labels remain unrecognized rather than being guessed.
+- Verified: repository checks; all 234 unit tests; 42 exact PDF417 decodes across 14 synthetic fixtures and 3 sizes, including parsed and edited multiracial fields; barcode UI checks. The uploaded report also parsed through both PDF.js in Chromium and pdftotext with DCL MR and the readable editor label.
+- Only synthetic fixtures are committed. No private PDF, personal identifiers, or private barcode payload is included. Actual import into Coplogic remains for user testing; decoder checks establish barcode bytes, not application acceptance.
+
 ## v1.8.16 Merge — 2026-11-12
 
 - The user confirmed the menu works and authorized merging the patch branch fix/v1.8.16-shortcut-menu-settings (1544fd0) into main and deleting the branch after a successful push. The merge was conflict-free; main now declares version 1.8.16. Application and test files match the tested branch exactly.

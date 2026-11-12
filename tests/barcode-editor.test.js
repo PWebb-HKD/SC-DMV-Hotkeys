@@ -102,3 +102,15 @@ test('recovery keeps driver-profile precedence when the report also mentions a V
   assert.equal(draft.kind,'driver');assert.equal(barcodeEditorModel(draft).values.DAG,'X'.repeat(50));
   assert.throws(()=>reportBarcodeDraft('Customer No: 12345678 Name: INCOMPLETE RESIDENCE'),/No driver or vehicle/);
 });
+
+test('multiracial values have a readable label, round-trip unchanged, and accept manual corrections',()=>{
+  const original=reportBarcode(driverReport.replace('Race: W','Race: MLT RA'));
+  const model=barcodeEditorModel(original);
+  assert.equal(model.values.DCL,'Multiracial');
+  assert.equal(editedBarcode(model,model.values).payload,original.payload);
+  const white=modelFor(driverReport);
+  for(const label of ['Multiracial','Multi racial','Multi-racial','MLT RA','MR']) {
+    const result=editedBarcode(white,{...white.values,DCL:label});
+    assert.deepEqual(result.errors,{});assert.equal(fields(result.payload,'driver').DCL,'MR ');
+  }
+});

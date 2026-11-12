@@ -1,6 +1,6 @@
 # SC DMV Hotkeys
 
-A Chromium Manifest V3 extension for authorized SCDMV member searches, PDF follow-ups, status alerts, and PDF417 data-entry barcodes. Current version: **1.8.16**.
+A Chromium Manifest V3 extension for authorized SCDMV member searches, PDF follow-ups, status alerts, and PDF417 data-entry barcodes. Current version: **1.8.17**.
 
 ## Install and update
 
@@ -91,6 +91,8 @@ Captured text is tied to its report and tab. The attachment URL can return a dif
 ## PDF417 import barcodes
 
 Alt+B maps a driver or vehicle report to a local PDF417 image. Parsed fields appear below the barcode with readable labels and remain read-only until **Edit Data** is clicked. Valid corrections update the barcode immediately; invalid input hides the barcode and marks the fields that need attention. Recognized reports with parsing errors can also be reviewed and corrected. Edits apply only to the open popup, without modifying the report or saved data. The popup closes after ninety seconds; changing a data field restarts that countdown, while changing barcode size does not. Verify imported fields against the report after scanning.
+
+Multiracial driver/ID race labels, including `MLT RA`, `MULTIRACIAL`, and `MULTI RACIAL`, encode as `MR` for Coplogic imports. The barcode editor displays **Multiracial** and accepts the same labels when correcting data.
 
 Driver/ID mapping uses the version-09 profile. It separates name suffixes, preserves a blank driver license number rather than substituting a customer number, and leaves unavailable credential-only metadata blank or marked `unavl`. SCUTTIES uses the surname without a generational suffix.
 

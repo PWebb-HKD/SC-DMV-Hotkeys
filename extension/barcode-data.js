@@ -58,10 +58,11 @@ function valueField(value, max) {
   if (result.length > max) throw new Error(`A report value exceeds the supported ${max}-character barcode field length.`);
   return result;
 }
-/** Translate supported demographic labels into the three-character legacy version-09 code vocabulary. */
+/** Translate race labels for the driver v09 profile, including the Coplogic MR code. */
 export function raceEthnicity(value) {
   // Version 09 DCL uses D20's legacy Driver Race And Ethnicity (DDVRAC),
-  // not the newer, separate Person Race (BPERAC) code list.
+  // not the newer, separate Person Race (BPERAC) code list. Coplogic
+  // compatibility adds MR for multiracial imports in this profile.
   const label = clean(value).replace(/[()]/g, '').replace(/[-/]/g, ' ').replace(/\s+/g, ' ').trim();
   const codes = {
     W: 'W', WHT: 'W', WHI: 'W', WHITE: 'W', CAUCASIAN: 'W', 'WHITE CAUCASIAN': 'W',
@@ -71,6 +72,7 @@ export function raceEthnicity(value) {
     I: 'AI', AI: 'AI', 'AMERICAN INDIAN': 'AI', 'ALASKAN INDIAN': 'AI', 'ALASKA NATIVE': 'AI',
     'NATIVE AMERICAN': 'AI', 'ALASKAN OR AMERICAN INDIAN': 'AI', 'AMERICAN INDIAN OR ALASKA NATIVE': 'AI',
     H: 'H', HISP: 'H', HISPAN: 'H', HISPANIC: 'H', 'HISPANIC ORIGIN': 'H', LATINO: 'H', 'HISPANIC OR LATINO': 'H',
+    MR: 'MR', 'MLT RA': 'MR', MULTIRACIAL: 'MR', 'MULTI RACIAL': 'MR',
     O: 'O', 'NON HISPANIC': 'O', U: 'U', UNK: 'U', UNKNOWN: 'U'
   };
   return codes[label] || null;
