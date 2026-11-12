@@ -6,6 +6,13 @@ Treat this file as development context and recorded project preferences. Histori
 
 Keep this file in the repository root and update it as extension development continues. Record meaningful behavior changes, decisions, release history, verified checks, and unresolved issues. Clearly distinguish current facts from historical observations and hypotheses. Reconcile stale entries when their outcomes are verified, and never include credentials, private reports, or customer data. Documentation-only context updates do not require a release-version bump.
 
+## v1.8.15 Merge — 2026-11-12
+
+- The user explicitly authorized merging v1.8.15 into main and deleting both v1.8.15 and v1.8.14 test branches after main is pushed.
+- Merged fix/v1.8.15-trace-address (5e9e105) into main without conflicts in merge commit 7aad04b. Its ancestry includes fix/v1.8.14-browser-requirements (2a97ee5), so main now contains both fixes and declares version 1.8.15 with minimum Chrome 140.
+- Verified on merged main: npm run check; all 230 unit tests; all 39 exact PDF417 decodes across 13 fixtures and 3 sizes, including TRACE/TRCE; barcode UI checks. The full general browser and theme suites were not rerun for this merge.
+- This resolves the historical pending-merge handoff below. Branch cleanup must follow successful main push; verify actual remote refs before any future cleanup.
+
 ## Context Review — 2026-11-12
 
 - The current request is to review and commit this context file to main and maintain it during future development.
