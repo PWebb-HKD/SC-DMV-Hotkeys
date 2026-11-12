@@ -769,3 +769,28 @@ test('Stop cancels a menu still capturing its source and prevents its late windo
     await new Promise(resolve=>setTimeout(resolve,20));assert.equal(windows.length,before);assert.equal(panel('shortcut-menu'),undefined);
   } finally {chrome.tabs.query=original;}
 });
+
+test('shortcut menu timeout preference persists, reaches new menus, and survives private-state reset',async()=>{
+  await send({type:'stop'});
+  assert.deepEqual(await send({type:'shortcut-menu-settings',noTimeout:true}),{alwaysOnTop:false,noTimeout:true});
+  assert.equal((await send({type:'state'})).shortcutMenuNoTimeout,true);
+  await send({type:'run',command:'help'});await wait(()=>panel('shortcut-menu'));
+  assert.equal(session[`panel:${menuId()}`].noTimeout,true);
+  await send({type:'clear-saved-user-info',confirmed:true});
+  assert.equal((await send({type:'state'})).shortcutMenuNoTimeout,true);
+  assert.deepEqual(await send({type:'shortcut-menu-settings',noTimeout:'true'}),{alwaysOnTop:false,noTimeout:false});
+  await send({type:'run',command:'help'});await wait(()=>panel('shortcut-menu'));
+  assert.equal(session[`panel:${menuId()}`].noTimeout,false);
+  await send({type:'stop'});
+});
+
+test('always-on-top menu enables no timeout and retains it when pinning is turned off',async()=>{
+  assert.deepEqual(await send({type:'shortcut-menu-settings',alwaysOnTop:true}),{alwaysOnTop:true,noTimeout:true});
+  await send({type:'run',command:'help'});await wait(()=>panel('shortcut-menu'));
+  assert.equal(session[`panel:${menuId()}`].alwaysOnTop,true);
+  assert.equal(session[`panel:${menuId()}`].noTimeout,true);
+  assert.deepEqual(await send({type:'shortcut-menu-settings',noTimeout:false}),{alwaysOnTop:true,noTimeout:true});
+  assert.deepEqual(await send({type:'shortcut-menu-settings',alwaysOnTop:false}),{alwaysOnTop:false,noTimeout:true});
+  assert.equal((await send({type:'state'})).shortcutMenuAlwaysOnTop,false);
+  await send({type:'shortcut-menu-settings',noTimeout:false});await send({type:'stop'});
+});

@@ -1,6 +1,6 @@
 # SC DMV Hotkeys
 
-A Chromium Manifest V3 extension for authorized SCDMV member searches, PDF follow-ups, status alerts, and PDF417 data-entry barcodes. Current version: **1.8.15**.
+A Chromium Manifest V3 extension for authorized SCDMV member searches, PDF follow-ups, status alerts, and PDF417 data-entry barcodes. Current version: **1.8.16**.
 
 ## Install and update
 
@@ -30,7 +30,7 @@ The packaged extension needs no build or npm installation. PDF.js and the barcod
 | SCUTTIES search | Alt+U | Read the driver's surname and date of birth from the PDF. |
 | Generate PDF417 | Alt+B | Create an import barcode from the selected driver or vehicle report. |
 
-The shortcut menu has one vertical column of action buttons and sizes itself to their labels and the available screen height. Buttons have at least 44-pixel touch targets with 8-pixel gaps. On short displays the actions scroll, with Close and the countdown kept visible. It retains the tab that was focused when opened for report follow-ups. Opening the menu leaves the current function running; selecting an action starts that function and closes the menu. Escape or its 90-second timeout dismisses it.
+The shortcut menu has one vertical column of action buttons and sizes itself to their labels and the available screen height. Buttons have at least 44-pixel touch targets with 8-pixel gaps. On short displays the actions scroll, with Close and the countdown kept visible. It retains the tab that was focused when opened for report follow-ups. Opening the menu leaves the current function running; selecting an action starts that function and closes the menu. Escape or its default 90-second timeout dismisses it. Under Settings → Hotkey Menu, enable “Do not time out the hotkey menu” to remove the countdown. This preference is saved across sessions and applies immediately to an open menu. Turning it off starts a fresh 90-second countdown. Selecting an action, Close, Escape, or Stop still closes the menu. The operating system can minimize the popup normally. Enable “Always on top hotkey menu” to use Chrome’s Document Picture-in-Picture window above other apps. This automatically enables no timeout and keeps that switch on while always-on-top is enabled. Open the menu and click “Keep on top” to supply Chrome’s required user gesture. Closing the floating window closes the menu; reopen it with the hotkey. Chrome controls the floating window’s position and window controls; minimizing it is not required. Turning always-on-top off restores the normal menu and leaves no timeout enabled until you turn it off. The normal menu remains available if Picture-in-Picture is unavailable or denied.
 
 These are recommendations, not automatic assignments. Chromium owns key validity, conflicts, assignments, and Global scope. The setup guide shows actual assignments; the extension cannot read their scope. Toolbar buttons run the same workflows. **Stop current function** cancels pending automation, prompts, extraction, and announcements; it cannot recall a request already submitted to the DMV. The extension uses no native desktop companion.
 
