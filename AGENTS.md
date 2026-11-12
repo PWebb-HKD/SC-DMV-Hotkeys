@@ -6,9 +6,9 @@ Treat this file as development context and recorded project preferences. Histori
 
 Keep this file in the repository root and update it as extension development continues. Record meaningful behavior changes, decisions, release history, verified checks, and unresolved issues. Clearly distinguish current facts from historical observations and hypotheses. Reconcile stale entries when their outcomes are verified, and never include credentials, private reports, or customer data. Documentation-only context updates do not require a release-version bump.
 
-## v1.8.16 Patch Test Branch — 2026-11-12
+## v1.8.16 Merge — 2026-11-12
 
-- Branch: fix/v1.8.16-shortcut-menu-settings, created from main after the v1.8.15 merge. This is patch development, not a merge to main.
+- The user confirmed the menu works and authorized merging the patch branch fix/v1.8.16-shortcut-menu-settings (1544fd0) into main and deleting the branch after a successful push. The merge was conflict-free; main now declares version 1.8.16. Application and test files match the tested branch exactly.
 - Settings → Hotkey Menu now has Always on top and Do not time out toggles. Preferences persist in local storage. Always-on-top automatically enables no timeout and prevents switching it off until always-on-top is disabled. Disabling always-on-top leaves no timeout enabled.
 - Always-on-top uses Document Picture-in-Picture. Chrome requires a document user gesture, so the user opens the menu and selects Keep on top. An extension hotkey opening a new window does not supply this gesture. Do not claim that ordinary chrome.windows.create/update can set alwaysOnTop.
 - PiP retains the owning extension window and captured source tab. Closing PiP dismisses the menu; disabling the preference moves controls back to the ordinary menu. Menu actions, Stop, Close, and Escape retain their normal behavior. Chrome controls PiP placement and window controls.
@@ -160,9 +160,9 @@ Previously passed:
 
 Private report data was not committed.
 
-## Open Investigation: Keyboard Bindings Reset During Updates
+## Resolved: Keyboard Bindings Reset During Updates
 
-This issue is not conclusively diagnosed or fixed.
+Closed at the user's request on 2026-11-12. No root cause or extension code fix was established; this status records closure of the investigation rather than proof of a technical fix. The observations below are historical. Do not resume this investigation unless requested.
 
 User observations:
 - Updates replace files in the same folder, followed by Reload.
