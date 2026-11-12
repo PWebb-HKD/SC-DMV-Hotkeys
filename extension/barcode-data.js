@@ -156,7 +156,7 @@ export function ownerAddress(raw) {
   if (comma > 0 && prefix.slice(comma + 1).trim()) return result(prefix.slice(0, comma), prefix.slice(comma + 1));
   const box = prefix.match(/^(P\.?\s*O\.?\s+BOX\s+\d+[A-Z]?)\s+([A-Z][A-Z .'-]+)$/i);
   if (box) return result(box[1], box[2], true);
-  const suffix = /\b(?:AVENUE|AVE|BOULEVARD|BLVD|CIRCLE|CIR|COURT|CT|DRIVE|DR|HIGHWAY|HWY|LANE|LN|LOOP|PARKWAY|PKWY|PLACE|PL|ROAD|RD|STREET|ST|TERRACE|TER|TRAIL|TRL|WAY|COVE|CV|PIKE|PATH|POINT|PT|PLAZA|PLZ|TURNPIKE|TPKE)\.?\s+/gi;
+  const suffix = /\b(?:AVENUE|AVE|BOULEVARD|BLVD|CIRCLE|CIR|COURT|CT|DRIVE|DR|HIGHWAY|HWY|LANE|LN|LOOP|PARKWAY|PKWY|PLACE|PL|ROAD|RD|STREET|ST|TERRACE|TER|TRAIL|TRL|TRACE|TRCE|WAY|COVE|CV|PIKE|PATH|POINT|PT|PLAZA|PLZ|TURNPIKE|TPKE)\.?\s+/gi;
   const candidates = [];
   for (const match of prefix.matchAll(suffix)) {
     // Do not split a leading street-name word such as "ST JOHN...".

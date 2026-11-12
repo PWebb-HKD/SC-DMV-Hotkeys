@@ -13,6 +13,10 @@ for (const path of RECORDING_PATHS) if (!existsSync(join(root, 'extension', path
 // A source release must reproduce the same version through its manifest, package, and lockfile.
 if (lock.version !== project.version || lock.packages?.['']?.version !== project.version) throw new Error('Package and lockfile versions differ.');
 if (project.version !== manifest.version) throw new Error('Package and extension versions differ.');
+// Startup calls local.setAccessLevel, which only becomes available in Chrome 140.
+// Older session-only support must not be mistaken for support of the local guard.
+const minimumChrome=Number(String(manifest.minimum_chrome_version||'').split('.')[0]);
+if (!Number.isFinite(minimumChrome)||minimumChrome<140) throw new Error('Chrome 140 or newer is required for trusted local-storage access.');
 if (manifest.manifest_version !== 3 || JSON.stringify(Object.keys(manifest.commands).sort()) !== JSON.stringify(Object.keys(COMMANDS).sort())) throw new Error('Manifest commands are incomplete.');
 if (Object.values(manifest.commands).filter(v => v.suggested_key).length > 4) throw new Error('Chromium allows at most four suggested shortcuts.');
 for (const path of [manifest.background.service_worker, manifest.action.default_popup, ...Object.values(manifest.icons), 'vendor/pdf.mjs', 'vendor/pdf.worker.mjs', 'audio-player.html', 'audio-player.js', 'audio-alerts.js', 'audio/suspended.mp3', 'barcode.html', 'barcode.js', 'barcode-data.js', 'barcode-editor.js', 'shortcut-menu.html', 'shortcut-menu.js', 'shortcut-menu-layout.js', 'shortcut-menu.css', 'blacklist.js', 'vault.js', 'vendor/text_layer_builder.css', 'alert-settings.js', 'dmv-theme.js', 'dmv-theme-start.js', 'dmv-theme.css', 'dmv-theme-settings.js', 'pdf-print.js', 'pdf-routing.js', 'pdf-dark-view.js', 'pdf-dark-view.css', 'vendor/bwip-js-min.js']) {

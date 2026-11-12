@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "SC DMV Hotkeys",
-  "version": "1.8.13",
-  "minimum_chrome_version": "120",
+  "version": "1.8.15",
+  "minimum_chrome_version": "140",
   "description": "Keyboard shortcuts for automating user-input searches through the SCDMV online portal and customizing CSS dark mode styling.",
   "permissions": [
     "storage",
