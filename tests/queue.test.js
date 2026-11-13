@@ -48,7 +48,7 @@ globalThis.chrome={
   }},commands:{onCommand:event(),getAll:async()=>[]},permissions:{contains:async()=>true}
 };
 await import('../extension/background.js');
-const send=message=>new Promise((resolve,reject)=>runtime.onMessage.listeners[0](message,{id:runtime.id,url:runtime.getURL('popup.html')},r=>r.ok?resolve(r.value):reject(new Error(r.error))));
+const send=(message,view='popup.html')=>new Promise((resolve,reject)=>runtime.onMessage.listeners[0](message,{id:runtime.id,url:runtime.getURL(view)},r=>r.ok?resolve(r.value):reject(new Error(r.error))));
 /** Bound asynchronous worker expectations so a stalled workflow fails the test promptly. */
 async function wait(fn){const end=Date.now()+4000;while(Date.now()<end){if(fn())return;await new Promise(r=>setTimeout(r,10));}throw new Error('Queue test timed out.');}
 test('startup removes persistent history without changing current session history',async()=>{
@@ -793,4 +793,36 @@ test('always-on-top menu enables no timeout and retains it when pinning is turne
   assert.deepEqual(await send({type:'shortcut-menu-settings',alwaysOnTop:false}),{alwaysOnTop:false,noTimeout:true});
   assert.equal((await send({type:'state'})).shortcutMenuAlwaysOnTop,false);
   await send({type:'shortcut-menu-settings',noTimeout:false});await send({type:'stop'});
+});
+
+/** Report pin state through the owning document's authenticated message route. */
+const pinMenu = (id,pinned) => send({type:'shortcut-menu-pin-state',id,pinned},`shortcut-menu.html?id=${id}`);
+test('pinned launcher survives external hotkeys and repeated menu actions; Stop closes it',async()=>{
+  await send({type:'stop'});await send({type:'run',command:'help'});await wait(()=>panel('shortcut-menu'));
+  const id=menuId(),win=panel('shortcut-menu');await pinMenu(id,true);
+  await chrome.commands.onCommand.listeners[0]('plate');await wait(()=>panel('input'));
+  const first=panel('input');assert.equal(session[`panel:${new URL(first.url).searchParams.get('id')}`].command,'plate');
+  assert.ok(session[`panel:${id}`]);assert.equal(removedWindows.includes(win.id),false);
+  await chrome.commands.onCommand.listeners[0]('license');await wait(()=>panel('input')!==first);
+  assert.ok(removedWindows.includes(first.id));assert.ok(session[`panel:${id}`]);
+  for(const command of ['customer','plate']) {
+    const previous=panel('input');await send({type:'shortcut-menu-run',id,command});await wait(()=>panel('input')!==previous);
+    assert.ok(session[`panel:${id}`]);assert.equal(removedWindows.includes(win.id),false);
+  }
+  await send({type:'stop'});assert.equal(session[`panel:${id}`],undefined);assert.ok(removedWindows.includes(win.id));
+});
+test('pin state rejects other documents; unpinned launchers still close for a new search',async()=>{
+  await send({type:'run',command:'help'});await wait(()=>panel('shortcut-menu'));const id=menuId(),win=panel('shortcut-menu');
+  await assert.rejects(send({type:'shortcut-menu-pin-state',id,pinned:true}),/Unknown shortcut menu/);
+  await pinMenu(id,true);await pinMenu(id,false);
+  await chrome.commands.onCommand.listeners[0]('plate');await wait(()=>panel('input'));
+  assert.equal(session[`panel:${id}`],undefined);assert.ok(removedWindows.includes(win.id));await send({type:'stop'});
+});
+test('closing a pinned menu leaves the current search prompt usable; private-state reset closes pinned menus',async()=>{
+  await send({type:'run',command:'help'});await wait(()=>panel('shortcut-menu'));let id=menuId(),win=panel('shortcut-menu');await pinMenu(id,true);
+  await chrome.commands.onCommand.listeners[0]('plate');await wait(()=>panel('input'));const input=panel('input');
+  for(const listener of chrome.windows.onRemoved.listeners)await listener(win.id);
+  assert.ok(session[`panel:${new URL(input.url).searchParams.get('id')}`]);
+  await send({type:'run',command:'help'});await wait(()=>panel('shortcut-menu'));id=menuId();win=panel('shortcut-menu');await pinMenu(id,true);
+  await send({type:'clear-saved-user-info',confirmed:true});assert.equal(session[`panel:${id}`],undefined);assert.ok(removedWindows.includes(win.id));
 });

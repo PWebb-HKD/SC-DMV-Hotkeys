@@ -438,15 +438,20 @@ try {
     await page.locator('#settingsTab').click();assert.equal(await page.locator('#shortcutMenuNoTimeout').isChecked(),true);
     await page.locator('#shortcutMenuNoTimeout').uncheck();await page.waitForFunction(()=>window.shortcutMenuNoTimeout===false);await page.close();
   });
-  await tests('shortcut menu always-on-top uses real Document PiP after a click and closing it dismisses the owner',async()=>{
+  await tests('shortcut menu always-on-top stays usable across repeated actions and closing PiP dismisses the owner',async()=>{
     const page=await shortcutMenuPage({alwaysOnTop:true});
     assert.equal(await page.evaluate(()=>!!window.documentPictureInPicture),true);
     await page.locator('#pinMenu').click();
     await page.waitForFunction(()=>documentPictureInPicture.window?.document.querySelectorAll('#actions button').length===9);
     assert.equal(await page.evaluate(()=>documentPictureInPicture.window.document.querySelector('#countdown').textContent),'No time limit. Esc to close.');
     await page.evaluate(()=>documentPictureInPicture.window.document.querySelector('[data-command="plate"]').click());
-    await page.waitForFunction(()=>window.panelClosed);
-    assert.equal(await page.evaluate(()=>window.requests.filter(m=>m.type==='shortcut-menu-run').length),1);await page.close();
+    await page.waitForFunction(()=>!documentPictureInPicture.window.document.querySelector('[data-command="plate"]').disabled);
+    assert.equal(await page.evaluate(()=>window.panelClosed),false);
+    await page.evaluate(()=>documentPictureInPicture.window.document.querySelector('[data-command="license"]').click());
+    await page.waitForFunction(()=>window.requests.filter(m=>m.type==='shortcut-menu-run').length===2);
+    assert.equal(await page.evaluate(()=>window.panelClosed),false);
+    assert.equal(await page.evaluate(()=>window.requests.some(m=>m.type==='shortcut-menu-pin-state'&&m.pinned===true)),true);
+    await page.evaluate(()=>documentPictureInPicture.window.document.querySelector('#close').click());await page.waitForFunction(()=>window.panelClosed);await page.close();
     const close=await shortcutMenuPage({alwaysOnTop:true});await close.locator('#pinMenu').click();
     await close.waitForFunction(()=>!!documentPictureInPicture.window);
     await close.evaluate(()=>documentPictureInPicture.window.close());await close.waitForFunction(()=>window.panelClosed);await close.close();
@@ -454,7 +459,8 @@ try {
     await unpin.waitForFunction(()=>!!documentPictureInPicture.window);
     await unpin.evaluate(()=>window.storageListeners.forEach(listener=>listener({shortcutMenuAlwaysOnTop:{newValue:false}},'local')));
     await unpin.waitForFunction(()=>!documentPictureInPicture.window);
-    assert.equal(await unpin.locator('#actions button').count(),9);assert.equal(await unpin.evaluate(()=>window.panelClosed),false);await unpin.close();
+    assert.equal(await unpin.locator('#actions button').count(),9);assert.equal(await unpin.evaluate(()=>window.panelClosed),false);
+    await unpin.waitForFunction(()=>window.requests.some(m=>m.type==='shortcut-menu-pin-state'&&m.pinned===false));await unpin.close();
   });
   await tests('shortcut menu stays usable when Picture-in-Picture is denied or unavailable',async()=>{
     for(const unavailable of [false,true]) {

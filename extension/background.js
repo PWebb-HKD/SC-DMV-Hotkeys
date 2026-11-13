@@ -37,8 +37,9 @@ const boot = Promise.all([
   configureDmvTheme().catch(error=>chrome.storage.session.set({status:`DMV website dark mode unavailable: ${error.message}`}))
 ]);
 /** Replace the active command and cancel its readers, audio, and panels. Callers await
- * run.cleanup before opening new UI; late-created windows also check this run. */
-function beginRun() {
+ * run.cleanup before opening new UI; late-created windows also check this run.
+ * Search dispatch preserves pinned launchers; Stop and private-state reset close them. */
+function beginRun({preservePinnedMenu = false} = {}) {
   shortcutMenuRun?.cancel();
   audioAlerts.stop();
   activeRun?.cancel();
@@ -46,6 +47,7 @@ function beginRun() {
   const run = new SearchRun(); activeRun = run;
   const cleanup = [];
   for (const [id, entry] of panels) {
+    if (preservePinnedMenu && entry.data.type === 'shortcut-menu' && entry.pinned === true) continue;
     entry.run?.cancel();
     clearTimeout(entry.timer); panels.delete(id); entry.resolve?.(null);
     cleanup.push(chrome.storage.session.remove(`panel:${id}`));
@@ -472,12 +474,12 @@ async function execute(command, value, source, options, run) {
 }
 /** Common entry point for shortcuts, quick actions, and history replay. Search
  * and report actions replace the previous run, including one awaiting user input.
- * The launcher opens independently until its user selects an action. */
+ * Pinned launchers remain independent across search and report commands. */
 async function dispatch(command, options = {}) {
   if (!COMMANDS[command]) throw new Error('Unknown command.');
   if (resettingUserInfo) await resettingUserInfo;
   if (command === 'help') return openShortcutMenu();
-  const run = beginRun();
+  const run = beginRun({preservePinnedMenu:true});
   try {
     await run.step(() => boot); await run.step(() => run.cleanup);
     const source = await run.step(() => options.sourceId != null ? chrome.tabs.get(options.sourceId).catch(()=>null) : sourceTab());
@@ -649,6 +651,13 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
       }
       // Start a command or resolve an existing session history entry before replay; arbitrary saved input is refused.
       case 'run': dispatch(message.command).catch(e => report(e)); return true;
+      // Only the owning menu document can report an actual PiP transition.
+      case 'shortcut-menu-pin-state': {
+        const entry = panels.get(message.id);
+        if (!entry || entry.data.type !== 'shortcut-menu' || sender.url !== chrome.runtime.getURL(`shortcut-menu.html?id=${message.id}`)) throw new Error('Unknown shortcut menu.');
+        entry.run.check();entry.pinned = message.pinned === true;
+        return true;
+      }
       case 'shortcut-menu-run': {
         const entry = panels.get(message.id);
         if (!entry || entry.data.type !== 'shortcut-menu') throw new Error('This shortcut menu has expired. Open it again.');

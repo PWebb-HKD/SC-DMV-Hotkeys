@@ -6,6 +6,14 @@ Treat this file as development context and recorded project preferences. Histori
 
 Keep this file in the repository root and update it as extension development continues. Record meaningful behavior changes, decisions, release history, verified checks, and unresolved issues. Clearly distinguish current facts from historical observations and hypotheses. Reconcile stale entries when their outcomes are verified, and never include credentials, private reports, or customer data. Documentation-only context updates do not require a release-version bump.
 
+## v1.8.18 Pinned Menu Persistence Patch — 2026-11-12
+
+- Work continues on the retained fix/v1.8.17-multiracial-barcode test branch, advanced to merged main before editing. Release files now declare patch version 1.8.18; these changes are not merged to main.
+- A shortcut menu already kept on top through Document PiP survives a new search hotkey such as Alt+P. It also stays open after selecting its own actions, with buttons available for subsequent commands. Ordinary menus, including no-timeout menus not actually pinned, retain their previous close-on-new-action behavior.
+- The owning menu reports actual PiP entry/exit to the worker using its validated menu ID and document URL. Search dispatch preserves only panel entries with an actual pin flag. Stop, Close, Escape, and clearing private state still dismiss pinned menus; closing the menu does not cancel an active search prompt.
+- Disabling pinning restores normal menu cancellation. Capture/source selection remains unchanged: report actions use the source captured when the menu opened.
+- Verified repository checks, all 237 unit tests, and 7 targeted shortcut-menu browser/fixture checks, including real PiP repeat actions, closure, unpinning, and fallback. Worker integration checks cover external hotkeys, cancellation of the previous prompt, repeated actions, authenticated pin state, Stop, and private-state reset. General browser, theme, and barcode suites were not rerun for this patch. Managed policy still prevents installed-extension validation here.
+
 ## v1.8.17 Multiracial Barcode Merge — 2026-11-12
 
 - At the user's request, merged fix/v1.8.17-multiracial-barcode (8dcde5f) into main without conflicts. Release files declare patch version 1.8.17. Application and test files match the previously tested branch exactly; repository checks passed after merging. The merge request did not include branch deletion, so the test branch is retained.
@@ -527,7 +535,7 @@ Shortcut menu:
 - Touch targets have a 44px minimum with approximately 8px gaps.
 - Short displays may scroll the action area while retaining usable controls.
 - Opening the menu does not cancel the current search.
-- Selecting an action uses normal command dispatch and closes the menu.
+- Selecting an action uses normal command dispatch. It closes an ordinary menu; a pinned PiP menu remains open across actions and external hotkey searches (v1.8.18).
 - Reopening focuses the existing menu.
 - Includes a 90-second timeout and Escape support.
 
