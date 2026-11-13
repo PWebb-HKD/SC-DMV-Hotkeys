@@ -34,6 +34,18 @@ test('full race labels map to legacy version-09 DCL codes with three-character p
   assert.equal(fields(unknown.payload).DCL, undefined);
   assert.match(unknown.warnings.join(' '), /Race\/ethnicity.*not recognized/);
 });
+test('multiracial race labels encode the confirmed Coplogic MR value for driver and ID records', () => {
+  for (const label of ['MLT RA','mlt ra','MLT  RA','MULTIRACIAL','multi racial','Multi-Racial','MR']) {
+    assert.equal(raceEthnicity(label),'MR');
+    for (const credential of ['DL','ID']) {
+      const result=driverBarcode(driverReport.replace('Race: W',`Race: ${label}`).replace('DL (R) D Modify',`${credential} (R) D Modify`));
+      assert.equal(fields(result.payload).DCL,'MR ');
+      assert.equal(result.warnings.some(w=>/Race\/ethnicity/.test(w)),false);
+      assert.equal(result.payload.slice(21,23),credential);
+    }
+  }
+  assert.equal(raceEthnicity('NOT MULTIRACIAL'),null);
+});
 test('blank printed dates, beginner permits and original functions retain current class', () => {
   const result = driverBarcode(driverReport.replace('DL (R) D Modify', 'BP (R) D Original').replace('04/16/2026 ', ''));
   assert.equal(fields(result.payload).DCA, 'D'); assert.equal(fields(result.payload).DBA, '06202030');

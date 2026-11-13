@@ -24,7 +24,7 @@ const vehicleFields = [
 ];
 const sexes = {'1':'Male','2':'Female','9':'Unspecified'};
 const eyes = {BLK:'Black',BLU:'Blue',BRO:'Brown',GRY:'Gray',GRN:'Green',HAZ:'Hazel',MAR:'Maroon',PNK:'Pink',DIC:'Different Colors',UNK:'Unknown'};
-const races = {W:'White',BK:'Black',AP:'Asian or Pacific Islander',AI:'American Indian or Alaska Native',H:'Hispanic',O:'Other',U:'Unknown'};
+const races = {W:'White',BK:'Black',AP:'Asian or Pacific Islander',AI:'American Indian or Alaska Native',H:'Hispanic',MR:'Multiracial',O:'Other',U:'Unknown'};
 
 /** Read only the supported single-subfile profiles; directory offsets are authoritative. */
 function payloadFields(payload, kind) {
@@ -102,7 +102,7 @@ function encodeField(descriptor, input, kind) {
       if (!eyes[value]) throw new Error('Enter Black, Blue, Brown, Gray, Green, Hazel, Maroon, Pink, Different Colors, or Unknown.'); break;
     case 'race':
       value = value === 'OTHER' ? 'O' : raceEthnicity(value);
-      if (!value) throw new Error('Enter White, Black, Asian or Pacific Islander, American Indian or Alaska Native, Hispanic, Other, or Unknown.');
+      if (!value) throw new Error('Enter White, Black, Asian or Pacific Islander, American Indian or Alaska Native, Hispanic, Multiracial, Other, or Unknown.');
       value = value.padEnd(3,' '); break;
   }
   if (value.length > descriptor.max) throw new Error(`Use no more than ${descriptor.max} characters.`);
