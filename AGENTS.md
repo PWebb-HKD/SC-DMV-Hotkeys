@@ -6,9 +6,9 @@ Treat this file as development context and recorded project preferences. Histori
 
 Keep this file in the repository root and update it as extension development continues. Record meaningful behavior changes, decisions, release history, verified checks, and unresolved issues. Clearly distinguish current facts from historical observations and hypotheses. Reconcile stale entries when their outcomes are verified, and never include credentials, private reports, or customer data. Documentation-only context updates do not require a release-version bump.
 
-## v1.8.17 Multiracial Barcode Patch Test Branch — 2026-11-12
+## v1.8.17 Multiracial Barcode Merge — 2026-11-12
 
-- Branch: fix/v1.8.17-multiracial-barcode, based on merged v1.8.16 main. Release files declare patch version 1.8.17; this work is not merged to main.
+- At the user's request, merged fix/v1.8.17-multiracial-barcode (8dcde5f) into main without conflicts. Release files declare patch version 1.8.17. Application and test files match the previously tested branch exactly; repository checks passed after merging. The merge request did not include branch deletion, so the test branch is retained.
 - The report race label MLT RA was unrecognized and DCL was omitted. It now maps to MR, along with MR, MULTIRACIAL, MULTI RACIAL, and normalized case/spacing/hyphen variants.
 - MR is the Coplogic import code specified by the user. Encode it in DCL as `MR ` (one trailing space). Retain the existing driver/ID v09 framing and legacy mappings for other races; do not describe MR as a verified member of the legacy DDVRAC code list.
 - The editor shows Multiracial, accepts manual corrections using the same aliases, and preserves unedited bytes. Unknown labels remain unrecognized rather than being guessed.
