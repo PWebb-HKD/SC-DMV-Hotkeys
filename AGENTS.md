@@ -6,6 +6,12 @@ Treat this file as development context and recorded project preferences. Histori
 
 Keep this file in the repository root and update it as extension development continues. Record meaningful behavior changes, decisions, release history, verified checks, and unresolved issues. Clearly distinguish current facts from historical observations and hypotheses. Reconcile stale entries when their outcomes are verified, and never include credentials, private reports, or customer data. Documentation-only context updates do not require a release-version bump.
 
+## v1.8.18 Merge — 2026-11-17
+
+- At the user's request, merged the retained fix/v1.8.17-multiracial-barcode branch (0306787) into main without conflicts in merge commit bf40f97. Release files declare version 1.8.18.
+- Verified on merged main: npm run check, all 237 unit tests, and all 7 targeted shortcut-menu browser/fixture checks passed. Application and test files match the tested branch. General browser, theme, and barcode suites were not rerun for this merge; main v1.8.17 passed those during environment onboarding.
+- The user authorized deletion of the test branch after main is successfully pushed. Confirm remote state before any future branch work. Managed browser policy still blocks installed-extension testing.
+
 ## v1.8.18 Pinned Menu Persistence Patch — 2026-11-12
 
 - Work continues on the retained fix/v1.8.17-multiracial-barcode test branch, advanced to merged main before editing. Release files now declare patch version 1.8.18; these changes are not merged to main.
