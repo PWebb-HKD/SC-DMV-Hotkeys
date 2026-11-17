@@ -6,6 +6,13 @@ Treat this file as development context and recorded project preferences. Histori
 
 Keep this file in the repository root and update it as extension development continues. Record meaningful behavior changes, decisions, release history, verified checks, and unresolved issues. Clearly distinguish current facts from historical observations and hypotheses. Reconcile stale entries when their outcomes are verified, and never include credentials, private reports, or customer data. Documentation-only context updates do not require a release-version bump.
 
+## v1.8.19 Temporary Alcohol License Patch — 2026-11-17
+
+- Created fix/v1.8.19-temporary-alcohol-license from merged main at the user's request. Release files declare patch version 1.8.19; this patch is not merged to main.
+- License alerts recognize Status - DL: TEMPORARY ALCOHOL (and TEMPORARY ALCOHOL LICENSE). A current, unexpired credential produces VALID LICENSE with TEMPORARY ALCOHOL LICENSE beneath it. Current expiration, ID-only, missing-number, and suspension handling retain their existing checks; a separate CDL status does not replace the DL status.
+- The qualifier is a display line, not an audio heading. Recorded voices and local TTS use only the ordinary valid-license announcement. The standard 10-second success timeout applies.
+- Verified npm run check, all 240 unit tests, and the new targeted browser popup check. Extracted text from the privately supplied PDF produces the expected success alert. Only synthetic fixtures were added; no private record or identifiers are committed. Full general browser, theme, and barcode suites were not rerun for this focused alert patch. Installed-extension testing remains blocked by managed browser policy.
+
 ## v1.8.18 Merge — 2026-11-17
 
 - At the user's request, merged the retained fix/v1.8.17-multiracial-barcode branch (0306787) into main without conflicts in merge commit bf40f97. Release files declare version 1.8.18.

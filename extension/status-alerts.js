@@ -138,7 +138,7 @@ function suspensionSummary(text, today) {
  * a Prior section cannot override a current license or supply its expiration date. */
 export function licenseStatus(raw, now = new Date()) {
   const text = flat(raw), today = reportToday(now);
-  const statuses = new Set([...text.matchAll(/\bStatus\s*[-–—]\s*DL\s*:\s*(NO\s+SUSPENSION|SUSPENDED)\b/gi)].map(match => flat(match[1]).toUpperCase()));
+  const statuses = new Set([...text.matchAll(/\bStatus\s*[-–—]\s*DL\s*:\s*(NO\s+SUSPENSION|SUSPENDED|TEMPORARY\s+ALCOHOL(?:\s+LICENSE)?)\b/gi)].map(match => flat(match[1]).toUpperCase()));
   if (statuses.size !== 1) return unavailableAlert('license', 'A single recognizable Status - DL value was not found.');
   if (statuses.has('SUSPENDED')) {
     const summary = suspensionSummary(text, today), priors = recentDus(text, today);
@@ -159,7 +159,9 @@ export function licenseStatus(raw, now = new Date()) {
   const expiration = dates && parseReportDate(dates[2]);
   if (!type || !expiration) return unavailableAlert('license', 'The current license expiration date could not be read.');
   if (expiration.ordinal < today.ordinal) return alert('license', 'danger', [{title: 'LICENSE EXPIRED', lines: []}]);
-  return alert('license', 'success', [{title: 'VALID LICENSE', lines: []}]);
+  // Keep the credential qualifier in display lines so audio uses only VALID LICENSE.
+  const temporaryAlcohol = [...statuses].some(status => /^TEMPORARY ALCOHOL(?: LICENSE)?$/.test(status));
+  return alert('license', 'success', [{title: 'VALID LICENSE', lines: temporaryAlcohol ? ['TEMPORARY ALCOHOL LICENSE'] : []}]);
 }
 
 /** Dispatch search kinds to the correct pure parser; unrelated searches have no status. */

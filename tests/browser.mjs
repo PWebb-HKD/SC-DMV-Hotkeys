@@ -948,6 +948,18 @@ try {
     },payload);
     await page.goto(`${base}/panel.html?id=record-status`);await page.locator('.record-status-title').first().waitFor();return page;
   }
+  await tests('temporary alcohol license popup shows qualifier below valid heading with standard success lifetime',async()=>{
+    const payload=licenseStatus(`Status - DL: TEMPORARY ALCOHOL CDL: DISQUALIFIED Driver License No: 123456789 Name: FICTIONAL, PERSON License Information ${currentHeader} TA DL D Original 01/01/2026 12/31/2026 N N SYNTHETIC`,fixedNow);
+    const page=await statusPage(payload);
+    assert.deepEqual(await page.locator('.record-status-title').allTextContents(),['VALID LICENSE']);
+    const qualifier=page.locator('.record-status-line');
+    assert.equal(await qualifier.textContent(),'TEMPORARY ALCOHOL LICENSE');
+    assert.equal(await qualifier.evaluate(el=>el.previousElementSibling.textContent),'VALID LICENSE');
+    assert.equal(await page.locator('body').evaluate(el=>el.classList.contains('status-success')),true);
+    await page.screenshot({path:join(screenshots,'temporary-alcohol-license.png'),fullPage:true});
+    await page.clock.fastForward(9000);assert.equal(await page.evaluate(()=>window.closedByAlert),false);
+    await page.clock.fastForward(1000);assert.equal(await page.evaluate(()=>window.closedByAlert),true);await page.close();
+  });
   await tests('plate popups render vehicle details beneath valid, expired and suspended statuses in smaller large white text',async()=>{
     for(const [name,expiration,enforcement] of [['valid','11/01/2026',''],['expired','10/27/2026',''],['suspended','11/01/2026','Enforcement Description: Insurance suspension Enforcement Statute: 56-1-460']]){
       const report=`VIN: SYNTHETICVIN Year: 2026 Make: TEST MAKE Model: EXAMPLE MODEL Body: 4S Empty Weight: 3000 Plate Class: ABC PRIVATE PASSENGER Decal Exp Date: ${expiration} ${enforcement}`;
