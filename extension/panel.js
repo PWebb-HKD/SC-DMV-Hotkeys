@@ -48,6 +48,10 @@ try {
       for (const section of data.sections || []) {
         const block = document.createElement('section'); block.className = 'record-status-section';
         if (section.title) { const title = document.createElement('h2'); title.className = 'record-status-title'; title.textContent = section.title; block.append(title); }
+        for (const warning of section.warnings || []) {
+          const p = document.createElement('p'); p.className = 'record-status-title record-status-warning';
+          p.textContent = warning; block.append(p);
+        }
         // Privilege qualifiers share the status heading's appearance and stay out of audio.
         for (const qualifier of section.qualifiers || []) {
           const p = document.createElement('p'); p.className = 'record-status-title record-status-qualifier';
@@ -61,7 +65,18 @@ try {
           p.textContent = line; block.append(p);
         }
         if (section.listTitle) { const label = document.createElement('h3'); label.className = 'record-reasons-title'; label.textContent = section.listTitle; block.append(label); }
-        if (section.items?.length) {
+        if (section.columns?.length) {
+          const columns = document.createElement('div'); columns.className = 'record-suspension-columns';
+          for (const column of section.columns) {
+            const group = document.createElement('div'); group.className = 'record-suspension-column';
+            const title = document.createElement('h4'); title.textContent = column.title; group.append(title);
+            const list = document.createElement('ul'); list.className = 'record-status-list';
+            for (const text of column.items || []) { const item = document.createElement('li'); item.textContent = text; list.append(item); }
+            if (!column.items?.length) { const item = document.createElement('li'); item.textContent = 'None'; list.append(item); }
+            group.append(list); columns.append(group);
+          }
+          block.append(columns);
+        } else if (section.items?.length) {
           const list = document.createElement('ul'); list.className = 'record-status-list';
           for (const text of section.items) { const item = document.createElement('li'); item.textContent = text; list.append(item); }
           block.append(list);

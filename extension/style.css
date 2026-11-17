@@ -38,3 +38,10 @@
 /* Separate shortcut destinations for touch input and keep their instructions at
  * the same body size; heading sizes continue to come from the shared theme. */
 .shortcut-settings{font-size:14px}.shortcut-settings .about-instructions{font-size:inherit}.shortcut-setup-links{display:flex;flex-direction:column;align-items:flex-start;gap:20px}.shortcut-setup-links a{display:inline-flex;align-items:center;min-height:44px;line-height:1.5}.shortcut-setup-links button{min-height:44px}
+
+/* Independent IID warning and separate suspension-period/reinstatement summaries. */
+.status-panel .record-status-warning{color:#ff5559}
+.record-suspension-columns{display:flex;gap:22px;align-items:flex-start}
+.record-suspension-column{flex:1;min-width:0}
+.record-suspension-column h4{font-size:20px;line-height:1.35;margin:0 0 12px;overflow-wrap:anywhere}
+@media(max-width:420px){.record-suspension-columns{flex-direction:column}.record-suspension-column{width:100%}}

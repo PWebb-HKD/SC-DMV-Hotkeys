@@ -11,6 +11,7 @@ import {ROOT, MEMBER, LOGIN, DISCLAIMER, PDF_URL, ownerNumbers, isResidenceRepor
 import {reportBarcode} from '../extension/barcode-data.js';
 import {driverReport} from './barcode-fixtures.js';
 import {plateStatus, licenseStatus} from '../extension/status-alerts.js';
+import {mixedSuspensions, validHeader, susp, statusNow} from './suspension-fixtures.js';
 import {RECORDING_PATHS} from '../extension/voice-recordings.js';
 const {chromium} = dependency('playwright');
 const {PDFDocument, StandardFonts, degrees} = dependency('pdf-lib');
@@ -948,6 +949,38 @@ try {
     },payload);
     await page.goto(`${base}/panel.html?id=record-status`);await page.locator('.record-status-title').first().waitFor();return page;
   }
+  await tests('suspension buckets render active left and pending right with DUI grouping and IID warning',async()=>{
+    const page=await statusPage(licenseStatus(mixedSuspensions,statusNow));
+    assert.equal(await page.locator('.record-reasons-title').textContent(),'Suspension Reasons:');
+    const columns=page.locator('.record-suspension-column');assert.equal(await columns.count(),2);
+    assert.deepEqual(await columns.locator('h4').allTextContents(),['Active Suspensions','Pending Reinstatement']);
+    assert.deepEqual(await columns.nth(0).locator('li').allTextContents(),['DUI/DUAC × 2','Failure to Pay Traffic Ticket × 1']);
+    assert.deepEqual(await columns.nth(1).locator('li').allTextContents(),['Driving Under Suspension × 1','DUI/DUAC × 1']);
+    const left=await columns.nth(0).boundingBox(),right=await columns.nth(1).boundingBox();
+    assert.ok(right.x>=left.x+left.width);assert.equal(left.y,right.y);
+    assert.deepEqual((await page.locator('.record-status-line').allTextContents()).slice(0,4),['0 Prior DUS convictions within 5 years','3 Prior DUI/DUAC convictions within 10 years','3 active suspensions','2 pending reinstatement']);
+    assert.equal(await page.locator('.record-status-warning').evaluate(el=>el.previousElementSibling.tagName),'H2');
+    await page.screenshot({path:join(screenshots,'suspension-buckets.png'),fullPage:true});
+    await page.setViewportSize({width:360,height:700});
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);await page.close();
+    const active=await statusPage(licenseStatus('Status - DL: SUSPENDED '+susp('Example'),statusNow));
+    assert.equal(await active.locator('.record-suspension-column').count(),1);await active.close();
+  });
+  await tests('IID warning remains red centered and heading-sized for valid expired and suspended statuses with ninety second timeout',async()=>{
+    for(const header of [validHeader,validHeader.replace('12/31/2027','01/01/2020'),'Status - DL: SUSPENDED']){
+      const payload=licenseStatus(header+' '+susp('Unlawful Alcohol Concentration',{iid:'Y'}),statusNow);
+      const page=await statusPage(payload), warning=page.locator('.record-status-warning');
+      assert.equal(await warning.textContent(),'IGNITION INTERLOCK DEVICE REQUIRED');
+      assert.equal(await warning.evaluate(el=>getComputedStyle(el).color),'rgb(255, 85, 89)');
+      assert.equal(await warning.evaluate(el=>getComputedStyle(el).textAlign),'center');
+      assert.equal(await warning.evaluate(el=>getComputedStyle(el).fontSize),await page.locator('h2.record-status-title').evaluate(el=>getComputedStyle(el).fontSize));
+      await page.clock.fastForward(10000);assert.equal(await page.evaluate(()=>window.closedByAlert),false);
+      await page.clock.fastForward(79000);assert.equal(await page.evaluate(()=>window.closedByAlert),false);
+      await page.clock.fastForward(1000);assert.equal(await page.evaluate(()=>window.closedByAlert),true);
+      if(payload.tone==='success')await page.screenshot({path:join(screenshots,'valid-license-iid.png'),fullPage:true});
+      await page.close();
+    }
+  });
   await tests('special DL privilege popups match valid expired and suspended headings without interpreting HTML',async()=>{
     for (const [status,expiry] of [['NO SUSPENSION','12/31/2026'],['NO SUSPENSION','01/01/2026'],['SUSPENDED','12/31/2026']]) {
       const report=`Special DL Privilege: <b>WORK ONLY</b>\nStatus - DL: ${status} Driver License No: 123456789 Name: FICTIONAL, PERSON License Information ${currentHeader} DL D Original 01/01/2025 ${expiry} N N SYNTHETIC`;

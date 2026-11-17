@@ -20,6 +20,16 @@ Default to latest main, preserve explicitly required unmerged dependencies, sync
 
 When the user says **Merge TB**, read and follow [.agents/skills/merge-tb/SKILL.md](.agents/skills/merge-tb/SKILL.md). Merge the current test branch into main, verify and push main successfully, then delete the merged test branch locally and remotely. If multiple test branches exist, ask which one to merge and delete before proceeding unless the user already explicitly selected it. Creating or discussing this skill does not invoke a merge.
 
+## v1.8.22 Suspension and DUI/DUAC Parsing — 2026-11-17
+
+- Work continues on fix/v1.8.21-patch-test; synchronized release files now declare 1.8.22. Main is unchanged.
+- Suspension End is the classification rule: future date/INDEFINITE counts as active. A completed period with future/INDEFINITE Reinstatement Requirements Met counts separately as Pending Reinstatement. An end date equal to today is completed; a reinstatement date equal to today is satisfied. Invalid/missing end dates remain unreadable, not guessed. The previous begin-date guard and classification of indefinite reinstatement as active were superseded by the user's end-based rules.
+- Suspended popups retain Suspension Reasons: and show grouped Active Suspensions on the left, with Pending Reinstatement on the right only when needed; narrow displays stack the columns. The pending tally appears beneath the active tally. DUI and DUAC share the DUI/DUAC reason group independently in each bucket.
+- Added the combined ten-calendar-year inclusive DUI/DUAC count beneath the existing five-year DUS line. Match offense blocks by ticket number, preserving leading zeroes and normalizing case. Prefer a matching VIOL Violation date; otherwise use SUSP Causal dates. Future/invalid dates do not count; missing tickets are not guessed to be the same offense.
+- Any DUI/DUAC suspension block with IID Required: Y adds the centered heading-sized red IGNITION INTERLOCK DEVICE REQUIRED warning, independent of offense age and main license status. It changes a valid popup timeout to 90 seconds while leaving the normal license status, status color, and voice announcement unchanged. Other valid alerts remain at 10 seconds.
+- Verified both privately supplied PDFs through pdftotext and the actual bundled PDF.js reader in Chromium; both paths returned identical parsed results. Uploaded records/extracted text remain outside Git; new regression fixtures are synthetic. No private identifiers or uploaded PDF bytes were added to source.
+- Verification: npm run check, all 251 unit tests, and four distinct targeted browser checks (suspension columns, IID styles/lifetime, suspended popup, ordinary green popup) passed. Full general browser/theme/barcode suites were not rerun for this focused change. Installed-extension testing remains blocked by managed browser policy.
+
 ## v1.8.21 Patch Test Branch Preparation — 2026-11-17
 
 - The user invoked New PTB. Created fix/v1.8.21-patch-test from latest main 969e072, incrementing release versions from 1.8.20 to 1.8.21 in manifest, package, lockfile (including the root entry), and README.
