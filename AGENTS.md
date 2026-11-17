@@ -6,6 +6,16 @@ Treat this file as development context and recorded project preferences. Histori
 
 Keep this file in the repository root and update it as extension development continues. Record meaningful behavior changes, decisions, release history, verified checks, and unresolved issues. Clearly distinguish current facts from historical observations and hypotheses. Reconcile stale entries when their outcomes are verified, and never include credentials, private reports, or customer data. Documentation-only context updates do not require a release-version bump.
 
+## Reusable New TB Commands
+
+Read and follow [.agents/skills/new-tb/SKILL.md](.agents/skills/new-tb/SKILL.md) when the user requests a new test branch:
+
+- **New PTB** creates a patch test branch and increments the patch version (for example, 1.8.20 → 1.8.21).
+- **New FTB** creates a feature test branch and increments the minor version, resetting the patch (for example, 1.8.20 → 1.9.0).
+- **New TB** without a type asks patch or feature unless already specified in the active request.
+
+Default to latest main, preserve explicitly required unmerged dependencies, synchronize all release version files, and push the prepared branch for testing unless local-only was requested. Feature branches use feat/v*; patch branches use fix/v*. Both are test-branch candidates for Merge TB. Later code/UI changes still increment the patch even on the same test branch. Creating or discussing the skill does not invoke branch creation.
+
 ## Reusable Merge TB Command
 
 When the user says **Merge TB**, read and follow [.agents/skills/merge-tb/SKILL.md](.agents/skills/merge-tb/SKILL.md). Merge the current test branch into main, verify and push main successfully, then delete the merged test branch locally and remotely. If multiple test branches exist, ask which one to merge and delete before proceeding unless the user already explicitly selected it. Creating or discussing this skill does not invoke a merge.
