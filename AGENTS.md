@@ -6,6 +6,10 @@ Treat this file as development context and recorded project preferences. Histori
 
 Keep this file in the repository root and update it as extension development continues. Record meaningful behavior changes, decisions, release history, verified checks, and unresolved issues. Clearly distinguish current facts from historical observations and hypotheses. Reconcile stale entries when their outcomes are verified, and never include credentials, private reports, or customer data. Documentation-only context updates do not require a release-version bump.
 
+## Reusable Merge TB Command
+
+When the user says **Merge TB**, read and follow [.agents/skills/merge-tb/SKILL.md](.agents/skills/merge-tb/SKILL.md). Merge the current test branch into main, verify and push main successfully, then delete the merged test branch locally and remotely. If multiple test branches exist, ask which one to merge and delete before proceeding unless the user already explicitly selected it. Creating or discussing this skill does not invoke a merge.
+
 ## v1.8.20 Special DL Privileges Patch — 2026-11-17
 
 - Created fix/v1.8.20-special-dl-privileges from main at the user's request; synchronized release files declare 1.8.20. This patch is not merged to main.
