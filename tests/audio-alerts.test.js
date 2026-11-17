@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 import {AudioAlerts, chooseVoice, spokenStatus, isSuspended} from '../extension/audio-alerts.js';
+import {licenseStatus} from '../extension/status-alerts.js';
 import {RECORDING_PATHS, statusRecordings} from '../extension/voice-recordings.js';
 /** Run the real player body in a controlled browser-like VM; imports are injected. */
 function playerSource() {
@@ -187,3 +188,15 @@ test('valid-tag announcements use the selected recording and repeat preference w
   }
 });
 
+
+test('temporary alcohol license uses only the ordinary valid-license speech and recordings', async () => {
+  const payload = licenseStatus('Status - DL: TEMPORARY ALCOHOL CDL: DISQUALIFIED Driver License No: 123456789 Name: FICTIONAL, PERSON License Information Type Class Function Issued Expires Printed Date Restr.Endor.Document Identifier Current (ACN / DDN) TA DL D Original 01/01/2026 12/31/2026 N N SYNTHETIC', new Date('2026-10-28T16:00:00Z'));
+  assert.deepEqual(payload.sections[0].lines, ['TEMPORARY ALCOHOL LICENSE']);
+  assert.equal(spokenStatus(payload), 'Valid license');
+  for (const gender of ['male', 'female']) {
+    assert.deepEqual(statusRecordings(payload, gender), [`audio/voices/${gender === 'male' ? 'Male' : 'Female'}_Valid_Drivers_License.mp3`]);
+  }
+  const api = mockApi();
+  await new AudioAlerts(api).play(payload, {speechEnabled:true, voiceSource:'microsoft', voiceGender:'male'});
+  assert.deepEqual(api.calls.map(call => call.text), ['Valid license']);
+});

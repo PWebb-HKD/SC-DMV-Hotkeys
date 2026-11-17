@@ -194,3 +194,21 @@ test('ordinary plate classes with blank decal dates never inherit plate expirati
   assert.deepEqual(titles(result),['STATUS UNAVAILABLE']);
   assert.match(result.sections[0].lines[0],/Decal Exp Date/);
 });
+
+test('temporary alcohol status is valid with a display-only qualifier and current expiration', () => {
+  for (const status of ['TEMPORARY ALCOHOL', 'TEMPORARY ALCOHOL LICENSE', 'temporary alcohol']) {
+    const report = driver(current('TA DL D')).replace('NO SUSPENSION', status) + ' CDL: DISQUALIFIED';
+    const result = licenseStatus(report, NOW);
+    assert.equal(result.tone, 'success');
+    assert.equal(result.autoCloseMs, 10000);
+    assert.deepEqual(result.sections, [{title: 'VALID LICENSE', lines: ['TEMPORARY ALCOHOL LICENSE']}]);
+    assert.deepEqual(recordStatus('customer', report.replace(/ /g, '\n\t'), NOW), result);
+    assert.deepEqual(titles(licenseStatus(report.replace('10/28/2026', '10/27/2026'), NOW)), ['LICENSE EXPIRED']);
+    assert.deepEqual(titles(licenseStatus(report.replace('10/28/2026', '02/30/2026'), NOW)), ['STATUS UNAVAILABLE']);
+  }
+});
+test('temporary alcohol text outside DL status does not grant valid status', () => {
+  assert.deepEqual(titles(licenseStatus('TEMPORARY ALCOHOL LICENSE ' + driver().replace('NO SUSPENSION', 'UNKNOWN'), NOW)), ['STATUS UNAVAILABLE']);
+  assert.deepEqual(titles(licenseStatus(driver().replace('NO SUSPENSION', 'SUSPENDED') + ' TEMPORARY ALCOHOL LICENSE', NOW)), ['LICENSE SUSPENDED']);
+  assert.deepEqual(licenseStatus(driver(), NOW).sections[0].lines, []);
+});

@@ -48,7 +48,13 @@ try {
       for (const section of data.sections || []) {
         const block = document.createElement('section'); block.className = 'record-status-section';
         if (section.title) { const title = document.createElement('h2'); title.className = 'record-status-title'; title.textContent = section.title; block.append(title); }
-        for (const line of section.lines || []) { const p = document.createElement('p'); p.className = 'record-status-line'; p.textContent = line; block.append(p); }
+        for (const line of section.lines || []) {
+          const p = document.createElement('p');
+          // Give the TAL qualifier the valid heading's appearance while keeping it display-only.
+          p.className = section.title === 'VALID LICENSE' && line === 'TEMPORARY ALCOHOL LICENSE'
+            ? 'record-status-title record-status-qualifier' : 'record-status-line';
+          p.textContent = line; block.append(p);
+        }
         if (section.listTitle) { const label = document.createElement('h3'); label.className = 'record-reasons-title'; label.textContent = section.listTitle; block.append(label); }
         if (section.items?.length) {
           const list = document.createElement('ul'); list.className = 'record-status-list';
