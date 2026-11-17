@@ -20,6 +20,13 @@ Default to latest main, preserve explicitly required unmerged dependencies, sync
 
 When the user says **Merge TB**, read and follow [.agents/skills/merge-tb/SKILL.md](.agents/skills/merge-tb/SKILL.md). Merge the current test branch into main, verify and push main successfully, then delete the merged test branch locally and remotely. If multiple test branches exist, ask which one to merge and delete before proceeding unless the user already explicitly selected it. Creating or discussing this skill does not invoke a merge.
 
+## v1.8.24 Merge — 2026-11-17
+
+- The user invoked Merge TB. The sole current test branch, fix/v1.8.21-patch-test (ecdc331), merged into main without conflicts in merge commit 17379b2. Synchronized release files declare version 1.8.24.
+- This merge includes the suspension/reinstatement split, DUI/DUAC counting, IID warnings, popup height/text fitting, active-reason priority order, and top-left status-window alignment developed on the test branch. Application and test files match its tested tip.
+- Verified on merged main: npm run check, all 252 unit tests, and 11 distinct targeted browser checks covering window positioning/fitting, suspension columns, IID warnings/lifetime, suspended and normal green alerts, special DL privileges, and TAL alerts. Full general browser/theme/barcode suites were not rerun for this merge; installed-extension validation remains blocked by managed policy.
+- The command authorizes deleting only this merged test branch locally and remotely after successful main push and confirmation that its tip remains unchanged. Confirm actual remote state before future branch work.
+
 ## v1.8.24 Status Alert Top-Left Alignment — 2026-11-17
 
 - Continued on fix/v1.8.21-patch-test with synchronized release version 1.8.24. All record-alert windows, including license, plate, and blacklist alerts, align to screen.availLeft / screen.availTop on their current monitor. This includes short alerts that require no height increase and monitors with negative desktop coordinates or reserved top/left work-area space.
