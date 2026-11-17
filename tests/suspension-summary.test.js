@@ -9,7 +9,7 @@ test('separate active and pending buckets group DUI/DUAC together and preserve D
   const r = result(mixedSuspensions);
   assert.equal(r.activeSuspensions, 3); assert.equal(r.pendingReinstatement, 2); assert.equal(r.priorDuiDuac, 3);
   assert.deepEqual(r.sections[0].lines.slice(0,4), ['0 Prior DUS convictions within 5 years','3 Prior DUI/DUAC convictions within 10 years','3 active suspensions','2 pending reinstatement']);
-  assert.deepEqual(r.sections[0].columns, [
+  assert.deepEqual(r.sections[0].columns.map(({title,items})=>({title,items})), [
     {title:'Active Suspensions',items:['DUI/DUAC × 2','Failure to Pay Traffic Ticket × 1']},
     {title:'Pending Reinstatement',items:['Driving Under Suspension × 1','DUI/DUAC × 1']}
   ]);
@@ -77,4 +77,23 @@ test('active reasons put Habitual Offender then Driving Under Suspension ahead o
   const r=result('Status - DL: SUSPENDED '+blocks.join(' '));
   assert.deepEqual(r.sections[0].columns[0].items,['Habitual Offender × 1','Driving Under Suspension × 1','Failure to Pay Traffic Ticket × 4','Other reason × 2']);
   assert.equal(r.activeSuspensions,8);
+});
+
+test('suspension occurrence details preserve each ticket/date and the individual DUI or DUAC header', () => {
+  const r=result(mixedSuspensions), groups=r.sections[0].columns.flatMap(column=>column.groups);
+  for(const group of groups)assert.equal(group.occurrences.length,group.count);
+  const active=r.sections[0].columns[0].groups[0];
+  assert.deepEqual(active.occurrences,[
+    {reason:'DUI',ticket:'SYNTH-A',begin:'01/01/2025',end:'INDEFINITE',violationDate:'01/15/2024'},
+    {reason:'DUAC',ticket:'SYNTH-C',begin:'01/01/2025',end:'INDEFINITE',violationDate:'02/01/2022'}
+  ]);
+  const pending=r.sections[0].columns[1].groups.find(group=>group.reason==='DUI/DUAC');
+  assert.equal(pending.occurrences[0].ticket,'SYNTH-B');assert.equal(pending.occurrences[0].end,'01/01/2026');
+});
+test('occurrence fields never borrow missing ticket or dates from a neighboring block', () => {
+  const missing=susp('Other',{ticket:''}).replace('Suspension Beg: 01/01/2025','Suspension Beg: ').replace('Causal: 01/15/2024','Causal: ');
+  const r=result('Status - DL: SUSPENDED '+missing+' '+susp('Other',{ticket:'000TeST-2',causal:'02/01/2024'}));
+  const rows=r.sections[0].columns[0].groups[0].occurrences;
+  assert.deepEqual(rows[0],{reason:'Other',ticket:'',begin:'',end:'INDEFINITE',violationDate:''});
+  assert.equal(rows[1].ticket,'000TeST-2');assert.equal(rows[1].violationDate,'02/01/2024');
 });

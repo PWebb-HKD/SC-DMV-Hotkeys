@@ -20,6 +20,15 @@ Default to latest main, preserve explicitly required unmerged dependencies, sync
 
 When the user says **Merge TB**, read and follow [.agents/skills/merge-tb/SKILL.md](.agents/skills/merge-tb/SKILL.md). Merge the current test branch into main, verify and push main successfully, then delete the merged test branch locally and remotely. If multiple test branches exist, ask which one to merge and delete before proceeding unless the user already explicitly selected it. Creating or discussing this skill does not invoke a merge.
 
+## v1.8.26 Expandable Suspension Details — 2026-11-17
+
+- Continued on fix/v1.8.25-patch-test; synchronized release files declare 1.8.26. Main is unchanged.
+- Each grouped Active Suspensions or Pending Reinstatement reason is a keyboard-accessible details/summary disclosure. Expanding shows one occurrence row per contributing SUSP block, with an individual reason mini header (DUI/DUAC members retain distinct DUI or DUAC headers), optional ticket number, Suspension Begin, Suspension End, and Causal date labeled Violation Date. Missing dates display Unavailable; missing tickets are omitted. Text is rendered with textContent and never interpreted as HTML.
+- Occurrences retain their original ticket spelling/leading zeroes and stay bound to their own suspension block. The existing group count, reason priority, active/pending classification, offense deduplication, and audio headings remain unchanged.
+- Expanding or collapsing resets the alert's normal timeout and refits its window. The layout controller now returns a reusable fitting callback and includes hidden detail text in its original font measurements, preserving top-left anchoring, readable supporting text, and fixed main status size.
+- Verified npm run check, all 254 unit tests, nine distinct targeted browser checks (disclosure rows/headers, pointer and keyboard toggles, timer resets, pending details and literal text, suspension summaries, and five native-window sizing/alignment cases). Both supplied private PDFs were extracted through PDF.js and pdftotext with matching data; every rendered disclosure row was checked against parsed occurrences. One missing Causal date is displayed as Unavailable rather than inferred. Private PDFs, identifiers, ticket values, and extracted text remain outside Git; committed regressions are synthetic.
+- Full general browser/theme/barcode suites were not rerun for this focused change. Installed-extension validation remains blocked by managed browser policy.
+
 ## v1.8.25 Patch Test Branch Preparation — 2026-11-17
 
 - The user invoked New PTB. Created fix/v1.8.25-patch-test from latest main b7e900f. Synchronized manifest, package, lockfile (including its root entry), and README release version from 1.8.24 to 1.8.25.

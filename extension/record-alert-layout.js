@@ -4,9 +4,9 @@ export function fitRecordAlert() {
   // Focusing the bottom Close button must never scroll the initial status out of view.
   const resetScroll = () => window.scrollTo(0, 0);
   resetScroll();
-  if (!chrome.windows?.getCurrent || !chrome.windows?.update) return;
+  if (!chrome.windows?.getCurrent || !chrome.windows?.update) return () => {};
   const text = [...document.body.querySelectorAll('*')]
-    .filter(el => !el.matches('h2.record-status-title') && el.getClientRects().length &&
+    .filter(el => !el.matches('h2.record-status-title') &&
       [...el.childNodes].some(node => node.nodeType === Node.TEXT_NODE && node.textContent.trim()))
     .map(el => ({el, size: parseFloat(getComputedStyle(el).fontSize)}));
   let running = false, pending = false, currentId;
@@ -64,4 +64,5 @@ export function fitRecordAlert() {
     chrome.windows.onBoundsChanged?.removeListener(onBounds);
   }, {once: true});
   void fit().then(resetScroll);
+  return fit;
 }
