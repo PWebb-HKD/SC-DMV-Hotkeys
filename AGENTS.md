@@ -10,6 +10,12 @@ Keep this file in the repository root and update it as extension development con
 
 When the user says **Merge TB**, read and follow [.agents/skills/merge-tb/SKILL.md](.agents/skills/merge-tb/SKILL.md). Merge the current test branch into main, verify and push main successfully, then delete the merged test branch locally and remotely. If multiple test branches exist, ask which one to merge and delete before proceeding unless the user already explicitly selected it. Creating or discussing this skill does not invoke a merge.
 
+## v1.8.20 Merge — 2026-11-17
+
+- The user invoked Merge TB. The sole current test branch, fix/v1.8.20-special-dl-privileges (5e00ecc), merged into main without conflicts in merge commit 9f5f709. Release version is 1.8.20. The reusable Merge TB skill is now included in main.
+- Verified on merged main: npm run check, all 244 unit tests, the special-DL-privilege browser check covering valid/expired/suspended styling, and the TAL popup browser check passed. Application and test files match the tested branch. Full browser, theme, and barcode suites were not rerun for this merge.
+- The command authorizes deleting only this merged branch locally and remotely after successful main push and verification of the unchanged test tip. Confirm actual remote state before future branch work.
+
 ## v1.8.20 Special DL Privileges Patch — 2026-11-17
 
 - Created fix/v1.8.20-special-dl-privileges from main at the user's request; synchronized release files declare 1.8.20. This patch is not merged to main.
