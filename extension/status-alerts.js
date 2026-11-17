@@ -112,27 +112,64 @@ function recentDus(text, today) {
   }
   return count;
 }
-/** Evaluate dated suspension blocks, group active reasons, and count unreadable blocks.
- * Ticket numbers do not identify a reason; missing optional privilege text is tolerated. */
+/** Split offense blocks at explicit block markers, keeping dates and flags tied to their offense. */
+function offenseBlocks(text) {
+  return [...text.matchAll(/\b(SUSP|VIOL)\s*:\s*([\s\S]*?)(?=\b(?:SUSP|VIOL)\s*:|\bLicense\s+Information\b|$)/gi)]
+    .map(match => ({kind: match[1].toUpperCase(), text: match[2]}));
+}
+/** Extract just the offense description, excluding ticket numbers and later block fields. */
+function offenseReason(block) {
+  return flat(block.split(/\b(?:Ticket\s*#|Special\s+Driving\s+Privilege|Suspension\s+Beg|Violation|Causal|IID\s+Required)\s*:/i)[0])
+    .replace(/^\d{3}\s*[-–—]\s*/, '').trim();
+}
+const isDuiDuac = reason => /\b(?:Driving\s+Under\s+the\s+Influence|Unlawful\s+Alcohol\s+Concentration)\b/i.test(reason);
+/** Count DUI/DUAC offenses once per ticket, preferring a VIOL date over a matching SUSP causal date.
+ * Missing tickets remain separate; matching dates alone do not prove the same offense. */
+function duiDuacSummary(blocks, today) {
+  const offenses = new Map(); let anonymous = 0, iidRequired = false;
+  for (const block of blocks) {
+    if (!isDuiDuac(offenseReason(block.text))) continue;
+    if (block.kind === 'SUSP' && /\bIID\s+Required\s*:\s*Y\b/i.test(block.text)) iidRequired = true;
+    const ticket = block.text.match(/\bTicket\s*#\s*:\s*(?!(?:Special\s+Driving|Suspension\s+Beg|Violation\s*:|Causal\s*:|Post\s*:|ACD\s*:|Conviction\s*:))([A-Za-z0-9][A-Za-z0-9-]*)\b/i)?.[1]?.toUpperCase();
+    const key = ticket ? `ticket:${ticket}` : `anonymous:${anonymous++}`;
+    const dateLabel = block.kind === 'VIOL' ? 'Violation' : 'Causal';
+    const date = parseReportDate(block.text.match(new RegExp(`\\b${dateLabel}\\s*:\\s*${DATE}`, 'i'))?.[1]);
+    const entry = offenses.get(key) || {violations: [], suspensions: []};
+    entry[block.kind === 'VIOL' ? 'violations' : 'suspensions'].push(date);
+    offenses.set(key, entry);
+  }
+  const cutoff = shiftMonths(today, -120).ordinal;
+  const count = [...offenses.values()].filter(entry => (entry.violations.length ? entry.violations : entry.suspensions)
+    .some(date => date && date.ordinal >= cutoff && date.ordinal <= today.ordinal)).length;
+  return {count, iidRequired};
+}
+/** Classify suspension periods and separate outstanding reinstatement requirements.
+ * End dates at or before today have completed their active period; neither bucket counts twice. */
 function suspensionSummary(text, today) {
-  const reasons = new Map(); let unreadable = 0;
-  for (const match of text.matchAll(/\bSUSP\s*:\s*([\s\S]*?)(?=\bSUSP\s*:|\bVIOL\s*:|\bLicense\s+Information\b|$)/gi)) {
-    const block = match[1];
-    const reason = flat(block.match(/^([\s\S]*?)(?=\bSpecial\s+Driving\s+Privilege\s*:|\bSuspension\s+Beg\s*:)/i)?.[1]).split(/\bTicket\s*#\s*:/i)[0].replace(/\b\d{3}\s*[-–—]\s*/g, '').trim();
-    const begin = parseReportDate(block.match(new RegExp(`\\bSuspension\\s+Beg\\s*:\\s*${DATE}`, 'i'))?.[1]);
-    if (!begin || !reason) { unreadable++; continue; }
-    if (begin.ordinal > today.ordinal) continue;
+  const active = new Map(), pending = new Map(); let unreadable = 0;
+  for (const {kind, text: block} of offenseBlocks(text)) {
+    if (kind !== 'SUSP') continue;
+    const rawReason = offenseReason(block), reason = isDuiDuac(rawReason) ? 'DUI/DUAC' : rawReason;
+    if (!reason) { unreadable++; continue; }
     const ending = field(block, 'Suspension\\s+End', 'Causal');
     const requirements = field(block, 'Reinstatement\\s+Requirements\\s+Met', 'Reinstatement\\s+Fee\\s+Paid');
     const endDate = parseReportDate(ending.match(FLAT_DATE)?.[0]);
-    const indefinite = /^INDEFINITE\b/i.test(ending) || /^INDEFINITE\b/i.test(requirements);
-    if (!indefinite && !endDate) { unreadable++; continue; }
-    if (!indefinite && endDate.ordinal <= today.ordinal) continue;
-    const key = reason.toLocaleUpperCase('en-US'), current = reasons.get(key);
-    if (current) current.count++; else reasons.set(key, {reason, count: 1});
+    const requirementDate = parseReportDate(requirements.match(FLAT_DATE)?.[0]);
+    let bucket;
+    if (/^INDEFINITE\b/i.test(ending) || endDate && endDate.ordinal > today.ordinal) bucket = active;
+    else if (!endDate) { unreadable++; continue; }
+    else if (/^INDEFINITE\b/i.test(requirements) || requirementDate && requirementDate.ordinal > today.ordinal) bucket = pending;
+    if (!bucket) continue;
+    const key = reason.toLocaleUpperCase('en-US'), current = bucket.get(key);
+    if (current) current.count++; else bucket.set(key, {reason, count: 1});
   }
-  const groups = [...reasons.values()].sort((a, b) => b.count - a.count || a.reason.localeCompare(b.reason));
-  return {groups, active: groups.reduce((sum, group) => sum + group.count, 0), unreadable};
+  const sorted = (bucket, prioritize = false) => {
+    const priority = reason => !prioritize ? 2 : /^Habitual Offender$/i.test(reason) ? 0 : /^Driving Under Suspension$/i.test(reason) ? 1 : 2;
+    return [...bucket.values()].sort((a, b) => priority(a.reason) - priority(b.reason) || b.count - a.count || a.reason.localeCompare(b.reason));
+  };
+  const groups = sorted(active, true), pendingGroups = sorted(pending);
+  const total = groups => groups.reduce((sum, group) => sum + group.count, 0);
+  return {groups, pendingGroups, active: total(groups), pending: total(pendingGroups), unreadable};
 }
 /** Suspended status takes precedence. Otherwise inspect only Current credentials;
  * a Prior section cannot override a current license or supply its expiration date. */
@@ -142,10 +179,15 @@ function evaluateLicenseStatus(raw, now = new Date()) {
   if (statuses.size !== 1) return unavailableAlert('license', 'A single recognizable Status - DL value was not found.');
   if (statuses.has('SUSPENDED')) {
     const summary = suspensionSummary(text, today), priors = recentDus(text, today);
-    const lines = [`${priors} Prior DUS convictions within 5 years`, `${summary.active} active suspension${summary.active === 1 ? '' : 's'}`];
+    const duiDuac = duiDuacSummary(offenseBlocks(text), today);
+    const lines = [`${priors} Prior DUS convictions within 5 years`, `${duiDuac.count} Prior DUI/DUAC convictions within 10 years`, `${summary.active} active suspension${summary.active === 1 ? '' : 's'}`];
+    if (summary.pending) lines.push(`${summary.pending} pending reinstatement`);
     if (!summary.groups.length) lines.push('No active suspension blocks matched the date criteria.');
     if (summary.unreadable) lines.push(`${summary.unreadable} suspension entr${summary.unreadable === 1 ? 'y could' : 'ies could'} not be evaluated.`);
-    return alert('license', 'danger', [{title: 'LICENSE SUSPENDED', lines, listTitle: 'Suspension Reasons:', items: summary.groups.map(group => `${group.reason} × ${group.count}`)}], {activeSuspensions: summary.active, priorDus: priors});
+    const items = summary.groups.map(group => `${group.reason} × ${group.count}`);
+    const columns = [{title: 'Active Suspensions', items}];
+    if (summary.pending) columns.push({title: 'Pending Reinstatement', items: summary.pendingGroups.map(group => `${group.reason} × ${group.count}`)});
+    return alert('license', 'danger', [{title: 'LICENSE SUSPENDED', lines, listTitle: 'Suspension Reasons:', items, columns}], {activeSuspensions: summary.active, pendingReinstatement: summary.pending, priorDus: priors, priorDuiDuac: duiDuac.count});
   }
   const current = text.match(new RegExp(`\\b${LICENSE_HEADER}\\s+Current\\b(?:\\s*\\(\\s*ACN\\s*\\/\\s*DDN\\s*\\))?\\s*([\\s\\S]*?)(?=\\bLicense\\s+Information\\b|\\bPrior\\b|\\bSUSP\\s*:|\\bVIOL\\s*:|$)`, 'i'))?.[1];
   const number = text.match(/\bDriver\s+License\s+No\s*:\s*([\s\S]*?)\bName\s*:/i)?.[1];
@@ -179,6 +221,12 @@ function specialDlPrivileges(raw) {
 export function licenseStatus(raw, now = new Date()) {
   const result = evaluateLicenseStatus(raw, now);
   const section = result.sections[0];
+  // IID is independent of the main status, expiration, and conviction lookback window.
+  if (duiDuacSummary(offenseBlocks(flat(raw)), reportToday(now)).iidRequired) {
+    section.warnings = ['IGNITION INTERLOCK DEVICE REQUIRED'];
+    result.iidRequired = true;
+    result.autoCloseMs = 90000;
+  }
   if (!['VALID LICENSE', 'LICENSE SUSPENDED', 'LICENSE EXPIRED'].includes(section.title)) return result;
   const normalized = value => flat(value).toUpperCase().replace(/\s+LICENSE$/, '');
   const privileges = specialDlPrivileges(raw).filter(value => !(section.lines || []).some(line => normalized(line) === normalized(value)));

@@ -11,6 +11,7 @@ import {ROOT, MEMBER, LOGIN, DISCLAIMER, PDF_URL, ownerNumbers, isResidenceRepor
 import {reportBarcode} from '../extension/barcode-data.js';
 import {driverReport} from './barcode-fixtures.js';
 import {plateStatus, licenseStatus} from '../extension/status-alerts.js';
+import {mixedSuspensions, validHeader, susp, statusNow} from './suspension-fixtures.js';
 import {RECORDING_PATHS} from '../extension/voice-recordings.js';
 const {chromium} = dependency('playwright');
 const {PDFDocument, StandardFonts, degrees} = dependency('pdf-lib');
@@ -948,6 +949,117 @@ try {
     },payload);
     await page.goto(`${base}/panel.html?id=record-status`);await page.locator('.record-status-title').first().waitFor();return page;
   }
+  /** Exercise native bounds requests with a real Chromium document and accepted viewport dimensions. */
+  async function fittedAlert(payload,{availHeight=1200,availTop=0,availLeft=0,top=100,denied=false}={}){
+    const page=await ui.newPage();await page.setViewportSize({width:580,height:580});
+    await page.exposeFunction('acceptAlertHeight',async height=>page.setViewportSize({width:580,height:height-40}));
+    await page.addInitScript(({payload,availHeight,availTop,availLeft,top,denied})=>{
+      Object.defineProperties(screen,{availHeight:{get:()=>availHeight,configurable:true},availTop:{get:()=>availTop,configurable:true},availLeft:{get:()=>availLeft,configurable:true}});
+      window.alertBounds={id:77,width:580,height:620,top,left:640};window.alertBoundsCalls=[];
+      chrome.windows.getCurrent=async()=>({...window.alertBounds});
+      chrome.windows.update=async(id,bounds)=>{
+        window.alertBoundsCalls.push(bounds);if(denied)throw new Error('Fixture denied resize');
+        Object.assign(window.alertBounds,bounds);if(bounds.height)await window.acceptAlertHeight(bounds.height);
+        return {...window.alertBounds};
+      };
+      window.closedByAlert=false;window.close=()=>{window.closedByAlert=true;};
+      const original=chrome.runtime.sendMessage;chrome.runtime.sendMessage=async message=>message.type==='panel-data'?{ok:true,value:payload}:original(message);
+    },{payload,availHeight,availTop,availLeft,top,denied});
+    await page.goto(`${base}/panel.html?id=fitted-status`);
+    await page.locator('h2.record-status-title').first().waitFor();
+    return page;
+  }
+  const longAlert=()=>({type:'record-alert',recordType:'license',tone:'danger',autoCloseMs:90000,sections:[{
+    title:'LICENSE SUSPENDED',lines:['2 Prior DUS convictions within 5 years','1 Prior DUI/DUAC convictions within 10 years','7 active suspensions','4 pending reinstatement'],listTitle:'Suspension Reasons:',columns:[
+      {title:'Active Suspensions',items:['Habitual Offender × 1','Failure to Pay Traffic Ticket × 4','Failure to Pay Property Tax × 1','Failure to Show proof of Insurance × 1']},
+      {title:'Pending Reinstatement',items:['Driving Under Suspension × 2','DUI/DUAC × 1','Implied Consent × 1']}
+    ]}]});
+  await tests('record alerts anchor short license plate and blacklist windows to the usable top-left',async()=>{
+    for(const payload of [
+      {type:'record-alert',recordType:'license',tone:'success',sections:[{title:'VALID LICENSE',lines:[]}]},
+      {type:'record-alert',recordType:'plate',tone:'success',sections:[{title:'TAG VALID',lines:[]}]},
+      {type:'record-alert',blacklist:true,tone:'danger',sections:[{title:'SEARCH BLOCKED',lines:[]}]}
+    ]){
+      const page=await fittedAlert(payload,{availHeight:1200,availTop:32,availLeft:-1920,top:200});
+      await page.waitForFunction(()=>document.body.dataset.alertFit==='ready');
+      const bounds=await page.evaluate(()=>window.alertBounds);
+      assert.equal(bounds.top,32);assert.equal(bounds.left,-1920);assert.equal(bounds.height,620);
+      assert.equal(await page.evaluate(()=>scrollY),0);await page.close();
+    }
+  });
+  await tests('record alert grows upward within work area and opens at the status without reducing text',async()=>{
+    const page=await fittedAlert(longAlert(),{availHeight:1200,availTop:-1200,availLeft:-1920,top:-650});
+    await page.waitForFunction(()=>document.body.dataset.alertFit==='ready'&&document.documentElement.scrollHeight<=innerHeight);
+    const bounds=await page.evaluate(()=>window.alertBounds);
+    assert.ok(bounds.height>620&&bounds.height<=1200);assert.equal(bounds.top,-1200);assert.equal(bounds.left,-1920);assert.ok(bounds.top+bounds.height<=0);
+    assert.equal(await page.evaluate(()=>scrollY),0);
+    assert.equal(await page.locator('h2.record-status-title').evaluate(el=>getComputedStyle(el).fontSize),'36px');
+    assert.equal(await page.locator('.record-status-line').first().evaluate(el=>getComputedStyle(el).fontSize),'20px');
+    assert.equal(await page.locator('#submit').evaluate(el=>document.activeElement===el),true);
+    await page.screenshot({path:join(screenshots,'alert-expanded.png'),fullPage:true});await page.close();
+  });
+  await tests('record alert reduces support text at work-area limit and preserves status size and Close',async()=>{
+    const page=await fittedAlert(longAlert(),{availHeight:760,top:300});
+    await page.waitForFunction(()=>document.body.dataset.alertFit==='ready'&&document.documentElement.scrollHeight<=innerHeight);
+    const bounds=await page.evaluate(()=>window.alertBounds);assert.equal(bounds.height,760);assert.equal(bounds.top,0);
+    assert.equal(await page.evaluate(()=>scrollY),0);
+    assert.equal(await page.locator('h2.record-status-title').evaluate(el=>getComputedStyle(el).fontSize),'36px');
+    const detailSize=await page.locator('.record-status-line').first().evaluate(el=>parseFloat(getComputedStyle(el).fontSize));
+    assert.ok(detailSize>=12&&detailSize<20);
+    assert.ok((await page.locator('#submit').boundingBox()).y>=0);
+    await page.screenshot({path:join(screenshots,'alert-scaled.png'),fullPage:true});
+    await page.evaluate(()=>{Object.defineProperty(screen,'availHeight',{get:()=>1200,configurable:true});window.dispatchEvent(new Event('resize'));});
+    await page.waitForFunction(()=>document.body.dataset.alertFit==='ready'&&parseFloat(getComputedStyle(document.querySelector('.record-status-line')).fontSize)===20);
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollHeight<=innerHeight),true);await page.close();
+  });
+  await tests('record alert fits IID details on a limited work area without reducing the license status',async()=>{
+    const payload=longAlert();payload.sections[0].warnings=['IGNITION INTERLOCK DEVICE REQUIRED'];
+    const page=await fittedAlert(payload,{availHeight:760,top:300});
+    await page.waitForFunction(()=>document.body.dataset.alertFit==='ready'&&document.documentElement.scrollHeight<=innerHeight);
+    assert.equal(await page.locator('h2.record-status-title').evaluate(el=>getComputedStyle(el).fontSize),'36px');
+    assert.equal(await page.locator('.record-status-warning').evaluate(el=>getComputedStyle(el).color),'rgb(255, 85, 89)');
+    assert.equal(await page.evaluate(()=>scrollY),0);
+    await page.screenshot({path:join(screenshots,'alert-iid-scaled.png'),fullPage:true});await page.close();
+  });
+  await tests('record alert with denied resizing opens at top and remains dismissible',async()=>{
+    const page=await fittedAlert(longAlert(),{denied:true});
+    await page.waitForFunction(()=>window.alertBoundsCalls.length>0);
+    assert.equal(await page.evaluate(()=>scrollY),0);
+    assert.equal(await page.locator('h2.record-status-title').evaluate(el=>getComputedStyle(el).fontSize),'36px');
+    await page.keyboard.press('Escape');await page.waitForFunction(()=>window.closedByAlert);await page.close();
+  });
+  await tests('suspension buckets render active left and pending right with DUI grouping and IID warning',async()=>{
+    const page=await statusPage(licenseStatus(mixedSuspensions,statusNow));
+    assert.equal(await page.locator('.record-reasons-title').textContent(),'Suspension Reasons:');
+    const columns=page.locator('.record-suspension-column');assert.equal(await columns.count(),2);
+    assert.deepEqual(await columns.locator('h4').allTextContents(),['Active Suspensions','Pending Reinstatement']);
+    assert.deepEqual(await columns.nth(0).locator('li').allTextContents(),['DUI/DUAC × 2','Failure to Pay Traffic Ticket × 1']);
+    assert.deepEqual(await columns.nth(1).locator('li').allTextContents(),['Driving Under Suspension × 1','DUI/DUAC × 1']);
+    const left=await columns.nth(0).boundingBox(),right=await columns.nth(1).boundingBox();
+    assert.ok(right.x>=left.x+left.width);assert.equal(left.y,right.y);
+    assert.deepEqual((await page.locator('.record-status-line').allTextContents()).slice(0,4),['0 Prior DUS convictions within 5 years','3 Prior DUI/DUAC convictions within 10 years','3 active suspensions','2 pending reinstatement']);
+    assert.equal(await page.locator('.record-status-warning').evaluate(el=>el.previousElementSibling.tagName),'H2');
+    await page.screenshot({path:join(screenshots,'suspension-buckets.png'),fullPage:true});
+    await page.setViewportSize({width:360,height:700});
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);await page.close();
+    const active=await statusPage(licenseStatus('Status - DL: SUSPENDED '+susp('Example'),statusNow));
+    assert.equal(await active.locator('.record-suspension-column').count(),1);await active.close();
+  });
+  await tests('IID warning remains red centered and heading-sized for valid expired and suspended statuses with ninety second timeout',async()=>{
+    for(const header of [validHeader,validHeader.replace('12/31/2027','01/01/2020'),'Status - DL: SUSPENDED']){
+      const payload=licenseStatus(header+' '+susp('Unlawful Alcohol Concentration',{iid:'Y'}),statusNow);
+      const page=await statusPage(payload), warning=page.locator('.record-status-warning');
+      assert.equal(await warning.textContent(),'IGNITION INTERLOCK DEVICE REQUIRED');
+      assert.equal(await warning.evaluate(el=>getComputedStyle(el).color),'rgb(255, 85, 89)');
+      assert.equal(await warning.evaluate(el=>getComputedStyle(el).textAlign),'center');
+      assert.equal(await warning.evaluate(el=>getComputedStyle(el).fontSize),await page.locator('h2.record-status-title').evaluate(el=>getComputedStyle(el).fontSize));
+      await page.clock.fastForward(10000);assert.equal(await page.evaluate(()=>window.closedByAlert),false);
+      await page.clock.fastForward(79000);assert.equal(await page.evaluate(()=>window.closedByAlert),false);
+      await page.clock.fastForward(1000);assert.equal(await page.evaluate(()=>window.closedByAlert),true);
+      if(payload.tone==='success')await page.screenshot({path:join(screenshots,'valid-license-iid.png'),fullPage:true});
+      await page.close();
+    }
+  });
   await tests('special DL privilege popups match valid expired and suspended headings without interpreting HTML',async()=>{
     for (const [status,expiry] of [['NO SUSPENSION','12/31/2026'],['NO SUSPENSION','01/01/2026'],['SUSPENDED','12/31/2026']]) {
       const report=`Special DL Privilege: <b>WORK ONLY</b>\nStatus - DL: ${status} Driver License No: 123456789 Name: FICTIONAL, PERSON License Information ${currentHeader} DL D Original 01/01/2025 ${expiry} N N SYNTHETIC`;

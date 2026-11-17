@@ -60,8 +60,8 @@ test('active suspensions are grouped without three-digit codes and sorted by des
     suspension('097 - Failure to Pay Traffic Ticket', {begin: '10/29/2026'}),
     suspension('018 - Failure to Stop for Blue Light', {end: '10/28/2026'})].join('\n');
   const result = licenseStatus(text, NOW);
-  assert.equal(result.activeSuspensions, 10);
-  assert.deepEqual(result.sections[0].items, ['Failure to Pay Traffic Ticket × 5', 'Failure to Stop for Blue Light × 3', 'Controlled Substance Violation × 2']);
+  assert.equal(result.activeSuspensions, 11);
+  assert.deepEqual(result.sections[0].items, ['Failure to Pay Traffic Ticket × 6', 'Failure to Stop for Blue Light × 3', 'Controlled Substance Violation × 2']);
 });
 test('suspension rules cover start today, future starts, indefinite requirements, and end-date boundaries', () => {
   const text = ['Status - DL: SUSPENDED',
@@ -72,7 +72,9 @@ test('suspension rules cover start today, future starts, indefinite requirements
     suspension('005 - Past End', {end: '10/27/2026'}),
     suspension('006 - Not Indefinite', {end: '10/27/2026', met: 'NOT INDEFINITE'})].join(' ');
   const result = licenseStatus(text, NOW); assert.equal(result.activeSuspensions, 2);
-  assert.deepEqual(result.sections[0].items, ['Requirements Indefinite × 1', 'Start Today × 1']);
+  assert.deepEqual(result.sections[0].items, ['Future Start × 1', 'Start Today × 1']);
+  assert.equal(result.pendingReinstatement, 1);
+  assert.deepEqual(result.sections[0].columns[1].items, ['Requirements Indefinite × 1']);
 });
 test('suspension grouping ignores Ticket#: and its entire suffix', () => {
   const text = ['Status - DL: SUSPENDED',

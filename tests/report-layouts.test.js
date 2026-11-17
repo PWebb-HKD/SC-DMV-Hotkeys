@@ -8,16 +8,17 @@ import {licenseStatus} from '../extension/status-alerts.js';
 const reports = JSON.parse(readFileSync(new URL('./report-layouts.json', import.meta.url)));
 const now = new Date('2026-10-28T16:00:00Z');
 const cases = [
-  ['blank license number with suspended status', 'LICENSE SUSPENDED', 4],
+  ['blank license number with suspended status', 'LICENSE SUSPENDED', 2, 2],
   ['current ID with suspended status', 'LICENSE SUSPENDED', 2],
   ['current Class D with suspended status', 'LICENSE SUSPENDED', 1],
   ['prior license without Current entry', 'NO LONGER LICENSED IN SC'],
   ['current unexpired beginner permit', 'VALID LICENSE'],
 ];
-cases.forEach(([name, title, active], i) => test(`report layout: ${name}`, () => {
+cases.forEach(([name, title, active, pending], i) => test(`report layout: ${name}`, () => {
   const result = licenseStatus(reports[i], now);
   assert.equal(result.sections[0].title, title);
   if (active != null) assert.equal(result.activeSuspensions, active);
+  if (pending != null) assert.equal(result.pendingReinstatement, pending);
   assert.equal(result.autoCloseMs, title === 'VALID LICENSE' ? 10000 : 90000);
 }));
 

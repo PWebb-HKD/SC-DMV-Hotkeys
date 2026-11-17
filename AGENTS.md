@@ -20,6 +20,36 @@ Default to latest main, preserve explicitly required unmerged dependencies, sync
 
 When the user says **Merge TB**, read and follow [.agents/skills/merge-tb/SKILL.md](.agents/skills/merge-tb/SKILL.md). Merge the current test branch into main, verify and push main successfully, then delete the merged test branch locally and remotely. If multiple test branches exist, ask which one to merge and delete before proceeding unless the user already explicitly selected it. Creating or discussing this skill does not invoke a merge.
 
+## v1.8.24 Status Alert Top-Left Alignment — 2026-11-17
+
+- Continued on fix/v1.8.21-patch-test with synchronized release version 1.8.24. All record-alert windows, including license, plate, and blacklist alerts, align to screen.availLeft / screen.availTop on their current monitor. This includes short alerts that require no height increase and monitors with negative desktop coordinates or reserved top/left work-area space.
+- Existing work-area height limits, supporting-text fitting, unchanged status-heading size, and initial top scroll position remain in effect. No extra display permission is requested.
+- Verified npm run check, git diff --check, and all five targeted alert-window browser checks, including short-alert alignment, negative coordinates, height fitting, IID details, and denied-window-update fallback. Browser checks use native-window mocks with real Chromium viewports. Unit/full browser/theme/barcode suites were not rerun for this window-positioning-only revision; installed-extension testing remains blocked by managed policy.
+
+## v1.8.23 Alert Window Fitting and Reason Order — 2026-11-17
+
+- Continued on fix/v1.8.21-patch-test with synchronized release version 1.8.23. The environment publication retained these uncommitted changes after the earlier disconnect; they were inspected rather than reapplied. Main remains unchanged.
+- Status alerts measure their rendered content and grow vertically within the current monitor work area, accounting for browser window decoration and taskbar space. Growth adjusts the top coordinate when needed, including monitors with negative coordinates. If available height is insufficient, supporting text shrinks to fit with a 12px floor (originally smaller text stays at its original size). Main status headings never shrink. Extremely short screens retain scrolling rather than clipping content or making supporting text unreadable.
+- Close receives focus with preventScroll, and initial layout resets scroll to the top so the license status remains visible. Resizing refits the alert, restores full supporting text when space permits, and falls back to a readable, dismissible alert if native resizing fails. No extra display permission is requested.
+- Active reason groups prioritize Habitual Offender, then Driving Under Suspension, followed by the existing descending-count/name order. Pending Reinstatement ordering is unchanged.
+- Verified npm run check, all 252 unit tests, and six distinct targeted browser checks: four window-fitting cases plus suspension columns and IID warning styling/lifetime. Browser checks use native-window API mocks with real Chromium viewports; installed-extension validation remains blocked by managed policy. Full browser/theme/barcode suites were not rerun for this focused revision.
+
+## v1.8.22 Suspension and DUI/DUAC Parsing — 2026-11-17
+
+- Work continues on fix/v1.8.21-patch-test; synchronized release files now declare 1.8.22. Main is unchanged.
+- Suspension End is the classification rule: future date/INDEFINITE counts as active. A completed period with future/INDEFINITE Reinstatement Requirements Met counts separately as Pending Reinstatement. An end date equal to today is completed; a reinstatement date equal to today is satisfied. Invalid/missing end dates remain unreadable, not guessed. The previous begin-date guard and classification of indefinite reinstatement as active were superseded by the user's end-based rules.
+- Suspended popups retain Suspension Reasons: and show grouped Active Suspensions on the left, with Pending Reinstatement on the right only when needed; narrow displays stack the columns. The pending tally appears beneath the active tally. DUI and DUAC share the DUI/DUAC reason group independently in each bucket.
+- Added the combined ten-calendar-year inclusive DUI/DUAC count beneath the existing five-year DUS line. Match offense blocks by ticket number, preserving leading zeroes and normalizing case. Prefer a matching VIOL Violation date; otherwise use SUSP Causal dates. Future/invalid dates do not count; missing tickets are not guessed to be the same offense.
+- Any DUI/DUAC suspension block with IID Required: Y adds the centered heading-sized red IGNITION INTERLOCK DEVICE REQUIRED warning, independent of offense age and main license status. It changes a valid popup timeout to 90 seconds while leaving the normal license status, status color, and voice announcement unchanged. Other valid alerts remain at 10 seconds.
+- Verified both privately supplied PDFs through pdftotext and the actual bundled PDF.js reader in Chromium; both paths returned identical parsed results. Uploaded records/extracted text remain outside Git; new regression fixtures are synthetic. No private identifiers or uploaded PDF bytes were added to source.
+- Verification: npm run check, all 251 unit tests, and four distinct targeted browser checks (suspension columns, IID styles/lifetime, suspended popup, ordinary green popup) passed. Full general browser/theme/barcode suites were not rerun for this focused change. Installed-extension testing remains blocked by managed browser policy.
+
+## v1.8.21 Patch Test Branch Preparation — 2026-11-17
+
+- The user invoked New PTB. Created fix/v1.8.21-patch-test from latest main 969e072, incrementing release versions from 1.8.20 to 1.8.21 in manifest, package, lockfile (including the root entry), and README.
+- This is version-only preparation; no implementation work was requested or added. Main remains unchanged. Further code/UI revisions on this branch require another patch increment.
+- Validation: npm run check and git diff --check passed. Application tests were not rerun for this version-only preparation.
+
 ## v1.8.20 Merge — 2026-11-17
 
 - The user invoked Merge TB. The sole current test branch, fix/v1.8.20-special-dl-privileges (5e00ecc), merged into main without conflicts in merge commit 9f5f709. Release version is 1.8.20. The reusable Merge TB skill is now included in main.
