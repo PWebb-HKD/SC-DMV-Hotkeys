@@ -6,6 +6,13 @@ Treat this file as development context and recorded project preferences. Histori
 
 Keep this file in the repository root and update it as extension development continues. Record meaningful behavior changes, decisions, release history, verified checks, and unresolved issues. Clearly distinguish current facts from historical observations and hypotheses. Reconcile stale entries when their outcomes are verified, and never include credentials, private reports, or customer data. Documentation-only context updates do not require a release-version bump.
 
+## v1.8.19 Merge — 2026-11-17
+
+- The user confirmed the TAL popup works and authorized merging and deleting the test branch. Merged fix/v1.8.19-temporary-alcohol-license (f792333) into main without conflicts in merge commit cfe2c75. Release version remains 1.8.19.
+- Verified on merged main: npm run check, all 240 unit tests, and the targeted TAL popup browser check passed. Application and test files match the user-tested branch. General browser, theme, and barcode suites were not rerun for this merge.
+- The user clarified that future code/UI changes must bump the patch version even on the same test branch; synchronized release version files remain required. Documentation-only updates do not require a bump.
+- Delete the test branch only after main is successfully pushed; confirm remote state before future branch work.
+
 ## v1.8.19 Temporary Alcohol License Patch — 2026-11-17
 
 - Created fix/v1.8.19-temporary-alcohol-license from merged main at the user's request. Release files declare patch version 1.8.19; this patch is not merged to main.
@@ -92,6 +99,7 @@ Do not claim that a merge, push, branch deletion, or verification succeeded with
 ## Working Preferences
 
 - Use Semantic Versioning: Major.Minor.Patch.
+- Bump the patch version for each code or UI change, even when continuing on the same test branch. Keep extension/manifest.json, package.json, package-lock.json (including its root package entry), and README release references synchronized.
 - The user explicitly considers recent usability fixes and shortcut-menu work to be patches.
 - Update release versions together in:
   - extension/manifest.json
