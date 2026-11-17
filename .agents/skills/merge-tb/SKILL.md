@@ -1,0 +1,19 @@
+---
+name: merge-tb
+description: Use when the user says "Merge TB" to merge a test branch into main, push main, then delete the merged test branch. Ask which branch when multiple test branches exist.
+---
+
+# Merge TB
+
+The user's command “Merge TB” authorizes merging the selected test branch into main, pushing main, and deleting that merged branch locally and remotely after the main push succeeds. Creating or discussing this skill is not itself a merge request.
+
+1. Read the current repository's AGENTS.md and development guidance. Inspect the working directory, branch, tracking configuration, and remotes. Preserve uncommitted work; do not reset, discard, or automatically commit unrelated changes. Use the existing checkout; do not create a worktree unless explicitly requested.
+2. Fetch main and remote branch refs through the existing authenticated connection. Inspect both local and remote branches, coalescing matching local/remote names. Identify test branches using repository guidance and development history (for this project, fix/v* branches are commonly test branches). Do not assume all non-main branches are disposable. Check local-only commits and divergence before selecting or deleting anything.
+3. If multiple test branches exist, ask the user which branch to merge and delete, listing the candidates. This question is required even if one test branch is currently checked out, unless the user already explicitly selected the branch in the active request. Do not select based on date or branch name alone. If no test branch exists or branch purpose is ambiguous, explain and ask for the missing selection. With exactly one clearly identified test branch, proceed without another confirmation.
+4. Record the selected local and remote commit IDs. Ensure main incorporates the latest remote main without rewriting history. Preserve any unpushed local work. If local and remote test tips diverge or differ in unexplained ways, resolve the intended scope with the user before merging or deleting.
+5. Inspect the selected changes and their current instructions. Merge the complete selected test branch into main with a merge commit. Resolve only conflicts whose correct outcome is clear from the implementation and user requirements; ask about conflicts requiring a product decision. Do not silently drop changes.
+6. Run repository checks, the unit suite, and relevant existing functional tests against the merged result. For SC-DMV-Hotkeys, run npm run check and npm test, then browser checks relevant to the changed behavior using CHROME_PATH=/usr/bin/chromium. When barcode checks are relevant, use PYTHON=/workspace/.venvs/scdmv/bin/python. Honor managed browser policy. Investigate failures; do not push a failing or unexplained merge as verified.
+7. Update AGENTS.md with the merge outcome, actual verification results, and user preferences. Documentation-only merge records do not require a release bump. Any new code or UI changes require a patch bump even on the same test branch; synchronize manifest, package, lockfile, and README release versions.
+8. Push main normally; never force-push main. Confirm the remote main commit includes the merged test tip and the final documentation commit. A failed main push blocks branch deletion.
+9. Recheck the selected remote branch tip. Delete only the selected branch, only after verifying its exact tip is included in successfully pushed main. Use an explicit expected-tip lease for remote deletion so a concurrent branch update is not deleted. If its tip changed, fetch and inspect the new work instead of deleting it. Delete the corresponding local branch with git branch -d only when its local tip is also included in main. Preserve all other branches.
+10. Confirm remote main, absence of the deleted remote branch, and final local status. Report the version/main commit, branch deleted, and checks actually run. If any step is blocked, explain what remains without claiming completion.

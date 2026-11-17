@@ -948,6 +948,22 @@ try {
     },payload);
     await page.goto(`${base}/panel.html?id=record-status`);await page.locator('.record-status-title').first().waitFor();return page;
   }
+  await tests('special DL privilege popups match valid expired and suspended headings without interpreting HTML',async()=>{
+    for (const [status,expiry] of [['NO SUSPENSION','12/31/2026'],['NO SUSPENSION','01/01/2026'],['SUSPENDED','12/31/2026']]) {
+      const report=`Special DL Privilege: <b>WORK ONLY</b>\nStatus - DL: ${status} Driver License No: 123456789 Name: FICTIONAL, PERSON License Information ${currentHeader} DL D Original 01/01/2025 ${expiry} N N SYNTHETIC`;
+      const payload=licenseStatus(report,fixedNow), page=await statusPage(payload);
+      const heading=page.locator('h2.record-status-title'), qualifier=page.locator('.record-status-qualifier');
+      assert.equal(await qualifier.textContent(),'<b>WORK ONLY</b>');
+      assert.equal(await qualifier.locator('b').count(),0);
+      assert.equal(await qualifier.evaluate(el=>el.previousElementSibling.tagName),'H2');
+      const appearance=el=>{const css=getComputedStyle(el);return {color:css.color,fontSize:css.fontSize,fontWeight:css.fontWeight,textAlign:css.textAlign};};
+      assert.deepEqual(await qualifier.evaluate(appearance),await heading.evaluate(appearance));
+      assert.equal(await qualifier.evaluate(el=>getComputedStyle(el).textAlign),'center');
+      assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+      await page.screenshot({path:join(screenshots,`special-dl-${payload.sections[0].title.toLowerCase().replaceAll(' ','-')}.png`),fullPage:true});
+      await page.close();
+    }
+  });
   await tests('temporary alcohol license popup shows qualifier below valid heading with standard success lifetime',async()=>{
     const payload=licenseStatus(`Status - DL: TEMPORARY ALCOHOL CDL: DISQUALIFIED Driver License No: 123456789 Name: FICTIONAL, PERSON License Information ${currentHeader} TA DL D Original 01/01/2026 12/31/2026 N N SYNTHETIC`,fixedNow);
     const page=await statusPage(payload);

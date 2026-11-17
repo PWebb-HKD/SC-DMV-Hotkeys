@@ -200,3 +200,12 @@ test('temporary alcohol license uses only the ordinary valid-license speech and 
   await new AudioAlerts(api).play(payload, {speechEnabled:true, voiceSource:'microsoft', voiceGender:'male'});
   assert.deepEqual(api.calls.map(call => call.text), ['Valid license']);
 });
+
+test('special DL privilege qualifiers do not affect speech or recording selection for any status', () => {
+  for (const title of ['VALID LICENSE','LICENSE SUSPENDED','LICENSE EXPIRED']) {
+    const original = alert(title), decorated = alert(title);
+    decorated.sections[0].qualifiers = ['WORK ONLY'];
+    assert.equal(spokenStatus(decorated), spokenStatus(original));
+    for (const gender of ['male','female']) assert.deepEqual(statusRecordings(decorated, gender), statusRecordings(original, gender));
+  }
+});
