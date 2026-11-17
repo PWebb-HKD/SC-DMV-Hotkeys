@@ -163,8 +163,11 @@ function suspensionSummary(text, today) {
     const key = reason.toLocaleUpperCase('en-US'), current = bucket.get(key);
     if (current) current.count++; else bucket.set(key, {reason, count: 1});
   }
-  const sorted = bucket => [...bucket.values()].sort((a, b) => b.count - a.count || a.reason.localeCompare(b.reason));
-  const groups = sorted(active), pendingGroups = sorted(pending);
+  const sorted = (bucket, prioritize = false) => {
+    const priority = reason => !prioritize ? 2 : /^Habitual Offender$/i.test(reason) ? 0 : /^Driving Under Suspension$/i.test(reason) ? 1 : 2;
+    return [...bucket.values()].sort((a, b) => priority(a.reason) - priority(b.reason) || b.count - a.count || a.reason.localeCompare(b.reason));
+  };
+  const groups = sorted(active, true), pendingGroups = sorted(pending);
   const total = groups => groups.reduce((sum, group) => sum + group.count, 0);
   return {groups, pendingGroups, active: total(groups), pending: total(pendingGroups), unreadable};
 }

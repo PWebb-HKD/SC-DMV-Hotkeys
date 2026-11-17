@@ -1,6 +1,6 @@
 # SC DMV Hotkeys
 
-A Chromium Manifest V3 extension for authorized SCDMV member searches, PDF follow-ups, status alerts, and PDF417 data-entry barcodes. Current version: **1.8.22**.
+A Chromium Manifest V3 extension for authorized SCDMV member searches, PDF follow-ups, status alerts, and PDF417 data-entry barcodes. Current version: **1.8.23**.
 
 ## Install and update
 

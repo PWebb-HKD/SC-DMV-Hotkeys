@@ -949,6 +949,72 @@ try {
     },payload);
     await page.goto(`${base}/panel.html?id=record-status`);await page.locator('.record-status-title').first().waitFor();return page;
   }
+  /** Exercise native bounds requests with a real Chromium document and accepted viewport dimensions. */
+  async function fittedAlert(payload,{availHeight=1200,availTop=0,top=100,denied=false}={}){
+    const page=await ui.newPage();await page.setViewportSize({width:580,height:580});
+    await page.exposeFunction('acceptAlertHeight',async height=>page.setViewportSize({width:580,height:height-40}));
+    await page.addInitScript(({payload,availHeight,availTop,top,denied})=>{
+      Object.defineProperties(screen,{availHeight:{get:()=>availHeight,configurable:true},availTop:{get:()=>availTop,configurable:true}});
+      window.alertBounds={id:77,width:580,height:620,top};window.alertBoundsCalls=[];
+      chrome.windows.getCurrent=async()=>({...window.alertBounds});
+      chrome.windows.update=async(id,bounds)=>{
+        window.alertBoundsCalls.push(bounds);if(denied)throw new Error('Fixture denied resize');
+        Object.assign(window.alertBounds,bounds);if(bounds.height)await window.acceptAlertHeight(bounds.height);
+        return {...window.alertBounds};
+      };
+      window.closedByAlert=false;window.close=()=>{window.closedByAlert=true;};
+      const original=chrome.runtime.sendMessage;chrome.runtime.sendMessage=async message=>message.type==='panel-data'?{ok:true,value:payload}:original(message);
+    },{payload,availHeight,availTop,top,denied});
+    await page.goto(`${base}/panel.html?id=fitted-status`);
+    await page.locator('h2.record-status-title').first().waitFor();
+    return page;
+  }
+  const longAlert=()=>({type:'record-alert',recordType:'license',tone:'danger',autoCloseMs:90000,sections:[{
+    title:'LICENSE SUSPENDED',lines:['2 Prior DUS convictions within 5 years','1 Prior DUI/DUAC convictions within 10 years','7 active suspensions','4 pending reinstatement'],listTitle:'Suspension Reasons:',columns:[
+      {title:'Active Suspensions',items:['Habitual Offender × 1','Failure to Pay Traffic Ticket × 4','Failure to Pay Property Tax × 1','Failure to Show proof of Insurance × 1']},
+      {title:'Pending Reinstatement',items:['Driving Under Suspension × 2','DUI/DUAC × 1','Implied Consent × 1']}
+    ]}]});
+  await tests('record alert grows upward within work area and opens at the status without reducing text',async()=>{
+    const page=await fittedAlert(longAlert(),{availHeight:1200,availTop:-1200,top:-650});
+    await page.waitForFunction(()=>document.body.dataset.alertFit==='ready'&&document.documentElement.scrollHeight<=innerHeight);
+    const bounds=await page.evaluate(()=>window.alertBounds);
+    assert.ok(bounds.height>620&&bounds.height<=1200);assert.ok(bounds.top>=-1200&&bounds.top+bounds.height<=0);
+    assert.equal(await page.evaluate(()=>scrollY),0);
+    assert.equal(await page.locator('h2.record-status-title').evaluate(el=>getComputedStyle(el).fontSize),'36px');
+    assert.equal(await page.locator('.record-status-line').first().evaluate(el=>getComputedStyle(el).fontSize),'20px');
+    assert.equal(await page.locator('#submit').evaluate(el=>document.activeElement===el),true);
+    await page.screenshot({path:join(screenshots,'alert-expanded.png'),fullPage:true});await page.close();
+  });
+  await tests('record alert reduces support text at work-area limit and preserves status size and Close',async()=>{
+    const page=await fittedAlert(longAlert(),{availHeight:760,top:300});
+    await page.waitForFunction(()=>document.body.dataset.alertFit==='ready'&&document.documentElement.scrollHeight<=innerHeight);
+    const bounds=await page.evaluate(()=>window.alertBounds);assert.equal(bounds.height,760);assert.equal(bounds.top,0);
+    assert.equal(await page.evaluate(()=>scrollY),0);
+    assert.equal(await page.locator('h2.record-status-title').evaluate(el=>getComputedStyle(el).fontSize),'36px');
+    const detailSize=await page.locator('.record-status-line').first().evaluate(el=>parseFloat(getComputedStyle(el).fontSize));
+    assert.ok(detailSize>=12&&detailSize<20);
+    assert.ok((await page.locator('#submit').boundingBox()).y>=0);
+    await page.screenshot({path:join(screenshots,'alert-scaled.png'),fullPage:true});
+    await page.evaluate(()=>{Object.defineProperty(screen,'availHeight',{get:()=>1200,configurable:true});window.dispatchEvent(new Event('resize'));});
+    await page.waitForFunction(()=>document.body.dataset.alertFit==='ready'&&parseFloat(getComputedStyle(document.querySelector('.record-status-line')).fontSize)===20);
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollHeight<=innerHeight),true);await page.close();
+  });
+  await tests('record alert fits IID details on a limited work area without reducing the license status',async()=>{
+    const payload=longAlert();payload.sections[0].warnings=['IGNITION INTERLOCK DEVICE REQUIRED'];
+    const page=await fittedAlert(payload,{availHeight:760,top:300});
+    await page.waitForFunction(()=>document.body.dataset.alertFit==='ready'&&document.documentElement.scrollHeight<=innerHeight);
+    assert.equal(await page.locator('h2.record-status-title').evaluate(el=>getComputedStyle(el).fontSize),'36px');
+    assert.equal(await page.locator('.record-status-warning').evaluate(el=>getComputedStyle(el).color),'rgb(255, 85, 89)');
+    assert.equal(await page.evaluate(()=>scrollY),0);
+    await page.screenshot({path:join(screenshots,'alert-iid-scaled.png'),fullPage:true});await page.close();
+  });
+  await tests('record alert with denied resizing opens at top and remains dismissible',async()=>{
+    const page=await fittedAlert(longAlert(),{denied:true});
+    await page.waitForFunction(()=>window.alertBoundsCalls.length>0);
+    assert.equal(await page.evaluate(()=>scrollY),0);
+    assert.equal(await page.locator('h2.record-status-title').evaluate(el=>getComputedStyle(el).fontSize),'36px');
+    await page.keyboard.press('Escape');await page.waitForFunction(()=>window.closedByAlert);await page.close();
+  });
   await tests('suspension buckets render active left and pending right with DUI grouping and IID warning',async()=>{
     const page=await statusPage(licenseStatus(mixedSuspensions,statusNow));
     assert.equal(await page.locator('.record-reasons-title').textContent(),'Suspension Reasons:');

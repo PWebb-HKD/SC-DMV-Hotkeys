@@ -4,6 +4,7 @@
  * user input, renders plain text, and submits the panel ID with the response.
  */
 import {COMMANDS, normalize} from './core.js';
+import {fitRecordAlert} from './record-alert-layout.js';
 const $ = id => document.getElementById(id), id = new URL(location.href).searchParams.get('id');
 let data, unlocking = false, submitted = false, barcodeChoice;
 const port = chrome.runtime.connect({name: 'panel'});
@@ -90,11 +91,12 @@ try {
         }
         $('recordAlert').append(details);
       }
-      $('cancel').hidden = true; $('submit').textContent = 'Close'; $('submit').focus();
+      $('cancel').hidden = true; $('submit').textContent = 'Close'; $('submit').focus({preventScroll: true});
       const deadline = Date.now() + (data.autoCloseMs || 90000);
       $('alertCountdown').hidden = false;
       const tick = () => { const remaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1000)); $('alertCountdown').textContent = `Closes in ${remaining} seconds. Press Esc to dismiss.`; if (!remaining) { clearInterval(timer); close(); } };
       const timer = setInterval(tick, 1000); tick();
+      fitRecordAlert();
     } else if (data.type === 'credentials') {
       $('title').textContent = data.setupOnly ? 'Create login and blacklist vault' : data.unlockOnly ? 'Unlock login and blacklist' : data.hasVault ? 'Unlock saved DMV login' : 'DMV login needed';
       $('useNew').hidden = false;

@@ -69,3 +69,12 @@ test('line breaks and page headers inside offense blocks preserve date and ticke
   assert.deepEqual(result(paginated), original);
   assert.deepEqual(result(mixedSuspensions.replace(/\s+/g,' ')), original);
 });
+
+test('active reasons put Habitual Offender then Driving Under Suspension ahead of larger groups', () => {
+  const blocks = [susp('Habitual Offender'), susp('Driving Under Suspension'),
+    ...Array.from({length:4},()=>susp('Failure to Pay Traffic Ticket')),
+    ...Array.from({length:2},()=>susp('Other reason'))];
+  const r=result('Status - DL: SUSPENDED '+blocks.join(' '));
+  assert.deepEqual(r.sections[0].columns[0].items,['Habitual Offender × 1','Driving Under Suspension × 1','Failure to Pay Traffic Ticket × 4','Other reason × 2']);
+  assert.equal(r.activeSuspensions,8);
+});

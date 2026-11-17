@@ -20,6 +20,14 @@ Default to latest main, preserve explicitly required unmerged dependencies, sync
 
 When the user says **Merge TB**, read and follow [.agents/skills/merge-tb/SKILL.md](.agents/skills/merge-tb/SKILL.md). Merge the current test branch into main, verify and push main successfully, then delete the merged test branch locally and remotely. If multiple test branches exist, ask which one to merge and delete before proceeding unless the user already explicitly selected it. Creating or discussing this skill does not invoke a merge.
 
+## v1.8.23 Alert Window Fitting and Reason Order — 2026-11-17
+
+- Continued on fix/v1.8.21-patch-test with synchronized release version 1.8.23. The environment publication retained these uncommitted changes after the earlier disconnect; they were inspected rather than reapplied. Main remains unchanged.
+- Status alerts measure their rendered content and grow vertically within the current monitor work area, accounting for browser window decoration and taskbar space. Growth adjusts the top coordinate when needed, including monitors with negative coordinates. If available height is insufficient, supporting text shrinks to fit with a 12px floor (originally smaller text stays at its original size). Main status headings never shrink. Extremely short screens retain scrolling rather than clipping content or making supporting text unreadable.
+- Close receives focus with preventScroll, and initial layout resets scroll to the top so the license status remains visible. Resizing refits the alert, restores full supporting text when space permits, and falls back to a readable, dismissible alert if native resizing fails. No extra display permission is requested.
+- Active reason groups prioritize Habitual Offender, then Driving Under Suspension, followed by the existing descending-count/name order. Pending Reinstatement ordering is unchanged.
+- Verified npm run check, all 252 unit tests, and six distinct targeted browser checks: four window-fitting cases plus suspension columns and IID warning styling/lifetime. Browser checks use native-window API mocks with real Chromium viewports; installed-extension validation remains blocked by managed policy. Full browser/theme/barcode suites were not rerun for this focused revision.
+
 ## v1.8.22 Suspension and DUI/DUAC Parsing — 2026-11-17
 
 - Work continues on fix/v1.8.21-patch-test; synchronized release files now declare 1.8.22. Main is unchanged.
