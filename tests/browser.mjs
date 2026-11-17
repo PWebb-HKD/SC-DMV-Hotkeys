@@ -950,12 +950,12 @@ try {
     await page.goto(`${base}/panel.html?id=record-status`);await page.locator('.record-status-title').first().waitFor();return page;
   }
   /** Exercise native bounds requests with a real Chromium document and accepted viewport dimensions. */
-  async function fittedAlert(payload,{availHeight=1200,availTop=0,top=100,denied=false}={}){
+  async function fittedAlert(payload,{availHeight=1200,availTop=0,availLeft=0,top=100,denied=false}={}){
     const page=await ui.newPage();await page.setViewportSize({width:580,height:580});
     await page.exposeFunction('acceptAlertHeight',async height=>page.setViewportSize({width:580,height:height-40}));
-    await page.addInitScript(({payload,availHeight,availTop,top,denied})=>{
-      Object.defineProperties(screen,{availHeight:{get:()=>availHeight,configurable:true},availTop:{get:()=>availTop,configurable:true}});
-      window.alertBounds={id:77,width:580,height:620,top};window.alertBoundsCalls=[];
+    await page.addInitScript(({payload,availHeight,availTop,availLeft,top,denied})=>{
+      Object.defineProperties(screen,{availHeight:{get:()=>availHeight,configurable:true},availTop:{get:()=>availTop,configurable:true},availLeft:{get:()=>availLeft,configurable:true}});
+      window.alertBounds={id:77,width:580,height:620,top,left:640};window.alertBoundsCalls=[];
       chrome.windows.getCurrent=async()=>({...window.alertBounds});
       chrome.windows.update=async(id,bounds)=>{
         window.alertBoundsCalls.push(bounds);if(denied)throw new Error('Fixture denied resize');
@@ -964,7 +964,7 @@ try {
       };
       window.closedByAlert=false;window.close=()=>{window.closedByAlert=true;};
       const original=chrome.runtime.sendMessage;chrome.runtime.sendMessage=async message=>message.type==='panel-data'?{ok:true,value:payload}:original(message);
-    },{payload,availHeight,availTop,top,denied});
+    },{payload,availHeight,availTop,availLeft,top,denied});
     await page.goto(`${base}/panel.html?id=fitted-status`);
     await page.locator('h2.record-status-title').first().waitFor();
     return page;
@@ -974,11 +974,24 @@ try {
       {title:'Active Suspensions',items:['Habitual Offender × 1','Failure to Pay Traffic Ticket × 4','Failure to Pay Property Tax × 1','Failure to Show proof of Insurance × 1']},
       {title:'Pending Reinstatement',items:['Driving Under Suspension × 2','DUI/DUAC × 1','Implied Consent × 1']}
     ]}]});
+  await tests('record alerts anchor short license plate and blacklist windows to the usable top-left',async()=>{
+    for(const payload of [
+      {type:'record-alert',recordType:'license',tone:'success',sections:[{title:'VALID LICENSE',lines:[]}]},
+      {type:'record-alert',recordType:'plate',tone:'success',sections:[{title:'TAG VALID',lines:[]}]},
+      {type:'record-alert',blacklist:true,tone:'danger',sections:[{title:'SEARCH BLOCKED',lines:[]}]}
+    ]){
+      const page=await fittedAlert(payload,{availHeight:1200,availTop:32,availLeft:-1920,top:200});
+      await page.waitForFunction(()=>document.body.dataset.alertFit==='ready');
+      const bounds=await page.evaluate(()=>window.alertBounds);
+      assert.equal(bounds.top,32);assert.equal(bounds.left,-1920);assert.equal(bounds.height,620);
+      assert.equal(await page.evaluate(()=>scrollY),0);await page.close();
+    }
+  });
   await tests('record alert grows upward within work area and opens at the status without reducing text',async()=>{
-    const page=await fittedAlert(longAlert(),{availHeight:1200,availTop:-1200,top:-650});
+    const page=await fittedAlert(longAlert(),{availHeight:1200,availTop:-1200,availLeft:-1920,top:-650});
     await page.waitForFunction(()=>document.body.dataset.alertFit==='ready'&&document.documentElement.scrollHeight<=innerHeight);
     const bounds=await page.evaluate(()=>window.alertBounds);
-    assert.ok(bounds.height>620&&bounds.height<=1200);assert.ok(bounds.top>=-1200&&bounds.top+bounds.height<=0);
+    assert.ok(bounds.height>620&&bounds.height<=1200);assert.equal(bounds.top,-1200);assert.equal(bounds.left,-1920);assert.ok(bounds.top+bounds.height<=0);
     assert.equal(await page.evaluate(()=>scrollY),0);
     assert.equal(await page.locator('h2.record-status-title').evaluate(el=>getComputedStyle(el).fontSize),'36px');
     assert.equal(await page.locator('.record-status-line').first().evaluate(el=>getComputedStyle(el).fontSize),'20px');

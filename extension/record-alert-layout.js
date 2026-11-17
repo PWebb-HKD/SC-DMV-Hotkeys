@@ -25,11 +25,12 @@ export function fitRecordAlert() {
       const frame = Math.max(0, win.height - innerHeight);
       const available = Number.isFinite(screen.availHeight) && screen.availHeight > frame ? screen.availHeight : win.height;
       const top = Number.isFinite(screen.availTop) ? screen.availTop : 0;
+      const left = Number.isFinite(screen.availLeft) ? screen.availLeft : 0;
       setScale(1);
       const height = Math.min(available, Math.max(win.height, contentHeight() + frame + 2));
-      const desiredTop = Math.max(top, Math.min(win.top, top + available - height));
-      if (win.height !== height || win.top !== desiredTop) {
-        await chrome.windows.update(win.id, {height, top: desiredTop});
+      // Anchor every status alert at this monitor's usable top-left, including short alerts.
+      if (win.height !== height || win.top !== top || win.left !== left) {
+        await chrome.windows.update(win.id, {height, top, left});
       }
       // Shrink supporting text only after trying the native window's available height.
       // The accepted viewport can differ from the requested bounds due to OS limits.

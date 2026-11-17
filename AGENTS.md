@@ -20,6 +20,12 @@ Default to latest main, preserve explicitly required unmerged dependencies, sync
 
 When the user says **Merge TB**, read and follow [.agents/skills/merge-tb/SKILL.md](.agents/skills/merge-tb/SKILL.md). Merge the current test branch into main, verify and push main successfully, then delete the merged test branch locally and remotely. If multiple test branches exist, ask which one to merge and delete before proceeding unless the user already explicitly selected it. Creating or discussing this skill does not invoke a merge.
 
+## v1.8.24 Status Alert Top-Left Alignment — 2026-11-17
+
+- Continued on fix/v1.8.21-patch-test with synchronized release version 1.8.24. All record-alert windows, including license, plate, and blacklist alerts, align to screen.availLeft / screen.availTop on their current monitor. This includes short alerts that require no height increase and monitors with negative desktop coordinates or reserved top/left work-area space.
+- Existing work-area height limits, supporting-text fitting, unchanged status-heading size, and initial top scroll position remain in effect. No extra display permission is requested.
+- Verified npm run check, git diff --check, and all five targeted alert-window browser checks, including short-alert alignment, negative coordinates, height fitting, IID details, and denied-window-update fallback. Browser checks use native-window mocks with real Chromium viewports. Unit/full browser/theme/barcode suites were not rerun for this window-positioning-only revision; installed-extension testing remains blocked by managed policy.
+
 ## v1.8.23 Alert Window Fitting and Reason Order — 2026-11-17
 
 - Continued on fix/v1.8.21-patch-test with synchronized release version 1.8.23. The environment publication retained these uncommitted changes after the earlier disconnect; they were inspected rather than reapplied. Main remains unchanged.
