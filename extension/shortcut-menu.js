@@ -48,11 +48,13 @@ async function run(command) {
   if (submitting) return;
   submitting = true;
   for (const button of $('actions').children) button.disabled = true;
-  try {await send({type:'shortcut-menu-run',id,command});close();}
+  try {await send({type:'shortcut-menu-run',id,command});if (!floatingWindow) close();}
   catch(error) {
     submitting = false; $('error').textContent = error.message;
     for (const button of $('actions').children) button.disabled = false;
     await fitWindow().catch(()=>{});$('error').scrollIntoView({block:'nearest'});
+  } finally {
+    if (!closing) {submitting = false;for (const button of $('actions').children) button.disabled = false;}
   }
 }
 /** Change only menu expiry; disabling persistent mode starts a fresh countdown. */
@@ -75,6 +77,10 @@ async function pinMenu() {
   try {
     const pip = await window.documentPictureInPicture.requestWindow({width:Math.ceil(document.body.offsetWidth),height:Math.min(screen.availHeight,Math.ceil(document.body.getBoundingClientRect().height)),disallowReturnToOpener:true});
     if (closing || !pinEnabled) {pip.close();return;}
+    // Register before moving controls so new searches preserve the PiP owner.
+    try {await send({type:'shortcut-menu-pin-state',id,pinned:true});}
+    catch(error) {pip.close();throw error;}
+    if (closing || !pinEnabled) {pip.close();send({type:'shortcut-menu-pin-state',id,pinned:false}).catch(()=>{});return;}
     floatingWindow = pip;
     pip.document.title = document.title;
     for (const link of document.querySelectorAll('link[rel="stylesheet"]')) {
@@ -101,6 +107,7 @@ function unpinMenu() {
   const pip = floatingWindow;pip.removeEventListener('pagehide',close);
   document.body.replaceChildren(...[...pip.document.body.children]);
   menuDocument = document;floatingWindow = null;pip.close();
+  send({type:'shortcut-menu-pin-state',id,pinned:false}).catch(()=>close());
   document.body.style.width = '100%';fitWindow().catch(()=>{});
 }
 chrome.storage.onChanged.addListener((changes,area)=>{
