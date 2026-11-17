@@ -1044,19 +1044,39 @@ try {
     await page.clock.fastForward(89000);assert.equal(await page.evaluate(()=>window.closedByAlert),false);
     await page.clock.fastForward(1000);assert.equal(await page.evaluate(()=>window.closedByAlert),true);await page.close();
   });
-  await tests('pending reinstatement details omit absent tickets render plain text and refit expanded content',async()=>{
+  await tests('suspension details restore full-size text after initial compression and keep scrolling after collapse',async()=>{
+    const payload=licenseStatus(mixedSuspensions,statusNow);
+    const page=await fittedAlert(payload,{availHeight:760});
+    await page.waitForFunction(()=>document.body.dataset.alertFit==='ready');
+    const before=await page.locator('.record-status-line').first().evaluate(el=>parseFloat(getComputedStyle(el).fontSize));
+    assert.ok(before<20);
+    const details=page.locator('.record-suspension-details').first();
+    await details.locator('summary').click();
+    await page.waitForFunction(()=>getComputedStyle(document.querySelector('.record-status-line')).fontSize==='20px');
+    assert.equal(await details.locator('h5').first().evaluate(el=>getComputedStyle(el).fontSize),'14px');
+    assert.equal(await details.locator('.record-suspension-occurrence p').first().evaluate(el=>getComputedStyle(el).fontSize),'14px');
+    assert.equal(await page.locator('h2.record-status-title').evaluate(el=>getComputedStyle(el).fontSize),'36px');
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollHeight>innerHeight),true);
+    await page.screenshot({path:join(screenshots,'suspension-full-size-details.png'),fullPage:true});
+    await details.locator('summary').click();
+    await page.waitForFunction(()=>!document.querySelector('.record-suspension-details').open);
+    await page.evaluate(()=>window.dispatchEvent(new Event('resize')));
+    assert.equal(await page.locator('.record-status-line').first().evaluate(el=>getComputedStyle(el).fontSize),'20px');
+    await page.close();
+  });
+  await tests('pending reinstatement details omit absent tickets render plain text and allow scrolling',async()=>{
     const payload=licenseStatus('Status - DL: SUSPENDED '+susp('Example',{ticket:'',end:'01/01/2026'}),statusNow);
     payload.sections[0].columns[1].groups[0].occurrences[0].reason='<b>Synthetic Reason</b>';
     const page=await fittedAlert(payload,{availHeight:1200});
     await page.waitForFunction(()=>document.body.dataset.alertFit==='ready');
     const initial=await page.evaluate(()=>window.alertBounds.height);
     const details=page.locator('.record-suspension-details');await details.locator('summary').click();
-    await page.waitForFunction(()=>document.querySelector('.record-suspension-details').open&&document.body.dataset.alertFit==='ready'&&document.documentElement.scrollHeight<=innerHeight);
+    await page.waitForFunction(()=>document.querySelector('.record-suspension-details').open&&document.body.dataset.alertFit==='ready');
     assert.equal(await details.locator('h5').textContent(),'<b>Synthetic Reason</b>');
     assert.equal(await details.locator('b').count(),0);
     assert.doesNotMatch(await details.locator('.record-suspension-occurrence p').textContent(),/Ticket/);
     assert.match(await details.locator('.record-suspension-occurrence p').textContent(),/Violation Date: 01\/15\/2024/);
-    assert.ok(await page.evaluate(()=>window.alertBounds.height)>=initial);
+    assert.equal(await page.evaluate(()=>window.alertBounds.height),initial);
     assert.equal(await page.locator('h2.record-status-title').evaluate(el=>getComputedStyle(el).fontSize),'36px');
     await page.screenshot({path:join(screenshots,'suspension-expanded-details.png'),fullPage:true});await page.close();
   });

@@ -9,19 +9,22 @@ export function fitRecordAlert() {
     .filter(el => !el.matches('h2.record-status-title') &&
       [...el.childNodes].some(node => node.nodeType === Node.TEXT_NODE && node.textContent.trim()))
     .map(el => ({el, size: parseFloat(getComputedStyle(el).fontSize)}));
-  let running = false, pending = false, currentId;
+  let running = false, pending = false, currentId, scrolling = false;
   const setScale = scale => {
     for (const {el, size} of text) el.style.fontSize = `${Math.max(Math.min(size, 12), size * scale)}px`;
   };
   const contentHeight = () => Math.ceil(document.body.getBoundingClientRect().height);
   /** Serialize native resizing and remeasure after the browser accepts its bounds. */
   async function fit() {
+    if (scrolling) return;
     if (running) { pending = true; return; }
     running = true;
     delete document.body.dataset.alertFit;
     try {
       await document.fonts.ready;
-      const win = await chrome.windows.getCurrent(); currentId = win.id;
+      const win = await chrome.windows.getCurrent();
+      if (scrolling) return;
+      currentId = win.id;
       const frame = Math.max(0, win.height - innerHeight);
       const available = Number.isFinite(screen.availHeight) && screen.availHeight > frame ? screen.availHeight : win.height;
       const top = Number.isFinite(screen.availTop) ? screen.availTop : 0;
@@ -35,6 +38,7 @@ export function fitRecordAlert() {
       // Shrink supporting text only after trying the native window's available height.
       // The accepted viewport can differ from the requested bounds due to OS limits.
       await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      if (scrolling) return;
       if (contentHeight() > innerHeight) {
         let low = 0, high = 1;
         setScale(0);
@@ -63,6 +67,14 @@ export function fitRecordAlert() {
     window.removeEventListener('resize', fit);
     chrome.windows.onBoundsChanged?.removeListener(onBounds);
   }, {once: true});
-  void fit().then(resetScroll);
-  return fit;
+  void fit().then(() => { if (!scrolling) resetScroll(); });
+  // Once details are used, restore original text sizes and leave the window scrollable.
+  // The guard also prevents an already pending native resize from shrinking text again.
+  return () => {
+    scrolling = true;
+    setScale(1);
+    window.removeEventListener('resize', fit);
+    chrome.windows.onBoundsChanged?.removeListener(onBounds);
+    document.body.dataset.alertFit = 'ready';
+  };
 }

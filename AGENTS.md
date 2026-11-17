@@ -20,6 +20,13 @@ Default to latest main, preserve explicitly required unmerged dependencies, sync
 
 When the user says **Merge TB**, read and follow [.agents/skills/merge-tb/SKILL.md](.agents/skills/merge-tb/SKILL.md). Merge the current test branch into main, verify and push main successfully, then delete the merged test branch locally and remotely. If multiple test branches exist, ask which one to merge and delete before proceeding unless the user already explicitly selected it. Creating or discussing this skill does not invoke a merge.
 
+## v1.8.27 Readable Suspension Detail Scrolling — 2026-11-17
+
+- Continued on fix/v1.8.25-patch-test with synchronized release version 1.8.27. Main is unchanged.
+- Initial popup height/font fitting remains in effect. Once a user expands or collapses any suspension group, restore the original text sizes and allow scrolling for the rest of that popup. Stop automatic refitting on subsequent window-bound/resize events so detail text is not reduced again. The main status heading retains its existing size, and opening/closing groups still refreshes the normal alert deadline.
+- A scrolling-mode guard prevents pending asynchronous fitting from shrinking text or resetting the user's scroll position after details are used. Existing native window placement remains where initial fitting positioned it.
+- Verified npm run check, git diff --check, and eight targeted browser checks covering restoration after initial compression, persistent scrolling after collapse/resize, missing-ticket and literal-text details, timeout resets, and the five initial window-fitting/alignment cases. Unit/full browser/theme/barcode suites were not rerun for this UI-only change; installed-extension validation remains blocked by managed browser policy.
+
 ## v1.8.26 Expandable Suspension Details — 2026-11-17
 
 - Continued on fix/v1.8.25-patch-test; synchronized release files declare 1.8.26. Main is unchanged.

@@ -41,7 +41,7 @@ try {
         if (seconds <= 0) { clearInterval(timer); close(); }
       }, 1000);
     } else if (data.type === 'record-alert') {
-      let refreshAlertTimeout = () => {}, refitAlert = () => {};
+      let refreshAlertTimeout = () => {}, allowAlertScrolling = () => {};
       document.body.classList.add('status-panel', `status-${data.tone}`);
       if (data.blacklist) document.body.classList.add('blacklist-panel');
       document.title = `${data.sections?.[0]?.title || 'Record status'} · SC DMV Hotkeys`;
@@ -89,7 +89,7 @@ try {
                   const line = document.createElement('p'); line.textContent = fields.join(' · '); row.append(line); pane.append(row);
                 }
                 details.append(pane);
-                details.addEventListener('toggle', () => { refreshAlertTimeout(); void refitAlert(); });
+                details.addEventListener('toggle', () => { refreshAlertTimeout(); allowAlertScrolling(); });
                 item.append(details);
               }
               list.append(item);
@@ -118,7 +118,7 @@ try {
       const tick = () => { const remaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1000)); $('alertCountdown').textContent = `Closes in ${remaining} seconds. Press Esc to dismiss.`; if (!remaining) { clearInterval(timer); close(); } };
       const timer = setInterval(tick, 1000); tick();
       refreshAlertTimeout = () => { deadline = Date.now() + (data.autoCloseMs || 90000); tick(); };
-      refitAlert = fitRecordAlert();
+      allowAlertScrolling = fitRecordAlert();
     } else if (data.type === 'credentials') {
       $('title').textContent = data.setupOnly ? 'Create login and blacklist vault' : data.unlockOnly ? 'Unlock login and blacklist' : data.hasVault ? 'Unlock saved DMV login' : 'DMV login needed';
       $('useNew').hidden = false;
