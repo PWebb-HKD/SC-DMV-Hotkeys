@@ -6,6 +6,13 @@ Treat this file as development context and recorded project preferences. Histori
 
 Keep this file in the repository root and update it as extension development continues. Record meaningful behavior changes, decisions, release history, verified checks, and unresolved issues. Clearly distinguish current facts from historical observations and hypotheses. Reconcile stale entries when their outcomes are verified, and never include credentials, private reports, or customer data. Documentation-only context updates do not require a release-version bump.
 
+## v1.8.20 Special DL Privileges Patch — 2026-11-17
+
+- Created fix/v1.8.20-special-dl-privileges from main at the user's request; synchronized release files declare 1.8.20. This patch is not merged to main.
+- Normal license evaluation runs first. A populated report-level Special DL Privilege: line is displayed beneath VALID LICENSE, LICENSE EXPIRED, or LICENSE SUSPENDED with the same heading color, size, weight, and centered alignment. It does not grant validity or change expiration, suspension summaries, timeout, or audio selection.
+- Display text is inserted with textContent. Neighboring known fields delimit flattened text; line breaks delimit ordinary extraction. Repeated values are deduplicated; blank, NONE, N/A, and NOT APPLICABLE values are omitted. Suspension-entry Special Driving Privilege: fields are separate and are not displayed by this rule. The existing TEMPORARY ALCOHOL LICENSE label is not duplicated for the matching privilege value.
+- Verified npm run check, all 244 unit tests, the synthetic browser check covering valid/expired/suspended privilege styling and literal text, and the existing TAL popup browser check. The previously supplied TAL text still produces the same single qualifier. No real example of a different special privilege was supplied; those layouts remain validated with synthetic fixtures only. Full browser, theme, and barcode suites were not rerun. Managed policy still blocks installed-extension testing.
+
 ## v1.8.19 Merge — 2026-11-17
 
 - The user confirmed the TAL popup works and authorized merging and deleting the test branch. Merged fix/v1.8.19-temporary-alcohol-license (f792333) into main without conflicts in merge commit cfe2c75. Release version remains 1.8.19.

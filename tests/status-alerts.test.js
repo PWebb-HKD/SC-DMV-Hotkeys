@@ -212,3 +212,30 @@ test('temporary alcohol text outside DL status does not grant valid status', () 
   assert.deepEqual(titles(licenseStatus(driver().replace('NO SUSPENSION', 'SUSPENDED') + ' TEMPORARY ALCOHOL LICENSE', NOW)), ['LICENSE SUSPENDED']);
   assert.deepEqual(licenseStatus(driver(), NOW).sections[0].lines, []);
 });
+
+test('special DL privileges decorate normal valid, expired, and suspended decisions without changing them', () => {
+  for (const report of [driver(), driver(current('DL', '10/27/2026')), 'Status - DL: SUSPENDED ' + suspension('001 - Example')]) {
+    const original = licenseStatus(report, NOW);
+    const decorated = licenseStatus('Special DL Privilege: IGNITION INTERLOCK ONLY\n' + report, NOW);
+    assert.deepEqual(decorated.sections[0].qualifiers, ['IGNITION INTERLOCK ONLY']);
+    delete decorated.sections[0].qualifiers;
+    assert.deepEqual(decorated, original);
+  }
+});
+test('privilege extraction handles flattened neighboring fields, duplicates, and literal display text', () => {
+  const report = 'Special DL Privilege: WORK ONLY Status - DL: NO SUSPENSION Driver License No: 123456789 Name: FICTIONAL, PERSON ' + current();
+  assert.deepEqual(licenseStatus(report, NOW).sections[0].qualifiers, ['WORK ONLY']);
+  assert.deepEqual(licenseStatus('Special DL Privilege: <b>WORK ONLY</b>\nSpecial DL Privilege: <b>WORK ONLY</b>\n' + driver(), NOW).sections[0].qualifiers, ['<b>WORK ONLY</b>']);
+  for (const value of ['', 'NONE', 'N/A', 'NOT APPLICABLE']) {
+    assert.equal(licenseStatus(`Special DL Privilege: ${value}\n` + driver(), NOW).sections[0].qualifiers, undefined);
+  }
+  assert.equal(licenseStatus('Special DL Privilege: Status - DL: NO SUSPENSION ' + driver(), NOW).sections[0].qualifiers, undefined);
+  assert.equal(licenseStatus(driver() + ' Special Driving Privilege: WORK ONLY', NOW).sections[0].qualifiers, undefined);
+});
+test('special privileges do not turn unknown or ID-only status valid, and TAL is not duplicated', () => {
+  for (const report of ['Unreadable report', driver(current('ID')), driver(current('DL','02/30/2026'))]) {
+    assert.deepEqual(licenseStatus('Special DL Privilege: WORK ONLY\n' + report, NOW), licenseStatus(report, NOW));
+  }
+  const report = 'Special DL Privilege: TEMPORARY ALCOHOL\n' + driver(current('TA DL D')).replace('NO SUSPENSION','TEMPORARY ALCOHOL');
+  assert.deepEqual(licenseStatus(report, NOW).sections[0], {title:'VALID LICENSE', lines:['TEMPORARY ALCOHOL LICENSE']});
+});

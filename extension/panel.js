@@ -48,6 +48,11 @@ try {
       for (const section of data.sections || []) {
         const block = document.createElement('section'); block.className = 'record-status-section';
         if (section.title) { const title = document.createElement('h2'); title.className = 'record-status-title'; title.textContent = section.title; block.append(title); }
+        // Privilege qualifiers share the status heading's appearance and stay out of audio.
+        for (const qualifier of section.qualifiers || []) {
+          const p = document.createElement('p'); p.className = 'record-status-title record-status-qualifier';
+          p.textContent = qualifier; block.append(p);
+        }
         for (const line of section.lines || []) {
           const p = document.createElement('p');
           // Give the TAL qualifier the valid heading's appearance while keeping it display-only.

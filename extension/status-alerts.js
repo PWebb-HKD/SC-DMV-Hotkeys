@@ -136,7 +136,7 @@ function suspensionSummary(text, today) {
 }
 /** Suspended status takes precedence. Otherwise inspect only Current credentials;
  * a Prior section cannot override a current license or supply its expiration date. */
-export function licenseStatus(raw, now = new Date()) {
+function evaluateLicenseStatus(raw, now = new Date()) {
   const text = flat(raw), today = reportToday(now);
   const statuses = new Set([...text.matchAll(/\bStatus\s*[-–—]\s*DL\s*:\s*(NO\s+SUSPENSION|SUSPENDED|TEMPORARY\s+ALCOHOL(?:\s+LICENSE)?)\b/gi)].map(match => flat(match[1]).toUpperCase()));
   if (statuses.size !== 1) return unavailableAlert('license', 'A single recognizable Status - DL value was not found.');
@@ -162,6 +162,28 @@ export function licenseStatus(raw, now = new Date()) {
   // Keep the credential qualifier in display lines so audio uses only VALID LICENSE.
   const temporaryAlcohol = [...statuses].some(status => /^TEMPORARY ALCOHOL(?: LICENSE)?$/.test(status));
   return alert('license', 'success', [{title: 'VALID LICENSE', lines: temporaryAlcohol ? ['TEMPORARY ALCOHOL LICENSE'] : []}]);
+}
+
+/** Read the report-level privilege line without including neighboring fields or suspension privileges. */
+function specialDlPrivileges(raw) {
+  const values = [];
+  const boundary = /\b(?:Status\s*[-–—]\s*DL|CDL|Driver\s+License\s+No|Customer\s+No|Name|DOB|Address|City|State|Zip|County|Sex|Height|Weight|Eye\s+Color|Race|License\s+Type|Issued|Expires|Special\s+DL\s+Privileges?)\s*:|\bLicense\s+Information\b|\b(?:SUSP|VIOL)\s*:/i;
+  for (const match of String(raw || '').matchAll(/\bSpecial[ \t]+DL[ \t]+Privileges?[ \t]*:[ \t]*([^\r\n]*)/gi)) {
+    const value = flat(match[1].split(boundary)[0]);
+    if (!value || /^(?:NONE|N\/A|NOT APPLICABLE)$/i.test(value)) continue;
+    if (!values.some(existing => existing.toUpperCase() === value.toUpperCase())) values.push(value);
+  }
+  return values;
+}
+/** Add display-only privileges after the normal status decision; audio consumes headings only. */
+export function licenseStatus(raw, now = new Date()) {
+  const result = evaluateLicenseStatus(raw, now);
+  const section = result.sections[0];
+  if (!['VALID LICENSE', 'LICENSE SUSPENDED', 'LICENSE EXPIRED'].includes(section.title)) return result;
+  const normalized = value => flat(value).toUpperCase().replace(/\s+LICENSE$/, '');
+  const privileges = specialDlPrivileges(raw).filter(value => !(section.lines || []).some(line => normalized(line) === normalized(value)));
+  if (privileges.length) section.qualifiers = privileges;
+  return result;
 }
 
 /** Dispatch search kinds to the correct pure parser; unrelated searches have no status. */
