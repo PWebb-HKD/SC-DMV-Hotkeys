@@ -10,7 +10,7 @@ Keep this file in the repository root and update it as extension development con
 
 - Created fix/v1.8.19-temporary-alcohol-license from merged main at the user's request. Release files declare patch version 1.8.19; this patch is not merged to main.
 - License alerts recognize Status - DL: TEMPORARY ALCOHOL (and TEMPORARY ALCOHOL LICENSE). A current, unexpired credential produces VALID LICENSE with TEMPORARY ALCOHOL LICENSE beneath it. Current expiration, ID-only, missing-number, and suspension handling retain their existing checks; a separate CDL status does not replace the DL status.
-- The qualifier is a display line, not an audio heading. Recorded voices and local TTS use only the ordinary valid-license announcement. The standard 10-second success timeout applies.
+- The qualifier is a centered display line styled with the same green color, 36px size, and weight as VALID LICENSE, not an audio heading. Recorded voices and local TTS use only the ordinary valid-license announcement. The standard 10-second success timeout applies.
 - Verified npm run check, all 240 unit tests, and the new targeted browser popup check. Extracted text from the privately supplied PDF produces the expected success alert. Only synthetic fixtures were added; no private record or identifiers are committed. Full general browser, theme, and barcode suites were not rerun for this focused alert patch. Installed-extension testing remains blocked by managed browser policy.
 
 ## v1.8.18 Merge — 2026-11-17

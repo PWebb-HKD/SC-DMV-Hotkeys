@@ -951,10 +951,16 @@ try {
   await tests('temporary alcohol license popup shows qualifier below valid heading with standard success lifetime',async()=>{
     const payload=licenseStatus(`Status - DL: TEMPORARY ALCOHOL CDL: DISQUALIFIED Driver License No: 123456789 Name: FICTIONAL, PERSON License Information ${currentHeader} TA DL D Original 01/01/2026 12/31/2026 N N SYNTHETIC`,fixedNow);
     const page=await statusPage(payload);
-    assert.deepEqual(await page.locator('.record-status-title').allTextContents(),['VALID LICENSE']);
-    const qualifier=page.locator('.record-status-line');
+    assert.deepEqual(await page.locator('.record-status-title').allTextContents(),['VALID LICENSE','TEMPORARY ALCOHOL LICENSE']);
+    const qualifier=page.locator('.record-status-qualifier');
     assert.equal(await qualifier.textContent(),'TEMPORARY ALCOHOL LICENSE');
     assert.equal(await qualifier.evaluate(el=>el.previousElementSibling.textContent),'VALID LICENSE');
+    const appearance=el=>{const css=getComputedStyle(el);return {color:css.color,fontSize:css.fontSize,textAlign:css.textAlign};};
+    const headingAppearance=await page.locator('h2.record-status-title').evaluate(appearance);
+    assert.deepEqual(await qualifier.evaluate(appearance),headingAppearance);
+    assert.equal(headingAppearance.color,'rgb(67, 220, 121)');
+    assert.equal(headingAppearance.fontSize,'36px');
+    assert.equal(headingAppearance.textAlign,'center');
     assert.equal(await page.locator('body').evaluate(el=>el.classList.contains('status-success')),true);
     await page.screenshot({path:join(screenshots,'temporary-alcohol-license.png'),fullPage:true});
     await page.clock.fastForward(9000);assert.equal(await page.evaluate(()=>window.closedByAlert),false);
