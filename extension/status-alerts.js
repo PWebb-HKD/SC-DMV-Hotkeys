@@ -128,7 +128,7 @@ export function plateStatus(raw, now = new Date()) {
   return alert('plate', 'success', [{title: 'TAG VALID', lines: []}], details);
 }
 
-/** Read one suspension-block field up to the next known label without crossing blocks. */
+/** Read one suspension/revocation field up to the next known label without crossing blocks. */
 function field(block, label, next) {
   return flat(block.match(new RegExp(`${label}\\s*:\\s*([\\s\\S]*?)(?=${next}\\s*:|$)`, 'i'))?.[1] || '');
 }
@@ -136,41 +136,42 @@ function field(block, label, next) {
 function recentDus(text, today) {
   const cutoff = shiftMonths(today, -60).ordinal;
   let count = 0;
-  for (const match of text.matchAll(/\bVIOL\s*:\s*([\s\S]*?)(?=\bVIOL\s*:|\bSUSP\s*:|\bLicense\s+Information\b|$)/gi)) {
-    if (!/^.+?\s*[-–—]\s*Driving\s+Under\s+Suspension\s+Ticket\s*#\s*:/i.test(match[1])) continue;
-    const date = parseReportDate(match[1].match(new RegExp(`\\bViolation\\s*:\\s*${DATE}`, 'i'))?.[1]);
+  for (const {kind, text: block} of offenseBlocks(text)) {
+    if (kind !== 'VIOL' || !/^.+?\s*[-–—]\s*Driving\s+Under\s+Suspension\s+Ticket\s*#\s*:/i.test(block)) continue;
+    const date = parseReportDate(block.match(new RegExp(`\\bViolation\\s*:\\s*${DATE}`, 'i'))?.[1]);
     if (date && date.ordinal >= cutoff && date.ordinal <= today.ordinal) count++;
   }
   return count;
 }
 /** Split offense blocks at explicit block markers, keeping dates and flags tied to their offense. */
 function offenseBlocks(text) {
-  return [...text.matchAll(/\b(SUSP|VIOL)\s*:\s*([\s\S]*?)(?=\b(?:SUSP|VIOL)\s*:|\bLicense\s+Information\b|$)/gi)]
+  return [...text.matchAll(/\b(SUSP|REVO|VIOL)\s*:\s*([\s\S]*?)(?=\b(?:SUSP|REVO|VIOL)\s*:|\bLicense\s+Information\b|$)/gi)]
     .map(match => ({kind: match[1].toUpperCase(), text: match[2]}));
 }
 /** Extract just the offense description, excluding ticket numbers and later block fields. */
 function offenseReason(block) {
-  return flat(block.split(/\b(?:Ticket\s*#|Special\s+Driving\s+Privilege|Suspension\s+Beg|Violation|Causal|IID\s+Required)\s*:/i)[0])
+  return flat(block.split(/\b(?:Ticket\s*#|Special\s+Driving\s+Privilege|(?:Suspension|Revocation)\s+Beg|Violation|Causal|IID\s+Required)\s*:/i)[0])
     .replace(/^\d{3}\s*[-–—]\s*/, '').trim();
 }
 const isDuiDuac = reason => /\b(?:Driving\s+Under\s+the\s+Influence|Unlawful\s+Alcohol\s+Concentration)\b/i.test(reason);
 /** Read an optional ticket without borrowing a neighboring field; preserve its display spelling. */
 function offenseTicket(block) {
-  return block.match(/\bTicket\s*#\s*:\s*(?!(?:Special\s+Driving|Suspension\s+Beg|Violation\s*:|Causal\s*:|Post\s*:|ACD\s*:|Conviction\s*:))([A-Za-z0-9][A-Za-z0-9-]*)\b/i)?.[1] || '';
+  return block.match(/\bTicket\s*#\s*:\s*(?!(?:Special\s+Driving|(?:Suspension|Revocation)\s+Beg|Violation\s*:|Causal\s*:|Post\s*:|ACD\s*:|Conviction\s*:))([A-Za-z0-9][A-Za-z0-9-]*)\b/i)?.[1] || '';
 }
-/** Retain only this suspension's labeled dates and reason for its expandable occurrence row. */
-function suspensionOccurrence(block, reason) {
+/** Retain this suspension/revocation's own dates and reason for its expandable occurrence row. */
+function suspensionOccurrence(block, reason, period) {
   const date = label => flat(block.match(new RegExp(`\\b${label}\\s*:\\s*(INDEFINITE|${DATE})`, 'i'))?.[1] || '');
   return {reason: /^Driving Under the Influence$/i.test(reason) ? 'DUI' : /^Unlawful Alcohol Concentration$/i.test(reason) ? 'DUAC' : reason,
-    ticket: offenseTicket(block), begin: date('Suspension\\s+Beg'), end: date('Suspension\\s+End'), violationDate: date('(?:Causal|Casual)')};
+    ticket: offenseTicket(block), begin: date(`${period}\\s+Beg`), end: date(`${period}\\s+End`), violationDate: date('(?:Causal|Casual)'),
+    ...(period === 'Revocation' ? {revocation: true} : {})};
 }
-/** Count DUI/DUAC offenses once per ticket, preferring a VIOL date over a matching SUSP causal date.
+/** Count DUI/DUAC offenses once per ticket, preferring a VIOL date over a matching SUSP/REVO causal date.
  * Missing tickets remain separate; matching dates alone do not prove the same offense. */
 function duiDuacSummary(blocks, today) {
   const offenses = new Map(); let anonymous = 0, iidRequired = false;
   for (const block of blocks) {
     if (!isDuiDuac(offenseReason(block.text))) continue;
-    if (block.kind === 'SUSP' && /\bIID\s+Required\s*:\s*Y\b/i.test(block.text)) iidRequired = true;
+    if (block.kind !== 'VIOL' && /\bIID\s+Required\s*:\s*Y\b/i.test(block.text)) iidRequired = true;
     const ticket = offenseTicket(block.text).toUpperCase();
     const key = ticket ? `ticket:${ticket}` : `anonymous:${anonymous++}`;
     const dateLabel = block.kind === 'VIOL' ? 'Violation' : 'Causal';
@@ -184,15 +185,16 @@ function duiDuacSummary(blocks, today) {
     .some(date => date && date.ordinal >= cutoff && date.ordinal <= today.ordinal)).length;
   return {count, iidRequired};
 }
-/** Classify suspension periods and separate outstanding reinstatement requirements.
+/** Classify suspension/revocation periods and separate outstanding reinstatement requirements.
  * End dates at or before today have completed their active period; neither bucket counts twice. */
 function suspensionSummary(text, today) {
   const active = new Map(), pending = new Map(); let unreadable = 0;
   for (const {kind, text: block} of offenseBlocks(text)) {
-    if (kind !== 'SUSP') continue;
+    if (kind === 'VIOL') continue;
+    const period = kind === 'REVO' ? 'Revocation' : 'Suspension';
     const rawReason = offenseReason(block), reason = isDuiDuac(rawReason) ? 'DUI/DUAC' : rawReason;
     if (!reason) { unreadable++; continue; }
-    const ending = field(block, 'Suspension\\s+End', 'Causal');
+    const ending = field(block, `${period}\\s+End`, '(?:Causal|Casual)');
     const requirements = field(block, 'Reinstatement\\s+Requirements\\s+Met', 'Reinstatement\\s+Fee\\s+Paid');
     const endDate = parseReportDate(ending.match(FLAT_DATE)?.[0]);
     const requirementDate = parseReportDate(requirements.match(FLAT_DATE)?.[0]);
@@ -202,7 +204,7 @@ function suspensionSummary(text, today) {
     else if (/^INDEFINITE\b/i.test(requirements) || requirementDate && requirementDate.ordinal > today.ordinal) bucket = pending;
     if (!bucket) continue;
     const key = reason.toLocaleUpperCase('en-US'), current = bucket.get(key);
-    const occurrence = suspensionOccurrence(block, rawReason);
+    const occurrence = suspensionOccurrence(block, rawReason, period);
     if (current) { current.count++; current.occurrences.push(occurrence); }
     else bucket.set(key, {reason, count: 1, occurrences: [occurrence]});
   }
@@ -232,7 +234,7 @@ function evaluateLicenseStatus(raw, now = new Date()) {
     if (summary.pending) columns.push({title: 'Pending Reinstatement', items: summary.pendingGroups.map(group => `${group.reason} × ${group.count}`), groups: summary.pendingGroups});
     return alert('license', 'danger', [{title: 'LICENSE SUSPENDED', lines, listTitle: 'Suspension Reasons:', items, columns}], {activeSuspensions: summary.active, pendingReinstatement: summary.pending, priorDus: priors, priorDuiDuac: duiDuac.count});
   }
-  const current = text.match(new RegExp(`\\b${LICENSE_HEADER}\\s+Current\\b(?:\\s*\\(\\s*ACN\\s*\\/\\s*DDN\\s*\\))?\\s*([\\s\\S]*?)(?=\\bLicense\\s+Information\\b|\\bPrior\\b|\\bSUSP\\s*:|\\bVIOL\\s*:|$)`, 'i'))?.[1];
+  const current = text.match(new RegExp(`\\b${LICENSE_HEADER}\\s+Current\\b(?:\\s*\\(\\s*ACN\\s*\\/\\s*DDN\\s*\\))?\\s*([\\s\\S]*?)(?=\\bLicense\\s+Information\\b|\\bPrior\\b|\\b(?:SUSP|REVO|VIOL)\\s*:|$)`, 'i'))?.[1];
   const number = text.match(/\bDriver\s+License\s+No\s*:\s*([\s\S]*?)\bName\s*:/i)?.[1];
   if (number == null) return unavailableAlert('license', 'The first Driver License No / Name sequence was not found.');
   if (!number.trim()) return alert('license', 'danger', [{title: 'NOT LICENSED', lines: []}]);
@@ -252,7 +254,7 @@ function evaluateLicenseStatus(raw, now = new Date()) {
 /** Read the report-level privilege line without including neighboring fields or suspension privileges. */
 function specialDlPrivileges(raw) {
   const values = [];
-  const boundary = /\b(?:Status\s*[-–—]\s*DL|CDL|Driver\s+License\s+No|Customer\s+No|Name|DOB|Address|City|State|Zip|County|Sex|Height|Weight|Eye\s+Color|Race|License\s+Type|Issued|Expires|Special\s+DL\s+Privileges?)\s*:|\bLicense\s+Information\b|\b(?:SUSP|VIOL)\s*:/i;
+  const boundary = /\b(?:Status\s*[-–—]\s*DL|CDL|Driver\s+License\s+No|Customer\s+No|Name|DOB|Address|City|State|Zip|County|Sex|Height|Weight|Eye\s+Color|Race|License\s+Type|Issued|Expires|Special\s+DL\s+Privileges?)\s*:|\bLicense\s+Information\b|\b(?:SUSP|REVO|VIOL)\s*:/i;
   for (const match of String(raw || '').matchAll(/\bSpecial[ \t]+DL[ \t]+Privileges?[ \t]*:[ \t]*([^\r\n]*)/gi)) {
     const value = flat(match[1].split(boundary)[0]);
     if (!value || /^(?:NONE|N\/A|NOT APPLICABLE)$/i.test(value)) continue;

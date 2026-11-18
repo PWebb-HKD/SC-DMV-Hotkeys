@@ -1,6 +1,6 @@
 /** Private report identity stays in session/display data; only the preference is persistent. */
 export function driverName(text) {
-  const flat = String(text || '').replace(/\s+/g, ' ').trim().split(/\bLicense\s+Information\b|\bSUSP\s*:|\bVIOL\s*:/i)[0];
+  const flat = String(text || '').replace(/\s+/g, ' ').trim().split(/\bLicense\s+Information\b|\b(?:SUSP|REVO|VIOL)\s*:/i)[0];
   if (!/\bDriver\s+License\s+No\s*:/i.test(flat)) return '';
   const name = flat.match(/\bName\s*:\s*(.*?)(?=\b(?:Address|City|County|DOB|Sex|Height|Status\s*[-–—]\s*DL)\s*:|\bLicense\s+Information\b|$)/i)?.[1]?.trim();
   return name && name.length <= 150 ? name : '';

@@ -101,7 +101,8 @@ try {
                   const heading = document.createElement('h5'); heading.textContent = occurrence.reason; row.append(heading);
                   const fields = [];
                   if (occurrence.ticket) fields.push(`Ticket #: ${occurrence.ticket}`);
-                  fields.push(`Suspension Begin: ${occurrence.begin || 'Unavailable'}`, `Suspension End: ${occurrence.end || 'Unavailable'}`, `Violation Date: ${occurrence.violationDate || 'Unavailable'}`);
+                  const period = occurrence.revocation === true ? 'Revocation' : 'Suspension';
+                  fields.push(`${period} Begin: ${occurrence.begin || 'Unavailable'}`, `${period} End: ${occurrence.end || 'Unavailable'}`, `Violation Date: ${occurrence.violationDate || 'Unavailable'}`);
                   const line = document.createElement('p'); line.textContent = fields.join(' · '); row.append(line); pane.append(row);
                 }
                 details.append(pane);

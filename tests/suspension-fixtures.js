@@ -8,6 +8,7 @@ Causal: ${causal} Post: 01/02/2025
 Reinstatement Requirements Met: ${met} Reinstatement Fee Paid: N
 IID Required: ${iid}`;
 }
+export const revo = (reason, options) => susp(reason, options).replace(/^SUSP:/, 'REVO:').replace(/Suspension (?=Beg:|End:)/g, 'Revocation ');
 export const viol = (reason, ticket, date) => `VIOL: 499 - ${reason} Ticket#: ${ticket} Violation: ${date} Conviction: 01/01/2025 Recd: 01/02/2025`;
 export const validHeader = 'Status - DL: NO SUSPENSION Driver License No: 123456789 Name: SYNTHETIC, PERSON License Information Type Class Function Issued Expires Printed Date Restr.Endor.Document Identifier Current (ACN / DDN) DL D Renewal 01/01/2025 12/31/2027 N N SYNTHETIC';
 export const mixedSuspensions = ['Status - DL: SUSPENDED',
