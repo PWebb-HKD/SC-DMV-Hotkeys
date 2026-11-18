@@ -20,6 +20,13 @@ Default to latest main, preserve explicitly required unmerged dependencies, sync
 
 When the user says **Merge TB**, read and follow [.agents/skills/merge-tb/SKILL.md](.agents/skills/merge-tb/SKILL.md). Merge the current test branch into main, verify and push main successfully, then delete the merged test branch locally and remotely. If multiple test branches exist, ask which one to merge and delete before proceeding unless the user already explicitly selected it. Creating or discussing this skill does not invoke a merge.
 
+## v1.8.38 Merge — 2026-11-18
+
+- The user invoked Merge TB. The sole test branch, fix/v1.8.31-background-retry (ec1457512bdac7e7b20c9f105fa7e983eeedc671), merged into main without conflicts in merge commit 3ed598e. Local and remote test tips matched, and main was current with origin/main before merging. Synchronized release files remain at 1.8.38; this merge record requires no patch bump.
+- Includes the minimized query-window transport and manual-control safeguards, background PDF extraction independent of painting, same-address completion focus with SCUTTIES excluded, results-tab reuse, nested status-alert settings, ordered registered owners with saved-number customer searches, temporary/shared-address/lessee parsing corrections, and 30-second ordinary valid alerts. Application and test files match the tested branch tip exactly.
+- Verified on merged main: npm run check, git diff --check, all 296 unit tests, the complete 90-check general Chromium/fixture suite, and all 42 exact PDF417 decode checks plus barcode UI checks passed. No live DMV transactions or private-PDF checks were rerun for this merge. Theme browser checks were not rerun. Managed browser policy still prevents installed-extension/native Windows verification; existing user-confirmed hidden-window behavior is recorded in the revision entries below.
+- Merge TB authorizes pushing main and deleting only this merged test branch locally and remotely after the push succeeds and its unchanged tip is confirmed. Remote deletion must use the exact expected-tip lease; preserve the unrelated local work branch. Verify live refs before future branch work.
+
 ## v1.8.38 Supplied Vehicle Layouts, Owner Search Buttons and 30-Second Valid Alerts — 2026-11-18
 
 - Continued on fix/v1.8.31-background-retry with synchronized version 1.8.38. The user supplied three private tag PDFs as parsing test data (not instructions), requested temporary-tag/date/year corrections, omitted shared-address handling, registrant/lessee parsing, and later added 30-second valid alert timeouts and clickable owner names launching saved customer numbers. Main remains unchanged.
@@ -686,7 +693,7 @@ Registration expiration fields:
 - RBT: decal expiration
 
 Temporary plates:
-- Recognized temporary classes include T45V, E45V, and E60V.
+- Recognized temporary classes include T45V, T60V, E45V, and E60V.
 - Plate status uses Plate Exp Date.
 - A blank temporary-plate Decal Exp Date inherits Plate Exp Date.
 - Do not overwrite a nonblank decal date.
