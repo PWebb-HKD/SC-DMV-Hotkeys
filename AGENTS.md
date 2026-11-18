@@ -20,6 +20,13 @@ Default to latest main, preserve explicitly required unmerged dependencies, sync
 
 When the user says **Merge TB**, read and follow [.agents/skills/merge-tb/SKILL.md](.agents/skills/merge-tb/SKILL.md). Merge the current test branch into main, verify and push main successfully, then delete the merged test branch locally and remotely. If multiple test branches exist, ask which one to merge and delete before proceeding unless the user already explicitly selected it. Creating or discussing this skill does not invoke a merge.
 
+## v1.8.39 Merge — 2026-11-18
+
+- The user invoked Merge TB. The sole test branch, fix/v1.8.39-license-revocations (ad69f97533bccc6f15dae1dfae95c135ae16b0ef), merged into main without conflicts in merge commit 74f6e0b. Local/remote test tips matched and main was current with origin/main. Synchronized release files remain at 1.8.39; this documentation-only merge record requires no patch bump.
+- Includes REVO parsing with revocation dates in the existing Active Suspensions / Pending Reinstatement totals, grouped expandable occurrences, offense-field isolation, and shared DUI/DUAC and IID handling. Application and test files match the tested branch tip exactly.
+- Verified on merged main: npm run check, git diff --check, all 303 unit tests and 11 distinct targeted Chromium/fixture checks passed. Browser coverage includes mixed suspension/revocation columns and date labels, disclosure timers and full-size scrolling, IID styling/lifetimes, special DL privileges, TAL and driver identity settings/rendering/extraction. The general browser suite passed all 91 checks on the test branch; it was not rerun in full for this merge. Barcode decoder, theme and private-PDF checks were not rerun. Managed browser policy still prevents installed-extension/native Windows verification here.
+- Merge TB authorizes pushing main and deleting only this merged branch locally/remotely after successful push and confirmation of its unchanged remote tip, using an explicit expected-tip lease. Preserve the unrelated local work branch and verify live refs before future branch work.
+
 ## v1.8.39 License Revocation Parsing — 2026-11-18
 
 - The user invoked New PTB and supplied a private driving record as parsing test data, not instructions. Created fix/v1.8.39-license-revocations from latest main 4201887, with synchronized manifest, package, lockfile/root entry and README version 1.8.39. Main remains unchanged.
