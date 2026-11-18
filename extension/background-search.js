@@ -1,12 +1,12 @@
-/** Experimental query transports. Both reuse the normal guarded workflow and
- * blacklist callbacks. They never restore/minimize/focus existing windows. */
+/** Unfocused query windows reuse the guarded workflow and blacklist callbacks.
+ * Never restore/minimize/focus existing windows. */
 import {LOGIN, ROOT, attachmentUrl} from './core.js';
 import {search, evaluate} from './automation.js';
 import {guardedApi} from './run.js';
 
 export function backgroundMethod(kind, settings) {
   return settings.alertsEnabled === true && settings.backgroundStatusSearch === true && ['plate','license','customer'].includes(kind)
-    ? settings.backgroundSearchMethod === 'offscreen' ? 'offscreen' : 'window' : null;
+    ? 'window' : null;
 }
 
 /** Arm before Download and capture its attachment handoff inside the owned page. */
@@ -48,7 +48,7 @@ async function closeHelper(api, windowId, tabId) {
   if(tab?.windowId===windowId&&(tab.pendingUrl||tab.url)?.startsWith(`${ROOT}/SCTRNS/`))await api.tabs.remove(tabId).catch(()=>{});
 }
 
-export async function backgroundSearch(kind, value, ctx, {method, audio, publish, sourceId, api = chrome}) {
+export async function backgroundSearch(kind, value, ctx, {publish, sourceId, api = chrome}) {
   const guarded = guardedApi(api,ctx.run);
   // Resolve the destination before creating a helper (which must not become it).
   const windowId = await resultWindow(guarded,sourceId);
@@ -65,46 +65,20 @@ export async function backgroundSearch(kind, value, ctx, {method, audio, publish
     return {bytes, report};
   };
   let captured;
-  if(method === 'offscreen') {
-    captured = await audio.useQueryDocument(async () => {
-      ctx.run.check();
-      const job = crypto.randomUUID();
-      const send = async (op,args={}) => {
-        const reply = await ctx.run.step(()=>api.runtime.sendMessage({target:'query-host',job,op,args}));
-        if(!reply?.ok)throw new Error(reply?.error || 'The offscreen query document did not respond.');
-        return reply.value;
-      };
-      // The offscreen page may still be loading just after createDocument resolves.
-      let initialized = false;
-      for(let attempt=0;attempt<30&&!initialized;attempt++) {
-        ctx.run.check();
-        try {await send('init',{url:LOGIN});initialized=true;} catch(error) {
-          ctx.run.check();if(attempt===29)throw error;
-          await ctx.run.step(()=>new Promise(resolve=>setTimeout(resolve,100)));
-        }
-      }
-      const tabId = -1;
-      const browserApi = {storage:api.storage,tabs:{
-        get:async()=>({id:tabId,...await send('state')}),
-        update:async(id,changes)=>{if(changes.url)await send('navigate',{url:changes.url});return {id,...await send('state')};}
-      }};
-      try {return await perform({tabId,browserApi,evaluate:(id,op,args)=>send('evaluate',{op,args})});}
-      catch(error) {if(error.name==='AbortError')throw error;error.message = `Offscreen iframe: ${error.message} DMV framing, cookies, or report scripting may be incompatible. No alternate method was submitted.`;throw error;}
+  let helper;
+  try {
+    // Record ownership before the guarded continuation: cancellation can race create.
+    await ctx.run.step(async()=>{
+      // Set the initial state only. Never re-minimize a helper the user restores.
+      // Chrome forbids width/height together with a minimized initial state.
+      helper = await api.windows.create({url:LOGIN,type:'popup',focused:false,state:'minimized'});
+      if(ctx.run.signal.aborted)await closeHelper(api,helper.id,helper.tabs?.[0]?.id);
     });
-  } else {
-    let helper;
-    try {
-      // Record ownership before the guarded continuation: cancellation can race create.
-      await ctx.run.step(async()=>{
-        helper = await api.windows.create({url:LOGIN,type:'popup',focused:false,width:1000,height:760});
-        if(ctx.run.signal.aborted)await closeHelper(api,helper.id,helper.tabs?.[0]?.id);
-      });
-      const tab = helper.tabs?.[0] || (await guarded.tabs.query({windowId:helper.id}))[0];
-      if(!tab)throw new Error('The background query window could not be created.');
-      helper.tabId=tab.id;
-      captured = await perform({tabId:tab.id,browserApi:api});
-    } finally {if(helper)await closeHelper(api,helper.id,helper.tabId ?? helper.tabs?.[0]?.id);}
-  }
+    const tab = helper.tabs?.[0] || (await guarded.tabs.query({windowId:helper.id}))[0];
+    if(!tab)throw new Error('The background query window could not be created.');
+    helper.tabId=tab.id;
+    captured = await perform({tabId:tab.id,browserApi:api});
+  } finally {if(helper)await closeHelper(api,helper.id,helper.tabId ?? helper.tabs?.[0]?.id);}
   ctx.run.check();
   const result = await publish({...captured,windowId},ctx);
   await ctx.resultReady(result);

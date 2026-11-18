@@ -359,13 +359,13 @@ try {
     window.close=()=>{if(matchMedia('(display-mode: picture-in-picture)').matches)nativeClose();else window.panelClosed=true;};
     window.openedTabs=[];
     window.sessionAlerts=false;window.showDriverIdentity=false;window.pdfDarkMode=false;window.dmvDarkMode=true;window.shortcutMenuNoTimeout=false;window.shortcutMenuAlwaysOnTop=false;window.blacklistData={hasVault:false,unlocked:false,entries:[]};window.historyErrors=[];window.storageListeners=[];
-    window.audioSettings={};window.backgroundPrefs={backgroundStatusSearch:false,backgroundSearchMethod:'window'};
+    window.audioSettings={};window.backgroundPrefs={backgroundStatusSearch:false};
     window.commandShortcuts=[{name:'plate',shortcut:'Ctrl+Shift+7'},{name:'next',shortcut:'Alt+N'},{name:'_execute_action',shortcut:'Alt+Period'}];
     window.chrome = {
       runtime:{onMessage:{addListener:fn=>window.runtimeListeners.push(fn)},getURL:path=>`${location.origin}/${path}`,connect:()=>({postMessage:()=>{}}),sendMessage:async message=>{
         window.requests.push(message);
         if(message.type==='state')return {ok:true,value:{shortcutMenuAlwaysOnTop:window.shortcutMenuAlwaysOnTop,shortcutMenuNoTimeout:window.shortcutMenuNoTimeout,dmvDarkMode:window.dmvDarkMode,pdfDarkMode:window.pdfDarkMode,blacklist:window.blacklistData,history:[...window.historyErrors,{kind:'plate',value:'ABC12345',at:Date.now()},{kind:'license',value:'123456789',at:Date.now()}],queue:{values:['123','456'],index:1},commands:window.commandShortcuts,alertsEnabled:window.sessionAlerts,showDriverIdentity:window.showDriverIdentity,...window.backgroundPrefs,...window.audioSettings,voices:[{voiceName:'Microsoft David Desktop',lang:'en-US'},{voiceName:'Microsoft Zira Desktop',lang:'en-US'}]}};
-        if(message.type==='background-search-settings'){window.backgroundPrefs={backgroundStatusSearch:message.enabled,backgroundSearchMethod:message.method};return {ok:true,value:true};}
+        if(message.type==='background-search-settings'){window.backgroundPrefs={backgroundStatusSearch:message.enabled};return {ok:true,value:true};}
         if(message.type==='driver-identity-settings'){window.showDriverIdentity=message.enabled;return {ok:true,value:true};}
         if(message.type==='blacklist-unlock'){
           if(message.passphrase!=='fixture passphrase')return {ok:false,error:'Could not unlock the vault. Check the passphrase.'};
@@ -1267,26 +1267,23 @@ try {
     assert.equal(await page.evaluate(()=>window.requests.some(x=>x.type==='run')),false);
     await page.screenshot({path:join(screenshots,'settings-wording-v1.8.8.png'),fullPage:true});await page.close();
   });
-  await tests('background search settings expand below popups and preserve either selected method',async()=>{
+  await tests('background search setting expands below popups and preserves its saved choice',async()=>{
     const page=await ui.newPage();await page.goto(base+'/popup.html');await page.locator('#settingsTab').click();
     assert.equal(await page.locator('#backgroundSearchSettings').isVisible(),false);
     await page.locator('#alertsToggle').check();await page.locator('#backgroundSearchSettings').waitFor();
     assert.equal(await page.locator('#backgroundSearchToggle').isChecked(),false);
-    assert.equal(await page.locator('#backgroundSearchMethod').isDisabled(),true);
+    assert.equal(await page.locator('#backgroundSearchMethod').count(),0);
     await page.locator('#backgroundSearchToggle').check();
-    await page.locator('#backgroundSearchMethod').selectOption('offscreen');
     await page.locator('#aboutTab').click();await page.locator('#settingsTab').click();
-    assert.equal(await page.locator('#backgroundSearchMethod').inputValue(),'offscreen');
+    assert.equal(await page.locator('#backgroundSearchToggle').isChecked(),true);
     await page.locator('#alertsToggle').uncheck();assert.equal(await page.locator('#backgroundSearchSettings').isVisible(),false);
     await page.locator('#alertsToggle').check();assert.equal(await page.locator('#backgroundSearchToggle').isChecked(),true);
-    assert.equal(await page.locator('#backgroundSearchMethod').inputValue(),'offscreen');
-    await page.locator('#backgroundSearchMethod').selectOption('window');
-    assert.deepEqual(await page.evaluate(()=>window.requests.filter(r=>r.type==='background-search-settings').at(-1)),{type:'background-search-settings',enabled:true,method:'window'});
+    assert.deepEqual(await page.evaluate(()=>window.requests.filter(r=>r.type==='background-search-settings').at(-1)),{type:'background-search-settings',enabled:true});
     assert.equal(await page.evaluate(()=>window.requests.some(r=>r.type==='run')),false);await page.close();
   });
   await tests('background report handoff captures window.open, empty handles and attachment links without opening tabs',async()=>{
     const fixture=await browser.newContext();
-    await fixture.addInitScript({content:await readFile(join(root,'extension/offscreen-main.js'),'utf8')});
+    await fixture.addInitScript({content:await readFile(join(root,'extension/background-report.js'),'utf8')});
     await fixture.route(`${ROOT}/**`,route=>route.fulfill({contentType:'text/html',body:route.request().url().endsWith('/postback.aspx')?`<script>window.open('${PDF_URL}','results').focus();<\/script>`:`<button id="download">Download</button><a id="attachment" href="${PDF_URL}" target="_blank">PDF</a>`}));
     const page=await fixture.newPage();await page.goto(MEMBER+'Transactions/DrvRec/Page2.aspx');
     await page.addScriptTag({content:pageOperation.toString()});
@@ -1329,7 +1326,7 @@ try {
       };
     },base64);
     await page.goto(base+'/reader.html?pdf=1&query=1&id=fixture&dark=0#'+PDF_URL);
-    await page.waitForFunction(()=>window.pdfResult?.viewReady===true);
+    await page.waitForFunction(()=>window.pdfResult?.text&&document.body.dataset.pdfView==='ready');
     assert.match(await page.locator('#pdfProgress').textContent(),/Original colors/);
     assert.equal(await page.locator('#pdfPrint').isEnabled(),true);
     assert.equal(await page.evaluate(()=>window.readerHandshake.id),'fixture');
@@ -1337,6 +1334,45 @@ try {
     await page.locator('#pdfPrint').click();await page.waitForFunction(()=>window.requests.some(r=>r.type==='pdf-native-print'));
     assert.match(await page.evaluate(()=>window.requests.find(r=>r.type==='pdf-native-print').text),/SYNTHETIC BACKGROUND REPORT/);
     await page.close();
+  });
+  await tests('background status parsing and optional photo finish while PDF display frames are paused',async()=>{
+    const drawing=await ui.newPage();const png=await drawing.evaluate(()=>{const c=document.createElement('canvas');c.width=c.height=160;const context=c.getContext('2d');context.fillStyle='#4780b4';context.fillRect(0,0,160,160);return c.toDataURL('image/png').split(',')[1];});await drawing.close();
+    const doc=await PDFDocument.create(),font=await doc.embedFont(StandardFonts.Helvetica),sheet=doc.addPage([612,792]);
+    sheet.drawText('Driver License No: 123456789',{x:50,y:470,size:10,font});
+    sheet.drawText('Name: SYNTHETIC, DRIVER Address: 123 EXAMPLE ROAD',{x:50,y:450,size:10,font});
+    sheet.drawText('Status - DL: SUSPENDED',{x:50,y:430,size:10,font});
+    sheet.drawImage(await doc.embedPng(Buffer.from(png,'base64')),{x:234,y:518,width:144,height:144});
+    const base64=Buffer.from(await doc.save()).toString('base64');
+    for(const dark of [false,true])for(const identity of [false,true]) {
+      const page=await ui.newPage();
+      await page.addInitScript(({base64,identity})=>{
+        const frames=new Map(),request=window.requestAnimationFrame.bind(window),cancel=window.cancelAnimationFrame.bind(window);
+        let paused=true,id=0;window.pausedFrameCount=0;window.results=[];
+        window.requestAnimationFrame=callback=>{if(!paused)return request(callback);window.pausedFrameCount++;frames.set(--id,callback);return id;};
+        window.cancelAnimationFrame=id=>{if(!frames.delete(id))cancel(id);};
+        window.releaseDisplayFrames=()=>{paused=false;for(const callback of frames.values())request(callback);frames.clear();};
+        const send=chrome.runtime.sendMessage;
+        chrome.runtime.sendMessage=async message=>{
+          if(message.type==='reader-start')return {ok:true,value:{base64,includeDriverIdentity:identity}};
+          if(message.type==='reader-result'){window.results.push(message);return {ok:true,value:true};}
+          return send(message);
+        };
+      },{base64,identity});
+      await page.goto(base+`/reader.html?pdf=1&query=1&id=paused-fixture&dark=${dark?'1':'0'}#`+PDF_URL);
+      // No click, bringToFront, or display-frame release is permitted before this assertion.
+      try {await page.waitForFunction(()=>window.results.length===1&&window.pausedFrameCount>0,{},{timeout:15000,polling:100});}
+      catch(error){console.log('Paused-frame fixture diagnostics', {dark,identity,...await page.evaluate(()=>({results:window.results.map(r=>({hasText:!!r.text,error:r.error,hasIdentity:!!r.driverIdentity})),frames:window.pausedFrameCount,view:document.body.dataset.pdfView,note:document.querySelector('#readingNote').textContent}))});throw error;}
+      const result=await page.evaluate(()=>window.results[0]);
+      assert.match(result.text,/Status - DL: SUSPENDED/);assert.equal(result.error,undefined);
+      if(identity)assert.match(result.driverIdentity.photo,/^data:image\/png;base64,/);else assert.equal(result.driverIdentity,undefined);
+      assert.equal(await page.evaluate(()=>document.body.dataset.pdfView),'loading');
+      assert.equal(await page.locator('#pdfPrint').isEnabled(),true);
+      assert.equal(await page.locator('canvas[data-ready=true]').count(),0);
+      // Selecting/painting later must not submit another extraction result or fetch another PDF.
+      await page.evaluate(()=>window.releaseDisplayFrames());
+      await page.waitForFunction(()=>document.body.dataset.pdfView==='ready');
+      assert.equal(await page.evaluate(()=>window.results.length),1);await page.close();
+    }
   });
   await tests('PDF dark-view setting is opt-in and changes only the PDF preference',async()=>{
     const page=await ui.newPage();await page.goto(`${base}/popup.html`);await page.locator('#history tr').first().waitFor();await page.locator('#settingsTab').click();
@@ -1353,7 +1389,7 @@ try {
     doc.addPage([400,400]).drawText('SECOND PAGE',{x:20,y:350,font,size:16});
     const base64=Buffer.from(await doc.save()).toString('base64');
     await page.addInitScript(base64=>{const original=chrome.runtime.sendMessage;chrome.runtime.sendMessage=async message=>{if(message.type==='reader-start'||message.type==='reader-direct-start')return {ok:true,value:{base64,id:'synthetic-direct'}};if(message.type==='reader-result'){window.pdfResult=message;return {ok:true,value:true};}return original(message);};},base64);
-    await page.goto(base+'/reader.html?dark=1&pdf=1#https://www.scdmvonline.com/SCTRNS/Member/Transactions/ViewAttachment.aspx');await page.waitForFunction(()=>window.pdfResult?.viewReady===true);
+    await page.goto(base+'/reader.html?dark=1&pdf=1#https://www.scdmvonline.com/SCTRNS/Member/Transactions/ViewAttachment.aspx');await page.waitForFunction(()=>window.pdfResult?.text&&document.body.dataset.pdfView==='ready');
     const pixels=()=>page.locator('.pdf-sheet:first-child .pdf-page').evaluate(canvas=>{const ctx=canvas.getContext('2d');return {photo:[...ctx.getImageData(150,195,180,180).data],paper:[...ctx.getImageData(5,5,1,1).data],bright:[...ctx.getImageData(20,45,500,40).data].filter((v,i)=>i%4!==3&&v>200).length};});
     assert.equal(new URL(page.url()).searchParams.get('id'),'synthetic-direct');
     const dark=await pixels();assert.deepEqual(dark.paper,[24,26,27,255]);assert.ok(dark.bright>100);
@@ -1376,7 +1412,7 @@ try {
       return {ok:false};
     };},base64);
     await page.goto(base+'/reader.html?dark=1&pdf=1#https://www.scdmvonline.com/SCTRNS/Member/Transactions/ViewAttachment.aspx');
-    await page.waitForFunction(()=>window.pdfResult?.viewReady===true);assert.equal(await page.locator('.pdf-sheet').count(),30);
+    await page.waitForFunction(()=>window.pdfResult?.text&&document.body.dataset.pdfView==='ready');assert.equal(await page.locator('.pdf-sheet').count(),30);
     assert.ok(await page.locator('.pdf-page').count()<=5);assert.equal(await page.locator('.pdf-sheet:last-child canvas').count(),0);
     await page.locator('.pdf-sheet:last-child').scrollIntoViewIfNeeded();await page.locator('.pdf-sheet:last-child canvas[data-ready=true]').waitFor();
     await page.waitForFunction(()=>!document.querySelector('.pdf-sheet:first-child canvas'));assert.ok(await page.locator('.pdf-page').count()<=5);
@@ -1396,7 +1432,7 @@ try {
       return {ok:false};
     };},base64);
     await page.goto(base+'/reader.html?dark=1&pdf=1#https://www.scdmvonline.com/SCTRNS/Member/Transactions/ViewAttachment.aspx');
-    await page.waitForFunction(()=>window.pdfResult?.viewReady===true);await page.waitForFunction(()=>document.querySelectorAll('.pdf-text-surface').length===12);
+    await page.waitForFunction(()=>window.pdfResult?.text&&document.body.dataset.pdfView==='ready');await page.waitForFunction(()=>document.querySelectorAll('.pdf-text-surface').length===12);
     const first=page.locator('.pdf-sheet:first-child .textLayer span').filter({hasText:text});
     const copy=async(locator,vertical=false)=>{
       await locator.scrollIntoViewIfNeeded();const box=await locator.boundingBox();assert.ok(box.width>0&&box.height>0);
@@ -1445,7 +1481,7 @@ try {
       };
     },base64);
     await page.goto(base+'/reader.html?dark=1&pdf=1#https://www.scdmvonline.com/SCTRNS/Member/Transactions/ViewAttachment.aspx',{waitUntil:'commit'});
-    await page.waitForFunction(()=>window.pdfResult?.viewReady===true&&!document.querySelector('#pdfPrint').disabled);
+    await page.waitForFunction(()=>window.pdfResult?.text&&document.body.dataset.pdfView==='ready'&&!document.querySelector('#pdfPrint').disabled);
     await page.locator('#pdfPrint').click();await page.waitForFunction(()=>document.querySelector('#pdfPrintStatus').textContent.startsWith('Original PDF opened'));
     assert.equal(requests,1);assert.ok(native.url().startsWith('blob:'));
     assert.equal(await page.evaluate(()=>window.readerAcked===true),false);await page.evaluate(()=>window.releaseReaderAck());

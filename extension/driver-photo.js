@@ -31,7 +31,9 @@ export async function extractDriverIdentity(page, text, signal) {
     if(candidates.length!==1)return identity;
     const box=candidates[0],scale=2,canvas=document.createElement('canvas');
     canvas.width=Math.ceil(box.width*scale);canvas.height=Math.ceil(box.height*scale);
-    const task=page.render({canvasContext:canvas.getContext('2d'),viewport:page.getViewport({scale}),transform:[1,0,0,1,-box.left*scale,-box.top*scale]});
+    // Extraction must finish while the results tab is inactive. PDF.js print
+    // intent paints without waiting for display animation frames; no printing occurs.
+    const task=page.render({canvasContext:canvas.getContext('2d'),viewport:page.getViewport({scale}),intent:'print',transform:[1,0,0,1,-box.left*scale,-box.top*scale]});
     const cancel=()=>task.cancel();signal?.addEventListener('abort',cancel,{once:true});
     try{await task.promise;signal?.throwIfAborted();}finally{signal?.removeEventListener('abort',cancel);}
     if(isNoPhotoPlaceholder(canvas)){identity.noPhoto=true;canvas.width=canvas.height=0;return identity;}

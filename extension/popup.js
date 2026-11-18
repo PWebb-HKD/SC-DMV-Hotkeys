@@ -125,7 +125,6 @@ async function refresh() {
   $('shortcutMenuNoTimeout').disabled = data.shortcutMenuAlwaysOnTop === true;
   $('alertsToggle').checked = data.alertsEnabled === true;
   $('backgroundSearchToggle').checked = data.backgroundStatusSearch === true;
-  $('backgroundSearchMethod').value = data.backgroundSearchMethod || 'window';
   backgroundSearchUI();
   $('driverIdentityToggle').checked = data.showDriverIdentity === true;
   $('speechToggle').checked = data.speechEnabled === true;
@@ -200,10 +199,9 @@ $('driverIdentityToggle').onchange = async event => {
 function backgroundSearchUI() {
   $('backgroundSearchSettings').hidden = !$('alertsToggle').checked;
   $('alertsToggle').setAttribute('aria-expanded',String($('alertsToggle').checked));
-  $('backgroundSearchMethod').disabled = !$('backgroundSearchToggle').checked;
 }
-for(const id of ['backgroundSearchToggle','backgroundSearchMethod'])$(id).onchange=async()=>{
-  try {await send({type:'background-search-settings',enabled:$('backgroundSearchToggle').checked,method:$('backgroundSearchMethod').value});feedback('');}
+$('backgroundSearchToggle').onchange=async()=>{
+  try {await send({type:'background-search-settings',enabled:$('backgroundSearchToggle').checked});feedback('');}
   catch(error){feedback(error.message);await refresh();}
   backgroundSearchUI();
 };
@@ -235,9 +233,8 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'session' && changes.status) $('status').textContent = changes.status.newValue;
   if (area === 'session' && changes.showDriverIdentity) $('driverIdentityToggle').checked = changes.showDriverIdentity.newValue === true;
   if(area==='session'&&changes.backgroundStatusSearch)$('backgroundSearchToggle').checked=changes.backgroundStatusSearch.newValue===true;
-  if(area==='session'&&changes.backgroundSearchMethod)$('backgroundSearchMethod').value=changes.backgroundSearchMethod.newValue||'window';
   if (area === 'session' && changes.alertsEnabled) $('alertsToggle').checked = changes.alertsEnabled.newValue === true;
-  if(area==='session'&&(changes.alertsEnabled||changes.backgroundStatusSearch||changes.backgroundSearchMethod))backgroundSearchUI();
+  if(area==='session'&&(changes.alertsEnabled||changes.backgroundStatusSearch))backgroundSearchUI();
   if (area === 'session' && changes.speechEnabled) { $('speechToggle').checked = changes.speechEnabled.newValue === true; voiceSourceUI(); }
   if (area === 'session' && changes.repeatSpeech) $('repeatSpeechToggle').checked = changes.repeatSpeech.newValue === true;
   if (area === 'session' && changes.suspendedClipEnabled) $('clipToggle').checked = changes.suspendedClipEnabled.newValue === true;

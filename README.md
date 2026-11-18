@@ -1,6 +1,6 @@
 # SC DMV Hotkeys
 
-A Chromium Manifest V3 extension for authorized SCDMV member searches, PDF follow-ups, status alerts, and PDF417 data-entry barcodes. Current version: **1.8.32**.
+A Chromium Manifest V3 extension for authorized SCDMV member searches, PDF follow-ups, status alerts, and PDF417 data-entry barcodes. Current version: **1.8.33**.
 
 ## Install and update
 
@@ -17,16 +17,11 @@ The packaged extension needs no build or npm installation. PDF.js and the barcod
 
 ## Experimental background searches
 
-In Settings, enable **Plate & license status alerts**, then **Run record searches in the background** immediately below it. Choose a method:
+In Settings, enable **Plate & license status alerts**, then **Run record searches in the background** immediately below it. Searches use a separate query window that starts minimized, with an active tab inside it. If you manually restore this helper, it stays restored while the search continues. Your existing browser windows and tabs are not minimized, restored, focused, or reselected by the background workflow.
 
-- **Separate unfocused query window** (default): navigates in its own ordinary popup window, with an active tab inside it. The helper can remain visible behind other apps. It does not minimize, restore, focus, or switch your existing browser tabs. You can manually use the browser during a search.
-- **Offscreen iframe**: navigates inside a bundled Chrome offscreen document. Chrome requires this intermediate extension page; it cannot open a DMV URL directly as an offscreen document. DMV frame restrictions, login/session cookies, and report scripts must support this arrangement. These live-site conditions are not yet verified.
+This applies only to plate, DL, and customer searches (including queued customer searches). Other queries retain normal foreground behavior. Reports open in an inactive tab in an existing normal browser window. Parsing sends the report for status analysis before visible PDF rendering, so the status popup does not need you to select the results tab. Optional photo extraction also runs without display animation frames. PDF painting may wait until you view the tab; printing retains the captured original bytes, and the viewer honors the PDF color preference. Keep a normal browser window open, even if minimized. Settings changes apply to the next search.
 
-Both methods apply only to plate, DL, and customer searches (including queued customer searches). Other queries retain normal foreground behavior. Reports open in an inactive tab in an existing normal browser window, followed by the usual status popup. The extension's PDF viewer uses the captured original bytes, honors the PDF color preference, and supports native printing. Keep a normal browser window open, even if minimized. Settings changes apply to the next search.
-
-To compare, select one method, run a known test record with the browser behind another app or minimized, and check the report and status popup. Repeat with the other method. Check that manually selecting a browser tab remains possible. The separate helper is not an invisible-window API. Neither prototype guarantees native Windows focus behavior until tested there. A failure stops with an error; the extension never automatically resubmits the transaction using the other method. Inspect the error before deciding whether to start another query.
-
-Chrome references: [offscreen documents](https://developer.chrome.com/docs/extensions/reference/api/offscreen), [offscreen iframe support](https://developer.chrome.com/blog/Offscreen-Documents-in-Manifest-v3), and [window creation](https://developer.chrome.com/docs/extensions/reference/api/windows#method-create). No frame-security or browser-policy restrictions are removed.
+The rejected offscreen iframe method and selector are removed. Existing background opt-in is preserved when upgrading. To test, run a known record while another app has focus, then repeat while using another Chrome tab. Confirm that the status popup appears without clicking the inactive PDF tab. You can manually restore the helper during a search; it must not be minimized again. Native Windows behavior still needs installed-extension testing. Failed transactions are not automatically resubmitted.
 
 ## Commands
 

@@ -4,15 +4,10 @@ import assert from 'node:assert/strict';
 import {LOGIN,MEMBER,PDF_URL} from '../extension/core.js';
 const event=()=>({listeners:[],addListener(fn){this.listeners.push(fn);},removeListener(){}});
 const session={},local={},calls=[],tabs=new Map([[1,{id:1,windowId:1,url:'https://example.test/',active:true}]]);
-let nextTab=2,nextWindow=10,offscreen=false,frame,reportArmed=false;
+let nextTab=2,nextWindow=10,reportArmed=false;
 const area=data=>({setAccessLevel:async()=>{},get:async keys=>Object.fromEntries((typeof keys==='string'?[keys]:keys||Object.keys(data)).map(key=>[key,data[key]])),set:async values=>Object.assign(data,values),remove:async keys=>{for(const key of typeof keys==='string'?[keys]:keys)delete data[key];}});
 const runtime={id:'a'.repeat(32),getURL:path=>'chrome-extension://'+'a'.repeat(32)+'/'+path,onMessage:event(),onConnect:event(),onStartup:event(),onInstalled:event(),sendMessage:async message=>{
   calls.push(message);
-  if(message.target!=='query-host')return;
-  if(message.op==='init'){frame={id:-1,url:LOGIN,status:'complete'};return {ok:true,value:true};}
-  if(message.op==='state')return {ok:true,value:frame};
-  if(message.op==='navigate'){frame.url=message.args.url;return {ok:true,value:true};}
-  return {ok:true,value:operation(frame,message.args.op,message.args.args)};
 }};
 function operation(tab,op,args) {
   if(op==='state')return {url:tab.url,errors:[],present:true,enabled:true,presentSelectors:args.selectors?.map(()=>true)||[]};
@@ -32,10 +27,9 @@ globalThis.chrome={runtime,storage:{local:area(local),session:area(session)},
     update:async(id,options)=>{calls.push(['update-tab',id,options]);Object.assign(tabs.get(id),options);return {...tabs.get(id)};},
     remove:async id=>{calls.push(['remove-tab',id]);tabs.delete(id);},sendMessage:async()=>{}},
   windows:{onRemoved:event(),get:async id=>({id,type:'normal',state:'minimized'}),getAll:async()=>[{id:1,type:'normal',state:'minimized'}],
-    create:async options=>{const id=nextWindow++;calls.push(['window',id,options]);if(options.url===LOGIN){const tab={id:nextTab++,windowId:id,url:LOGIN,status:'complete',active:true};tabs.set(tab.id,tab);return {id,tabs:[tab]};}return {id};},
+    create:async options=>{const id=nextWindow++;calls.push(['window',id,options]);if(options.url===LOGIN){assert.equal(options.state,'minimized');assert.equal(options.focused,false);assert.equal(options.width,undefined);const tab={id:nextTab++,windowId:id,url:LOGIN,status:'complete',active:true};tabs.set(tab.id,tab);return {id,tabs:[tab]};}return {id};},
     update:async()=>{throw new Error('Background transport must not focus/restore/minimize a window');},remove:async()=>{}},
   scripting:{executeScript:async({target,args:[op,args]})=>[{result:operation(tabs.get(target.tabId),op,args)}],getRegisteredContentScripts:async()=>[],registerContentScripts:async()=>{},updateContentScripts:async()=>{},insertCSS:async()=>{}},
-  offscreen:{hasDocument:async()=>offscreen,createDocument:async options=>{assert.equal(offscreen,false);calls.push(['offscreen',options]);offscreen=true;},closeDocument:async()=>{calls.push('close-offscreen');offscreen=false;}},
   webNavigation:{onCommitted:event(),getFrame:async()=>null},commands:{onCommand:event(),getAll:async()=>[]},declarativeNetRequest:{updateDynamicRules:async()=>{}}
 };
 await import('../extension/background.js');
@@ -45,17 +39,17 @@ const latestReport=()=>[...tabs.values()].findLast(tab=>tab.url.includes('query=
 const readerSend=(tab,message,changes={})=>send(message,{url:tab.url,tab:{id:tab.id},frameId:0,documentId:'document-'+tab.id,...changes});
 const hasPanel=type=>Object.values(session).some(value=>value?.type===type);
 
-test('background preferences persist and reject unknown methods',async()=>{
+test('background preference persists without the retired method selector',async()=>{
   await send({type:'state'});
-  await send({type:'background-search-settings',enabled:true,method:'offscreen'});
-  assert.equal((await send({type:'state'})).backgroundSearchMethod,'offscreen');
+  await send({type:'background-search-settings',enabled:true});
+  assert.equal((await send({type:'state'})).backgroundStatusSearch,true);
+  assert.equal((await send({type:'state'})).backgroundSearchMethod,undefined);
   assert.equal(local.alertPreferences.backgroundStatusSearch,true);
-  await assert.rejects(send({type:'background-search-settings',enabled:true,method:'unknown'}),/available/);
 });
-for(const method of ['window','offscreen'])test(`worker ${method} result remains inactive, owns captured bytes and triggers status after parsing`,async()=>{
+test('worker result remains inactive and triggers status on parsed text before viewer paint',async()=>{
   await send({type:'stop'});
   session.credentials={user:'synthetic',password:'synthetic'};
-  await send({type:'alerts',enabled:true});await send({type:'background-search-settings',enabled:true,method});
+  await send({type:'alerts',enabled:true});await send({type:'background-search-settings',enabled:true});
   session.queue={values:['12345678'],index:0};
   const previous=latestReport()?.id,from=calls.length;
   await send({type:'run',command:'next'});
@@ -68,11 +62,10 @@ for(const method of ['window','offscreen'])test(`worker ${method} result remains
   const bytes=await readerSend(tab,{type:'reader-start',id});assert.equal(bytes.base64,'JVBERi1zeW50aGV0aWM=');
   await assert.rejects(readerSend(tab,{type:'reader-start',id}),/again/);
   await assert.rejects(readerSend(tab,{type:'reader-result',id,text:'stale'},{documentId:'other'}),/Unknown PDF/);
-  await readerSend(tab,{type:'reader-result',id,text:'Status - DL: SUSPENDED\nDriver License No: 12345678 Name: SYNTHETIC, PERSON',viewReady:true});
+  await readerSend(tab,{type:'reader-result',id,text:'Status - DL: SUSPENDED\nDriver License No: 12345678 Name: SYNTHETIC, PERSON'});
   await wait(()=>hasPanel('record-alert'));
   assert.match(session[`pdf:${tab.id}`].text,/SUSPENDED/);
   const alert=Object.values(session).find(value=>value?.type==='record-alert');assert.equal(alert.sections[0].title,'LICENSE SUSPENDED');
-  if(method==='offscreen')assert.equal(offscreen,false);
   await assert.rejects(readerSend(tab,{type:'reader-start',id}),/Unknown PDF/);
   assert.equal(JSON.stringify(local).includes('SYNTHETIC, PERSON'),false);
 });

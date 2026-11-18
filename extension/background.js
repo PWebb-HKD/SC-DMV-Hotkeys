@@ -357,9 +357,9 @@ async function runSearch(kind, value, ctx, advance) {
   let result;
   try {
     await ctx.beforeSubmit();
-    const method = backgroundMethod(kind,await api.storage.session.get(['alertsEnabled','backgroundStatusSearch','backgroundSearchMethod']));
+    const method = backgroundMethod(kind,await api.storage.session.get(['alertsEnabled','backgroundStatusSearch']));
     ctx.backgroundTask = !!method;
-    result = method ? await backgroundSearch(kind,value,ctx,{method,audio:audioAlerts,publish:publishBackgroundReport,sourceId:ctx.sourceId}) : await search(kind, value, ctx);
+    result = method ? await backgroundSearch(kind,value,ctx,{publish:publishBackgroundReport,sourceId:ctx.sourceId}) : await search(kind, value, ctx);
   }
   catch (error) {
     // Record the rejected search with its outcome before displaying the error.
@@ -634,7 +634,7 @@ chrome.runtime.onInstalled.addListener(async details => {
 // Only extension-owned views may call this router. Keep the response channel open
 // for async work and use one {ok, value/error} envelope for every request.
 chrome.runtime.onMessage.addListener((message, sender, reply) => {
-  if (message.target === 'audio-player' || message.target === 'pdf-reader' || message.target === 'query-host') return false;
+  if (message.target === 'audio-player' || message.target === 'pdf-reader') return false;
   if(message.type==='dmv-theme-init'&&sender.id===chrome.runtime.id&&sender.tab?.id!=null&&Number.isInteger(sender.frameId)&&isDmvThemePage(sender.url)) {
     (async()=>{await boot;return initDmvTheme(sender);})().then(value=>reply({ok:true,value}),error=>reply({ok:false,error:error.message}));return true;
   }
@@ -732,7 +732,7 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
         return true;
       }
       // These snapshots are restricted to extension-owned pages by the router above.
-      case 'state': return {blacklist: await blacklistState(), ...await chrome.storage.local.get(['vault','pdfDarkMode','dmvDarkMode','shortcutMenuNoTimeout','shortcutMenuAlwaysOnTop']), ...await chrome.storage.session.get(['history', 'queue', 'status', 'alertsEnabled', 'backgroundStatusSearch', 'backgroundSearchMethod', 'showDriverIdentity', 'speechEnabled', 'repeatSpeech', 'suspendedClipEnabled', 'voiceSource', 'voiceGender', 'voiceName']), voices: await availableVoices().catch(() => []), commands: await chrome.commands.getAll(), extensionId: chrome.runtime.id};
+      case 'state': return {blacklist: await blacklistState(), ...await chrome.storage.local.get(['vault','pdfDarkMode','dmvDarkMode','shortcutMenuNoTimeout','shortcutMenuAlwaysOnTop']), ...await chrome.storage.session.get(['history', 'queue', 'status', 'alertsEnabled', 'backgroundStatusSearch', 'showDriverIdentity', 'speechEnabled', 'repeatSpeech', 'suspendedClipEnabled', 'voiceSource', 'voiceGender', 'voiceName']), voices: await availableVoices().catch(() => []), commands: await chrome.commands.getAll(), extensionId: chrome.runtime.id};
       // Appearance updates persist independently of credentials and query state.
       case 'dmv-display-settings': {
         await chrome.storage.local.set({dmvDarkMode:message.enabled===true});await configureDmvTheme();await refreshDmvThemeTabs();return message.enabled===true;
@@ -786,8 +786,7 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
         await saveAlertPreferences(settings); return true;
       }
       case 'background-search-settings': {
-        if(!['window','offscreen'].includes(message.method))throw new Error('Choose an available background search method.');
-        await saveAlertPreferences({backgroundStatusSearch:message.enabled===true,backgroundSearchMethod:message.method});return true;
+        await saveAlertPreferences({backgroundStatusSearch:message.enabled===true});return true;
       }
       case 'driver-identity-settings': {
         await saveAlertPreferences({showDriverIdentity: message.enabled === true}); return true;

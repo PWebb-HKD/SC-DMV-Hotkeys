@@ -16,7 +16,6 @@ const api = ctx => guardedApi(ctx?.browserApi || chrome, ctx?.run);
 export const delay = (ms, ctx) => ctx?.run ? ctx.run.step(() => new Promise(resolve => setTimeout(resolve, ms))) : new Promise(resolve => setTimeout(resolve, ms));
 /** Run one self-contained DOM operation in the page MAIN world and return its result. */
 export async function evaluate(tabId, op, args = {}, ctx) {
-  if (ctx?.evaluate) return ctx.run.step(() => ctx.evaluate(tabId, op, args));
   const results = await api(ctx).scripting.executeScript({target: {tabId}, world: 'MAIN', func: pageOperation, args: [op, args]});
   if (!results.length) throw new Error('The page could not be accessed.');
   return results[0].result;

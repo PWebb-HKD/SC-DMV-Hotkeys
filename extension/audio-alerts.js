@@ -43,18 +43,6 @@ export function availableVoices(api = chrome) {
 export class AudioAlerts {
   /** Accept a browser API adapter so playback policy can be tested independently of Chrome. */
   constructor(api = chrome) { this.api = api; this.generation = 0; this.offscreenTask = Promise.resolve(); }
-  /** Lease Chrome's single offscreen document to a query. Audio lifecycle work queues
-   * behind it; cancellation of the search releases the lease before another starts. */
-  useQueryDocument(action) {
-    this.stop();
-    const task = this.offscreenTask.then(async () => {
-      await this.api.offscreen.createDocument({url:'offscreen-query.html', reasons:['IFRAME_SCRIPTING','DOM_SCRAPING'], justification:'Run the user-selected DMV query in a session iframe and capture its generated report.'});
-      try { return await action(); }
-      finally { if(await this.api.offscreen.hasDocument())await this.api.offscreen.closeDocument(); }
-    });
-    this.offscreenTask = task.catch(() => {});
-    return task;
-  }
   /** Invalidate pending speech/repeats immediately; close offscreen audio in lifecycle order. */
   stop() {
     this.generation++;
