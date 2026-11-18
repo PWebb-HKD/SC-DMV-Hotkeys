@@ -59,9 +59,19 @@ async function ready(tabId, selector, ctx, searchPage) {
     return s.present && s;
   }, 'the search page controls', 60000, ctx);
 }
+/** Keep Chrome's generic navigation rejection attributable to a workflow stage.
+ * Do not retry here: this adapter also serves already-started transactions. */
+export async function navigateTab(tabId, url, ctx, stage) {
+  try { return await api(ctx).tabs.update(tabId, {url}); }
+  catch (error) {
+    ctx?.run?.check();
+    if (/^Navigation rejected\.?$/i.test(error.message)) throw new Error(`Chrome rejected navigation while ${stage}. Run the search again.`, {cause:error});
+    throw error;
+  }
+}
 /** Navigate to a known form and surface completed-page errors while waiting for its URL. */
 async function navigate(tabId, url, ctx) {
-  await api(ctx).tabs.update(tabId, {url}); // The workflow has already focused its portal tab.
+  await navigateTab(tabId, url, ctx, 'loading the DMV search page');
   await until(async () => {
     const t = await api(ctx).tabs.get(tabId);
     if (t.status !== 'complete') return false;
@@ -95,10 +105,10 @@ async function login(tabId, ctx) {
   ctx.status('Checking DMV login');
   const current = await api(ctx).tabs.get(tabId);
   // Reuse the login page, but never use its existing fields as credentials.
-  if (!samePage(current.url, LOGIN)) await api(ctx).tabs.update(tabId, {url: LOGIN});
+  if (!samePage(current.url, LOGIN) && !samePage(current.pendingUrl, LOGIN)) await navigateTab(tabId, LOGIN, ctx, 'opening the DMV login page');
   await focusTab(tabId, ctx);
   await until(async () => {
-    const t = await api(ctx).tabs.get(tabId); if (t.status !== 'complete') return false;
+    const t = await api(ctx).tabs.get(tabId); if (t.status !== 'complete' || t.pendingUrl) return false;
     if (loginSucceeded(t.url)) return true;
     let form;
     try { form = await evaluate(tabId, 'state', {selectors: [USER, PASS] }, ctx); }
@@ -155,7 +165,7 @@ async function ensureSession(tabId, ctx) {
 async function initialSearchPage(tabId, url, reusedSession, ctx) {
   // Wait for the completed redirect destination, not just the originally requested URL.
   const load = async () => {
-    await api(ctx).tabs.update(tabId, {url});
+    await navigateTab(tabId, url, ctx, 'opening the DMV search form');
     return until(async () => {
       const tab = await api(ctx).tabs.get(tabId);
       return tab.status === 'complete' && !tab.pendingUrl && tab;

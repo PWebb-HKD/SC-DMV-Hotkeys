@@ -4,10 +4,12 @@ import {backgroundSearch,backgroundMethod,resultWindow} from '../extension/backg
 import {SearchRun} from '../extension/run.js';
 import {LOGIN,MEMBER,PDF_URL} from '../extension/core.js';
 
-function fixture({failure=false,moved=false,ignoredCreation=false,minimizeFails=false,manualRestore=false}={}) {
+function fixture({failure=false,moved=false,ignoredCreation=false,minimizeFails=false,manualRestore=false,blankLoading=false,delayedLogin=false,rejectLogin=0}={}) {
   const calls=[],run=new SearchRun(),tabs=new Map([[1,{id:1,windowId:1}]]);
   let tab={id:9,windowId:2,url:'about:blank',status:'complete'},armed=false,submitted=0;
   let helperState=ignoredCreation?'normal':'minimized',mainState='minimized';
+  let pendingReads=0,loginAttempts=0;
+  if(blankLoading){tab.url='';tab.pendingUrl='about:blank';tab.status='loading';}
   tabs.set(9,tab);
   const operation=(op,args)=>{
     calls.push(op);
@@ -23,8 +25,22 @@ function fixture({failure=false,moved=false,ignoredCreation=false,minimizeFails=
   };
   const api={
     storage:{session:{get:async()=>({lastQuery:0}),set:async()=>{}}},
-    tabs:{get:async id=>{if(id===9&&moved)return {...tab,windowId:3};return tabs.get(id);},
-      update:async(id,changes)=>{calls.push(['navigate',id,changes]);if(id===9)assert.equal(changes.active,undefined);else {assert.equal(id,20);assert.ok(calls.some(call=>call[0]==='ready'));}Object.assign(tabs.get(id),changes);if(id===9&&manualRestore&&changes.url===LOGIN)helperState='normal';return {...tabs.get(id)};},
+    tabs:{get:async id=>{
+      if(id===9&&tab.pendingUrl&&++pendingReads===5){tab.url=tab.pendingUrl;delete tab.pendingUrl;tab.status='complete';}
+      if(id===9&&moved&&calls.includes('fetchPdf'))return {...tab,windowId:3};return tabs.has(id)?{...tabs.get(id)}:undefined;
+    },
+      update:async(id,changes)=>{
+        calls.push(['navigate',id,changes]);
+        if(id===9) {
+          assert.equal(changes.active,undefined);
+          if(changes.url===LOGIN){
+            loginAttempts++;
+            if(tab.pendingUrl||loginAttempts<=rejectLogin)throw new Error('Navigation rejected.');
+            if(delayedLogin){tab.pendingUrl=LOGIN;tab.status='loading';pendingReads=0;return {...tab};}
+          }
+        } else {assert.equal(id,20);assert.ok(calls.some(call=>call[0]==='ready'));}
+        Object.assign(tabs.get(id),changes);if(id===9&&manualRestore&&changes.url===LOGIN)helperState='normal';return {...tabs.get(id)};
+      },
       remove:async id=>{calls.push(['remove',id]);tabs.delete(id);},query:async()=>[...tabs.values()]},
     windows:{get:async id=>{calls.push(['get-window',id]);return {id,type:'normal',state:id===2?helperState:mainState};},getAll:async()=>[{id:1,type:'normal'}],
       create:async options=>{calls.push(['window',options]);return {id:2,tabs:[tab]};},
@@ -144,4 +160,58 @@ test('cancellation while window creation is pending removes the late owned tab w
 test('background destination never creates/focuses a normal window',async()=>{
   const f=fixture();f.api.windows.getAll=async()=>[];
   await assert.rejects(resultWindow(f.api,null),/normal browser window/);
+});
+
+test('background startup waits for blank creation and one committed login navigation before shared login',async()=>{
+  const f=fixture({blankLoading:true,delayedLogin:true});
+  await backgroundSearch('customer','12345678',f.ctx,f.options);
+  assert.equal(f.calls.filter(call=>call[0]==='navigate'&&call[2].url===LOGIN).length,1);
+  assert.equal(f.submitted,1);assert.equal(f.calls.some(call=>call[0]==='reveal-result'),false);
+});
+test('an uncommitted login URL never triggers a duplicate navigation from shared login',async()=>{
+  const f=fixture({delayedLogin:true});await backgroundSearch('license','12345678',f.ctx,f.options);
+  assert.equal(f.calls.filter(call=>call[0]==='navigate'&&call[2].url===LOGIN).length,1);
+  assert.equal(f.submitted,1);
+});
+test('a rejected initial login navigation retries once only while the owned helper remains blank',async()=>{
+  const f=fixture({rejectLogin:1});await backgroundSearch('customer','12345678',f.ctx,f.options);
+  assert.equal(f.calls.filter(call=>call[0]==='navigate'&&call[2].url===LOGIN).length,2);
+  assert.equal(f.submitted,1);assert.deepEqual(f.calls.filter(call=>call[0]==='remove'),[['remove',9]]);
+});
+test('persistent startup navigation rejection identifies the stage and stops before submission',async()=>{
+  const f=fixture({rejectLogin:Infinity});
+  await assert.rejects(backgroundSearch('customer','12345678',f.ctx,f.options),/hidden query.*login|login.*hidden query/i);
+  assert.equal(f.calls.filter(call=>call[0]==='navigate'&&call[2].url===LOGIN).length,2);
+  assert.equal(f.submitted,0);assert.equal(f.calls.some(call=>call[0]==='publish'),false);
+  assert.deepEqual(f.calls.filter(call=>call[0]==='remove'),[['remove',9]]);
+});
+test('a rejection with login already pending waits for that navigation rather than retrying it',async()=>{
+  const f=fixture({delayedLogin:true}),update=f.api.tabs.update;
+  f.api.tabs.update=async(id,changes)=>{const tab=await update(id,changes);if(changes.url===LOGIN)throw new Error('Navigation rejected.');return tab;};
+  await backgroundSearch('license','12345678',f.ctx,f.options);
+  assert.equal(f.calls.filter(call=>call[0]==='navigate'&&call[2].url===LOGIN).length,1);assert.equal(f.submitted,1);
+});
+test('Stop during initial blank loading closes only the owned helper without navigating',async()=>{
+  const f=fixture({blankLoading:true}),get=f.api.tabs.get,waiting=Promise.withResolvers();
+  f.api.tabs.get=async id=>{const tab=await get(id);if(id===9){waiting.resolve();f.ctx.run.cancel();}return tab;};
+  const task=backgroundSearch('license','12345678',f.ctx,f.options);await waiting.promise;
+  await assert.rejects(task,{name:'AbortError'});
+  assert.equal(f.calls.some(call=>call[0]==='navigate'),false);assert.equal(f.submitted,0);
+  assert.deepEqual(f.calls.filter(call=>call[0]==='remove'),[['remove',9]]);
+});
+test('manual navigation after an initial rejection is preserved without another load or submission',async()=>{
+  const f=fixture({rejectLogin:1}),update=f.api.tabs.update,get=f.api.tabs.get;
+  let userNavigation=false;
+  f.api.tabs.update=async(id,changes)=>{try{return await update(id,changes);}catch(error){userNavigation=true;throw error;}};
+  f.api.tabs.get=async id=>{const tab=await get(id);return id===9&&userNavigation?{...tab,url:'https://example.test/manual',status:'complete'}:tab;};
+  await assert.rejects(backgroundSearch('license','12345678',f.ctx,f.options),/navigated elsewhere/);
+  assert.equal(f.calls.filter(call=>call[0]==='navigate').length,1);assert.equal(f.submitted,0);
+  assert.equal(f.calls.some(call=>call[0]==='remove'),false);
+});
+test('search-form navigation rejection is contextual and never retries the form or submits',async()=>{
+  const f=fixture(),update=f.api.tabs.update;
+  f.api.tabs.update=async(id,changes)=>{if(changes.url?.includes('/Page1.aspx')){f.calls.push(['rejected-form']);throw new Error('Navigation rejected.');}return update(id,changes);};
+  await assert.rejects(backgroundSearch('license','12345678',f.ctx,f.options),/opening the DMV search form/);
+  assert.equal(f.calls.filter(call=>call[0]==='rejected-form').length,1);assert.equal(f.submitted,0);
+  assert.equal(f.calls.some(call=>call[0]==='publish'),false);
 });

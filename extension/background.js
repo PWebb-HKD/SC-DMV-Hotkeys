@@ -5,7 +5,7 @@
  * See DEVELOPMENT.md for the lifecycle and storage/message contracts.
  */
 import {COMMANDS, ROOT, PDF_URL, attachmentUrl, isPdf, isPortal, normalize, ownerNumbers, isResidenceReport, driverLicense, driverIdentity, historySearch} from './core.js';
-import {search, scutties, evaluate, focusTab, PortalSearchError} from './automation.js';
+import {search, scutties, evaluate, focusTab, navigateTab, PortalSearchError} from './automation.js';
 import {saveCredentials, unlockCredentials, blacklistState, addBlacklistEntry, removeBlacklistEntry, forgetCredentials, replaceCredentials, clearSavedUserInfo} from './vault.js';
 import {checkBlacklist, driverIdentifiers, validateBlacklist, BlacklistedSearchError} from './blacklist.js';
 import {SearchRun, guardedApi, isCancelled} from './run.js';
@@ -422,7 +422,7 @@ async function publishBackgroundReport({bytes,report,windowId},ctx) {
   })();
   capture.promise.catch(()=>{});captures.set(tab.id,capture);
   try {
-    await api.tabs.update(tab.id,{url:expectedUrl});
+    await navigateTab(tab.id,expectedUrl,ctx,'opening the captured PDF results tab');
   } catch(error) {capture.run.cancel();if(created)await chrome.tabs.remove(tab.id).catch(()=>{});throw error;}
   return {...report,tabId:tab.id,portalId:undefined,reused:!created,capture:capture.promise};
 }

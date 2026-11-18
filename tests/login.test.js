@@ -153,6 +153,18 @@ test('normal warm searches and fresh-login redirects to the transaction menu do 
     assert.equal(counts.logoffs,0);assert.equal(counts.loads,1);assert.equal(counts.logins,fresh?1:0);
   }
 });
+test('shared login waits for a pending login commit without reopening it or accepting the old page',async()=>{
+  const {counts,ctx}=recoveryFixture({redirects:0,fresh:true});
+  await chrome.tabs.update(1,{url:LOGIN});counts.requests.length=0;
+  const get=chrome.tabs.get;let reads=0;
+  chrome.tabs.get=async id=>{
+    const tab=await get(id);
+    return id===1&&++reads<6?{...tab,url:DISCLAIMER,status:'complete',pendingUrl:LOGIN}:tab;
+  };
+  await search('customer','12345678',ctx);
+  assert.equal(counts.logins,1);assert.equal(counts.loads,1);assert.deepEqual(counts.fills,['12345678']);
+  assert.equal(counts.requests.includes(LOGIN),false,'The pending login GET must not be restarted');
+});
 test('recovery does not loop if the retried request returns to the transaction list',async()=>{
   const {counts,session,ctx}=recoveryFixture({redirects:2});
   await assert.rejects(search('customer','12345678',ctx),/transaction list again/);

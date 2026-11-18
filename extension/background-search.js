@@ -1,7 +1,7 @@
 /** Unfocused query windows reuse the guarded workflow and blacklist callbacks.
  * Navigation leaves existing windows alone; completed same-address results are revealed. */
-import {LOGIN, ROOT, attachmentUrl} from './core.js';
-import {search, evaluate, focusTab} from './automation.js';
+import {LOGIN, ROOT, attachmentUrl, isPortal, samePage} from './core.js';
+import {search, evaluate, focusTab, delay} from './automation.js';
 import {guardedApi} from './run.js';
 import {darkResultSource} from './pdf-routing.js';
 
@@ -62,6 +62,43 @@ async function closeHelper(api, windowId, tabId) {
   if(tab?.windowId===windowId&&(url==='about:blank'||url?.startsWith(`${ROOT}/SCTRNS/`)))await api.tabs.remove(tabId).catch(()=>{});
 }
 
+/** Serialize the new blank document and the initial login load. tabs.update
+ * returns before its URL commits; shared login must not start a competing load. */
+async function openHelperLogin(api, windowId, tabId, ctx) {
+  const waitForPage = async login => {
+    const deadline=Date.now()+(login?60000:10000);
+    while(Date.now()<deadline) {
+      const tab=await api.tabs.get(tabId),target=tab.pendingUrl||tab.url;
+      if(tab.windowId!==windowId||target&&target!=='about:blank'&&(!login||!isPortal(target)))throw new Error('The hidden query tab was moved or navigated elsewhere. Search stopped.');
+      if(tab.status==='complete'&&!tab.pendingUrl&&(login?isPortal(tab.url):tab.url==='about:blank'))return tab;
+      await delay(100,ctx);
+    }
+    throw new Error(`Timed out ${login?'loading the hidden query login page':'preparing the hidden query window'}. Run the search again.`);
+  };
+  await waitForPage(false);
+  try {
+    try {await api.tabs.update(tabId,{url:LOGIN});}
+    catch(error) {
+      ctx.run.check();
+      if(!/^Navigation rejected\.?$/i.test(error.message))throw error;
+      const tab=await api.tabs.get(tabId);
+      if(tab.windowId!==windowId)throw error;
+      // A pending/committed login is already underway; never start it twice.
+      if(!samePage(tab.pendingUrl||tab.url,LOGIN)) {
+        // Retry only this initial GET, once, while the same owned tab is blank.
+        // No credentials or query have been submitted at this stage.
+        await delay(350,ctx);await waitForPage(false);
+        await api.tabs.update(tabId,{url:LOGIN});
+      }
+    }
+  } catch(error) {
+    ctx.run.check();
+    if(/^Navigation rejected\.?$/i.test(error.message))throw new Error('Chrome rejected navigation while opening the hidden query login page. No search was submitted. Try again, or turn off background searches to use the normal DMV tab.',{cause:error});
+    throw error;
+  }
+  await waitForPage(true);
+}
+
 export async function backgroundSearch(kind, value, ctx, {publish, sourceId, api = chrome}) {
   const guarded = guardedApi(api,ctx.run);
   // Resolve the destination before creating a helper (which must not become it).
@@ -100,7 +137,7 @@ export async function backgroundSearch(kind, value, ctx, {publish, sourceId, api
       initial=await guarded.windows.get(helper.id);
     }
     if(initial.state!=='minimized')throw new Error('Chrome could not minimize the query window. No DMV page was opened.');
-    await guarded.tabs.update(tab.id,{url:LOGIN});
+    await openHelperLogin(guarded,helper.id,tab.id,ctx);
     captured = await perform({tabId:tab.id,browserApi:api});
   } finally {if(helper)await closeHelper(api,helper.id,helper.tabId ?? helper.tabs?.[0]?.id);}
   ctx.run.check();
