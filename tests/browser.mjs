@@ -1028,13 +1028,65 @@ try {
     assert.equal(await page.locator('h2.record-status-title').evaluate(el=>getComputedStyle(el).fontSize),'36px');
     await page.keyboard.press('Escape');await page.waitForFunction(()=>window.closedByAlert);await page.close();
   });
+  await tests('suspension groups expand every occurrence with mini headers and restart timeout on open and close',async()=>{
+    const payload=licenseStatus(mixedSuspensions,statusNow),page=await statusPage(payload);
+    const details=page.locator('.record-suspension-details').first(),summary=details.locator('summary');
+    assert.equal(await details.getAttribute('open'),null);
+    await page.clock.fastForward(80000);assert.match(await page.locator('#alertCountdown').textContent(),/10 seconds/);
+    await summary.click();await page.waitForFunction(()=>document.querySelector('#alertCountdown').textContent.startsWith('Closes in 90 seconds'));
+    assert.deepEqual(await details.locator('h5').allTextContents(),['DUI','DUAC']);
+    assert.deepEqual(await details.locator('.record-suspension-occurrence p').allTextContents(),[
+      'Ticket #: SYNTH-A · Suspension Begin: 01/01/2025 · Suspension End: INDEFINITE · Violation Date: 01/15/2024',
+      'Ticket #: SYNTH-C · Suspension Begin: 01/01/2025 · Suspension End: INDEFINITE · Violation Date: 02/01/2022']);
+    await page.clock.fastForward(80000);assert.equal(await page.evaluate(()=>window.closedByAlert),false);
+    await summary.focus();await page.keyboard.press('Enter');
+    await page.waitForFunction(()=>!document.querySelector('.record-suspension-details').open&&document.querySelector('#alertCountdown').textContent.startsWith('Closes in 90 seconds'));
+    await page.clock.fastForward(89000);assert.equal(await page.evaluate(()=>window.closedByAlert),false);
+    await page.clock.fastForward(1000);assert.equal(await page.evaluate(()=>window.closedByAlert),true);await page.close();
+  });
+  await tests('suspension details restore full-size text after initial compression and keep scrolling after collapse',async()=>{
+    const payload=licenseStatus(mixedSuspensions,statusNow);
+    const page=await fittedAlert(payload,{availHeight:760});
+    await page.waitForFunction(()=>document.body.dataset.alertFit==='ready');
+    const before=await page.locator('.record-status-line').first().evaluate(el=>parseFloat(getComputedStyle(el).fontSize));
+    assert.ok(before<20);
+    const details=page.locator('.record-suspension-details').first();
+    await details.locator('summary').click();
+    await page.waitForFunction(()=>getComputedStyle(document.querySelector('.record-status-line')).fontSize==='20px');
+    assert.equal(await details.locator('h5').first().evaluate(el=>getComputedStyle(el).fontSize),'14px');
+    assert.equal(await details.locator('.record-suspension-occurrence p').first().evaluate(el=>getComputedStyle(el).fontSize),'14px');
+    assert.equal(await page.locator('h2.record-status-title').evaluate(el=>getComputedStyle(el).fontSize),'36px');
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollHeight>innerHeight),true);
+    await page.screenshot({path:join(screenshots,'suspension-full-size-details.png'),fullPage:true});
+    await details.locator('summary').click();
+    await page.waitForFunction(()=>!document.querySelector('.record-suspension-details').open);
+    await page.evaluate(()=>window.dispatchEvent(new Event('resize')));
+    assert.equal(await page.locator('.record-status-line').first().evaluate(el=>getComputedStyle(el).fontSize),'20px');
+    await page.close();
+  });
+  await tests('pending reinstatement details omit absent tickets render plain text and allow scrolling',async()=>{
+    const payload=licenseStatus('Status - DL: SUSPENDED '+susp('Example',{ticket:'',end:'01/01/2026'}),statusNow);
+    payload.sections[0].columns[1].groups[0].occurrences[0].reason='<b>Synthetic Reason</b>';
+    const page=await fittedAlert(payload,{availHeight:1200});
+    await page.waitForFunction(()=>document.body.dataset.alertFit==='ready');
+    const initial=await page.evaluate(()=>window.alertBounds.height);
+    const details=page.locator('.record-suspension-details');await details.locator('summary').click();
+    await page.waitForFunction(()=>document.querySelector('.record-suspension-details').open&&document.body.dataset.alertFit==='ready');
+    assert.equal(await details.locator('h5').textContent(),'<b>Synthetic Reason</b>');
+    assert.equal(await details.locator('b').count(),0);
+    assert.doesNotMatch(await details.locator('.record-suspension-occurrence p').textContent(),/Ticket/);
+    assert.match(await details.locator('.record-suspension-occurrence p').textContent(),/Violation Date: 01\/15\/2024/);
+    assert.equal(await page.evaluate(()=>window.alertBounds.height),initial);
+    assert.equal(await page.locator('h2.record-status-title').evaluate(el=>getComputedStyle(el).fontSize),'36px');
+    await page.screenshot({path:join(screenshots,'suspension-expanded-details.png'),fullPage:true});await page.close();
+  });
   await tests('suspension buckets render active left and pending right with DUI grouping and IID warning',async()=>{
     const page=await statusPage(licenseStatus(mixedSuspensions,statusNow));
     assert.equal(await page.locator('.record-reasons-title').textContent(),'Suspension Reasons:');
     const columns=page.locator('.record-suspension-column');assert.equal(await columns.count(),2);
     assert.deepEqual(await columns.locator('h4').allTextContents(),['Active Suspensions','Pending Reinstatement']);
-    assert.deepEqual(await columns.nth(0).locator('li').allTextContents(),['DUI/DUAC × 2','Failure to Pay Traffic Ticket × 1']);
-    assert.deepEqual(await columns.nth(1).locator('li').allTextContents(),['Driving Under Suspension × 1','DUI/DUAC × 1']);
+    assert.deepEqual(await columns.nth(0).locator('summary').allTextContents(),['DUI/DUAC × 2','Failure to Pay Traffic Ticket × 1']);
+    assert.deepEqual(await columns.nth(1).locator('summary').allTextContents(),['Driving Under Suspension × 1','DUI/DUAC × 1']);
     const left=await columns.nth(0).boundingBox(),right=await columns.nth(1).boundingBox();
     assert.ok(right.x>=left.x+left.width);assert.equal(left.y,right.y);
     assert.deepEqual((await page.locator('.record-status-line').allTextContents()).slice(0,4),['0 Prior DUS convictions within 5 years','3 Prior DUI/DUAC convictions within 10 years','3 active suspensions','2 pending reinstatement']);
@@ -1129,7 +1181,7 @@ try {
     const block=reason=>`SUSP: ${reason} Special Driving Privilege: NONE Suspension Beg: 01/01/2020 Suspension End: INDEFINITE Causal: 01/01/2020 Post: 01/01/2020 Reinstatement Requirements Met: NO Reinstatement Fee Paid: NO`;
     const payload=licenseStatus(`Status - DL:SUSPENDED ${block('097 - Failure to Pay Traffic Ticket')} ${block('097 - Failure to Pay Traffic Ticket')} ${block('018 - Failure to Stop for Blue Light')} VIOL: 123 - Driving Under Suspension Ticket#: 123 Violation: 01/01/2025`,fixedNow);
     const page=await statusPage(payload);
-    assert.deepEqual(await page.locator('.record-status-list li').allTextContents(),['Failure to Pay Traffic Ticket × 2','Failure to Stop for Blue Light × 1']);
+    assert.deepEqual(await page.locator('.record-status-list summary').allTextContents(),['Failure to Pay Traffic Ticket × 2','Failure to Stop for Blue Light × 1']);
     assert.match(await page.locator('#recordAlert').textContent(),/1 Prior DUS convictions within 5 years/);
     assert.ok(await page.locator('.record-status-title').evaluate(el=>parseFloat(getComputedStyle(el).fontSize))>await page.locator('.record-status-line').first().evaluate(el=>parseFloat(getComputedStyle(el).fontSize)));
     await page.screenshot({path:join(screenshots,'license-alert.png'),fullPage:true});

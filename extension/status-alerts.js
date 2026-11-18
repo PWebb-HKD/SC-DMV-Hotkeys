@@ -123,6 +123,16 @@ function offenseReason(block) {
     .replace(/^\d{3}\s*[-–—]\s*/, '').trim();
 }
 const isDuiDuac = reason => /\b(?:Driving\s+Under\s+the\s+Influence|Unlawful\s+Alcohol\s+Concentration)\b/i.test(reason);
+/** Read an optional ticket without borrowing a neighboring field; preserve its display spelling. */
+function offenseTicket(block) {
+  return block.match(/\bTicket\s*#\s*:\s*(?!(?:Special\s+Driving|Suspension\s+Beg|Violation\s*:|Causal\s*:|Post\s*:|ACD\s*:|Conviction\s*:))([A-Za-z0-9][A-Za-z0-9-]*)\b/i)?.[1] || '';
+}
+/** Retain only this suspension's labeled dates and reason for its expandable occurrence row. */
+function suspensionOccurrence(block, reason) {
+  const date = label => flat(block.match(new RegExp(`\\b${label}\\s*:\\s*(INDEFINITE|${DATE})`, 'i'))?.[1] || '');
+  return {reason: /^Driving Under the Influence$/i.test(reason) ? 'DUI' : /^Unlawful Alcohol Concentration$/i.test(reason) ? 'DUAC' : reason,
+    ticket: offenseTicket(block), begin: date('Suspension\\s+Beg'), end: date('Suspension\\s+End'), violationDate: date('(?:Causal|Casual)')};
+}
 /** Count DUI/DUAC offenses once per ticket, preferring a VIOL date over a matching SUSP causal date.
  * Missing tickets remain separate; matching dates alone do not prove the same offense. */
 function duiDuacSummary(blocks, today) {
@@ -130,7 +140,7 @@ function duiDuacSummary(blocks, today) {
   for (const block of blocks) {
     if (!isDuiDuac(offenseReason(block.text))) continue;
     if (block.kind === 'SUSP' && /\bIID\s+Required\s*:\s*Y\b/i.test(block.text)) iidRequired = true;
-    const ticket = block.text.match(/\bTicket\s*#\s*:\s*(?!(?:Special\s+Driving|Suspension\s+Beg|Violation\s*:|Causal\s*:|Post\s*:|ACD\s*:|Conviction\s*:))([A-Za-z0-9][A-Za-z0-9-]*)\b/i)?.[1]?.toUpperCase();
+    const ticket = offenseTicket(block.text).toUpperCase();
     const key = ticket ? `ticket:${ticket}` : `anonymous:${anonymous++}`;
     const dateLabel = block.kind === 'VIOL' ? 'Violation' : 'Causal';
     const date = parseReportDate(block.text.match(new RegExp(`\\b${dateLabel}\\s*:\\s*${DATE}`, 'i'))?.[1]);
@@ -161,7 +171,9 @@ function suspensionSummary(text, today) {
     else if (/^INDEFINITE\b/i.test(requirements) || requirementDate && requirementDate.ordinal > today.ordinal) bucket = pending;
     if (!bucket) continue;
     const key = reason.toLocaleUpperCase('en-US'), current = bucket.get(key);
-    if (current) current.count++; else bucket.set(key, {reason, count: 1});
+    const occurrence = suspensionOccurrence(block, rawReason);
+    if (current) { current.count++; current.occurrences.push(occurrence); }
+    else bucket.set(key, {reason, count: 1, occurrences: [occurrence]});
   }
   const sorted = (bucket, prioritize = false) => {
     const priority = reason => !prioritize ? 2 : /^Habitual Offender$/i.test(reason) ? 0 : /^Driving Under Suspension$/i.test(reason) ? 1 : 2;
@@ -185,8 +197,8 @@ function evaluateLicenseStatus(raw, now = new Date()) {
     if (!summary.groups.length) lines.push('No active suspension blocks matched the date criteria.');
     if (summary.unreadable) lines.push(`${summary.unreadable} suspension entr${summary.unreadable === 1 ? 'y could' : 'ies could'} not be evaluated.`);
     const items = summary.groups.map(group => `${group.reason} × ${group.count}`);
-    const columns = [{title: 'Active Suspensions', items}];
-    if (summary.pending) columns.push({title: 'Pending Reinstatement', items: summary.pendingGroups.map(group => `${group.reason} × ${group.count}`)});
+    const columns = [{title: 'Active Suspensions', items, groups: summary.groups}];
+    if (summary.pending) columns.push({title: 'Pending Reinstatement', items: summary.pendingGroups.map(group => `${group.reason} × ${group.count}`), groups: summary.pendingGroups});
     return alert('license', 'danger', [{title: 'LICENSE SUSPENDED', lines, listTitle: 'Suspension Reasons:', items, columns}], {activeSuspensions: summary.active, pendingReinstatement: summary.pending, priorDus: priors, priorDuiDuac: duiDuac.count});
   }
   const current = text.match(new RegExp(`\\b${LICENSE_HEADER}\\s+Current\\b(?:\\s*\\(\\s*ACN\\s*\\/\\s*DDN\\s*\\))?\\s*([\\s\\S]*?)(?=\\bLicense\\s+Information\\b|\\bPrior\\b|\\bSUSP\\s*:|\\bVIOL\\s*:|$)`, 'i'))?.[1];

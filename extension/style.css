@@ -45,3 +45,13 @@
 .record-suspension-column{flex:1;min-width:0}
 .record-suspension-column h4{font-size:20px;line-height:1.35;margin:0 0 12px;overflow-wrap:anywhere}
 @media(max-width:420px){.record-suspension-columns{flex-direction:column}.record-suspension-column{width:100%}}
+
+/* Each grouped suspension expands into one plain-text occurrence row per block. */
+.record-suspension-details{margin:0}
+.record-suspension-details>summary{color:inherit;font-size:inherit;line-height:inherit;cursor:pointer;overflow-wrap:anywhere}
+.record-suspension-details>summary:focus-visible{outline:2px solid #91caff;outline-offset:3px}
+.record-suspension-occurrences{margin:10px 0 14px}
+.record-suspension-occurrence{border-left:2px solid #56616b;padding:4px 0 4px 9px;margin:8px 0}
+.record-suspension-occurrence h5{font-size:14px;margin:0 0 4px;line-height:1.4}
+.record-suspension-occurrence p{font-size:14px;line-height:1.5;margin:0;overflow-wrap:anywhere}
+.record-status-list>li:has(>.record-suspension-details){list-style:none}

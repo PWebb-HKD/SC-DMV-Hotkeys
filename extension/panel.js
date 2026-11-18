@@ -41,6 +41,7 @@ try {
         if (seconds <= 0) { clearInterval(timer); close(); }
       }, 1000);
     } else if (data.type === 'record-alert') {
+      let refreshAlertTimeout = () => {}, allowAlertScrolling = () => {};
       document.body.classList.add('status-panel', `status-${data.tone}`);
       if (data.blacklist) document.body.classList.add('blacklist-panel');
       document.title = `${data.sections?.[0]?.title || 'Record status'} · SC DMV Hotkeys`;
@@ -72,7 +73,27 @@ try {
             const group = document.createElement('div'); group.className = 'record-suspension-column';
             const title = document.createElement('h4'); title.textContent = column.title; group.append(title);
             const list = document.createElement('ul'); list.className = 'record-status-list';
-            for (const text of column.items || []) { const item = document.createElement('li'); item.textContent = text; list.append(item); }
+            for (const [index, text] of (column.items || []).entries()) {
+              const item = document.createElement('li'), occurrences = column.groups?.[index]?.occurrences;
+              if (!occurrences?.length) item.textContent = text;
+              else {
+                const details = document.createElement('details'); details.className = 'record-suspension-details';
+                const summary = document.createElement('summary'); summary.textContent = text; details.append(summary);
+                const pane = document.createElement('div'); pane.className = 'record-suspension-occurrences';
+                for (const occurrence of occurrences) {
+                  const row = document.createElement('div'); row.className = 'record-suspension-occurrence';
+                  const heading = document.createElement('h5'); heading.textContent = occurrence.reason; row.append(heading);
+                  const fields = [];
+                  if (occurrence.ticket) fields.push(`Ticket #: ${occurrence.ticket}`);
+                  fields.push(`Suspension Begin: ${occurrence.begin || 'Unavailable'}`, `Suspension End: ${occurrence.end || 'Unavailable'}`, `Violation Date: ${occurrence.violationDate || 'Unavailable'}`);
+                  const line = document.createElement('p'); line.textContent = fields.join(' · '); row.append(line); pane.append(row);
+                }
+                details.append(pane);
+                details.addEventListener('toggle', () => { refreshAlertTimeout(); allowAlertScrolling(); });
+                item.append(details);
+              }
+              list.append(item);
+            }
             if (!column.items?.length) { const item = document.createElement('li'); item.textContent = 'None'; list.append(item); }
             group.append(list); columns.append(group);
           }
@@ -92,11 +113,12 @@ try {
         $('recordAlert').append(details);
       }
       $('cancel').hidden = true; $('submit').textContent = 'Close'; $('submit').focus({preventScroll: true});
-      const deadline = Date.now() + (data.autoCloseMs || 90000);
+      let deadline = Date.now() + (data.autoCloseMs || 90000);
       $('alertCountdown').hidden = false;
       const tick = () => { const remaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1000)); $('alertCountdown').textContent = `Closes in ${remaining} seconds. Press Esc to dismiss.`; if (!remaining) { clearInterval(timer); close(); } };
       const timer = setInterval(tick, 1000); tick();
-      fitRecordAlert();
+      refreshAlertTimeout = () => { deadline = Date.now() + (data.autoCloseMs || 90000); tick(); };
+      allowAlertScrolling = fitRecordAlert();
     } else if (data.type === 'credentials') {
       $('title').textContent = data.setupOnly ? 'Create login and blacklist vault' : data.unlockOnly ? 'Unlock login and blacklist' : data.hasVault ? 'Unlock saved DMV login' : 'DMV login needed';
       $('useNew').hidden = false;
