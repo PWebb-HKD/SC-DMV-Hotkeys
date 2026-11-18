@@ -20,6 +20,13 @@ Default to latest main, preserve explicitly required unmerged dependencies, sync
 
 When the user says **Merge TB**, read and follow [.agents/skills/merge-tb/SKILL.md](.agents/skills/merge-tb/SKILL.md). Merge the current test branch into main, verify and push main successfully, then delete the merged test branch locally and remotely. If multiple test branches exist, ask which one to merge and delete before proceeding unless the user already explicitly selected it. Creating or discussing this skill does not invoke a merge.
 
+## v1.8.30 Merge — 2026-11-17
+
+- The user invoked Merge TB. The sole current test branch, fix/v1.8.28-patch-test (1c99b0d), merged into main without conflicts in merge commit 079868d. Synchronized release files declare version 1.8.30.
+- This merge includes the optional driver photo/name preference, job-bound session-only photo extraction, standard no-photo placeholder suppression, and the combined active/pending suspension tally line. Application and test files match the tested branch tip.
+- Verified on merged main: npm run check, all 257 unit tests, and ten distinct targeted browser checks covering identity preferences/rendering/extraction/placeholder guards, the combined suspension tally, and five initial window-fitting/alignment cases. The full general browser suite passed on the earlier v1.8.29 branch revision; it was not rerun for this merge. Theme/barcode suites were not rerun; installed-extension validation remains blocked by managed policy.
+- Merge TB authorizes deleting only this merged test branch locally and remotely after main is successfully pushed and its unchanged test tip is confirmed. Verify actual remote state before future branch work.
+
 ## v1.8.30 Combined Suspension Tally Line — 2026-11-17
 
 - Continued on fix/v1.8.28-patch-test with synchronized release version 1.8.30. Main remains unchanged.
