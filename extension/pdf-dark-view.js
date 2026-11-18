@@ -23,13 +23,14 @@ export function darkenPaper(context, coordinates) {
   context.putImageData(image,0,0);
 }
 /** Continuous scroll, rendering only nearby pages and never exposing a white render-in-progress. */
-export async function openDarkViewer(doc, signal) {
+export async function openDarkViewer(doc, signal, initialDark = true) {
   document.title = 'DMV PDF results';
   document.getElementById('reading').hidden = true;
   document.getElementById('pdfViewer').hidden = false;
   const pages = document.getElementById('pdfPages'), toggle = document.getElementById('pdfColors');
   const progress = document.getElementById('pdfProgress');
-  let dark = true, generation = 0, currentTask, pumping = false, stopped = false;
+  let dark = initialDark, generation = 0, currentTask, pumping = false, stopped = false;
+  toggle.textContent=dark?'Use original PDF colors':'Use dark PDF colors';
   const first = await doc.getPage(1), initial = first.getViewport({scale:1}); first.cleanup();
   const sheets = Array.from({length:doc.numPages}, (_,index) => {
     const element = document.createElement('section'); element.className = 'pdf-sheet';

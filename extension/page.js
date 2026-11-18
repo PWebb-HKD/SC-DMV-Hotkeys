@@ -5,6 +5,42 @@
  */
 // Runs in the page's MAIN world so native setters and framework listeners see changes.
 export function pageOperation(op, args = {}) {
+  // Dedicated background transports capture Download's window.open handoff without
+  // allowing the website to focus a new browser window. No transaction is repeated.
+  const reportKey = '__scDmvBackgroundReport';
+  if (op === 'startBackgroundReport') {
+    window[reportKey]?.dispose();
+    if(args.persistent)sessionStorage.setItem(reportKey,String(Date.now()+90000));
+    const original = window.open, job = {url: null, error: null};
+    const capture = value => {
+      if (!value || value === 'about:blank') return;
+      const url = new URL(String(value), location.href);
+      if (url.origin !== 'https://www.scdmvonline.com' || !/\/ViewAttachment\.aspx$/i.test(url.pathname)) {
+        job.error = 'The DMV opened an unsupported report destination. Background search stopped; it was not resubmitted.';
+        return;
+      }
+      job.url = url.href;
+    };
+    const link = event => {
+      const anchor = event.target.closest?.('a[href]');
+      if (anchor && /\/ViewAttachment\.aspx(?:[?#]|$)/i.test(anchor.href)) {event.preventDefault();event.stopImmediatePropagation();capture(anchor.href);}
+    };
+    const replacement = value => {
+      capture(value);
+      const destination = {assign: capture, replace: capture};
+      Object.defineProperty(destination, 'href', {set: capture, get: () => job.url || 'about:blank'});
+      const handle = {focus() {}, close() {}, closed: false};
+      Object.defineProperty(handle, 'location', {set: capture, get: () => destination});
+      return handle;
+    };
+    window.open = replacement;
+    document.addEventListener('click', link, true);
+    job.dispose = () => {if(window.open === replacement)window.open = original;document.removeEventListener('click', link, true);delete window[reportKey];};
+    window[reportKey] = job;
+    return true;
+  }
+  if (op === 'backgroundReport') {const job = window[reportKey];return {url: job?.url || null, error: job?.error || null};}
+  if (op === 'stopBackgroundReport') {window[reportKey]?.dispose();sessionStorage.removeItem(reportKey);return true;}
   // These helpers must remain inside the serialized function to run in the website context.
   const visible = el => el && (el.getClientRects().length > 0) && getComputedStyle(el).visibility !== 'hidden';
   const find = selector => { const el = document.querySelector(selector); if (!el) throw new Error(`Page control not found: ${selector}`); return el; };

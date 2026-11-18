@@ -11,11 +11,12 @@ import {watchResults} from './results.js';
 const TRANSACTIONS = `${MEMBER}Transactions/TransactionList.aspx`;
 const LOGOFF = '#ContentPlaceHolder1_menuContainer > div > div:nth-child(1) > div:nth-child(1) > div.panel-body > ul > li:nth-child(1) > a';
 const USER = '#ContentPlaceHolder1_userNameText', PASS = '#ContentPlaceHolder1_passwordText';
-const api = ctx => guardedApi(chrome, ctx?.run);
+const api = ctx => guardedApi(ctx?.browserApi || chrome, ctx?.run);
 /** Wait through the active run so Stop releases callers even during a synchronization delay. */
 export const delay = (ms, ctx) => ctx?.run ? ctx.run.step(() => new Promise(resolve => setTimeout(resolve, ms))) : new Promise(resolve => setTimeout(resolve, ms));
 /** Run one self-contained DOM operation in the page MAIN world and return its result. */
 export async function evaluate(tabId, op, args = {}, ctx) {
+  if (ctx?.evaluate) return ctx.run.step(() => ctx.evaluate(tabId, op, args));
   const results = await api(ctx).scripting.executeScript({target: {tabId}, world: 'MAIN', func: pageOperation, args: [op, args]});
   if (!results.length) throw new Error('The page could not be accessed.');
   return results[0].result;
@@ -71,6 +72,7 @@ async function navigate(tabId, url, ctx) {
 }
 /** Activate the tab and restore/focus its window before automation and on results/errors. */
 export async function focusTab(tabId, ctx) {
+  if (ctx?.queryTask) return; // Dedicated transport owns its page; never focus/restore user windows.
   const tab = await api(ctx).tabs.get(tabId);
   await api(ctx).tabs.update(tabId, {active: true});
   const win = await api(ctx).windows.get(tab.windowId);
@@ -79,6 +81,7 @@ export async function focusTab(tabId, ctx) {
 }
 /** Reuse a portal tab but exclude PDF results, preserving those reports for follow-ups. */
 export async function portalTab(ctx) {
+  if (ctx?.queryTask) return api(ctx).tabs.get(ctx.queryTask.tabId);
   const {portalId} = await api(ctx).storage.session.get('portalId');
   const tabs = (await api(ctx).tabs.query({url: `${ROOT}/*`})).filter(t => isPortal(t.url));
   const target = tabs.find(t => t.id === portalId) || tabs.find(t => t.active) || tabs.sort((a,b) => (b.lastAccessed || 0) - (a.lastAccessed || 0))[0] || await api(ctx).tabs.create({url: LOGIN, active: false});
@@ -219,10 +222,10 @@ export async function search(kind, value, ctx) {
     return samePage(t.url, `${base}Page2.aspx`);
   }, 'search results', 60000, ctx);
   await ready(tab.id, '#downloadButton', ctx, `${base}Page2.aspx`);
-  const watcher = await watchResults(tab.id, ctx);
+  const watcher = await (ctx.watchResults || watchResults)(tab.id, ctx);
   let result;
   try {
-    watcher.arm();
+    await watcher.arm();
     await click(tab.id, '#downloadButton', ctx);
     result = await until(async () => {
       const found = await watcher.find();

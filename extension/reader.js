@@ -13,7 +13,7 @@ let id = params.get('id'), loadingTask;
 // Cancellation covers both the job handshake and PDF loading; a late job ID may already be cancelled.
 const controller = new AbortController(), cancelledIds = new Set();
 const printReady=Promise.withResolvers();printReady.promise.catch(()=>{});
-if(params.get('dark')==='1')installNativePrint(printReady.promise,controller.signal);
+if(params.get('dark')==='1'||params.get('query')==='1')installNativePrint(printReady.promise,controller.signal);
 chrome.runtime.onMessage.addListener(message => {
   if(message.target !== 'pdf-reader' || message.type !== 'reader-cancel')return;
   if(!id)cancelledIds.add(message.id);
@@ -23,7 +23,7 @@ chrome.runtime.onMessage.addListener(message => {
 const port = chrome.runtime.connect({name: 'panel'});
 const heartbeat = setInterval(() => { try { port.postMessage({type: 'heartbeat'}); } catch {} }, 15000);
 try {
-  const direct = params.get('pdf') === '1';
+  const direct = params.get('pdf') === '1' && params.get('query') !== '1';
   if(direct && id)throw new Error('Run the DMV search again to reopen this report.');
   const response = await chrome.runtime.sendMessage({type: direct ? 'reader-direct-start' : 'reader-start', id});
   if (!response?.ok) throw new Error(response?.error || 'PDF request expired.');
@@ -68,8 +68,8 @@ try {
       if (n === 1 && includeDriverIdentity) driverIdentity = await extractDriverIdentity(page, lines.join('\n'), controller.signal);
       page.cleanup();
     }
-    if (new URL(location.href).searchParams.get('dark') === '1') {
-      try { document.body.classList.add('pdf-viewer'); await openDarkViewer(doc,controller.signal); viewReady = true; }
+    if (params.get('dark') === '1'||params.get('query') === '1') {
+      try { document.body.classList.add('pdf-viewer'); await openDarkViewer(doc,controller.signal,params.get('dark') !== '0'); viewReady = true; }
       catch (error) { viewerError = error.message; }
     }
   } finally { if (!viewReady) await doc.destroy(); }

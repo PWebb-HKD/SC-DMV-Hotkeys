@@ -13,7 +13,7 @@ test('first use keeps alerts off and upgrades preserve active session selections
   assert.equal(local.alertPreferences.credentials,undefined);assert.equal(local.alertPreferences.history,undefined);assert.equal(local.alertPreferences.blacklist,undefined);
 });
 test('all selected preferences survive cleared session storage and startup does not replay data',async()=>{
-  const expected={alertsEnabled:true,showDriverIdentity:true,speechEnabled:true,repeatSpeech:true,suspendedClipEnabled:true,voiceSource:'microsoft',voiceGender:'male',voiceName:'Fixture Voice'};
+  const expected={alertsEnabled:true,backgroundStatusSearch:true,backgroundSearchMethod:'offscreen',showDriverIdentity:true,speechEnabled:true,repeatSpeech:true,suspendedClipEnabled:true,voiceSource:'microsoft',voiceGender:'male',voiceName:'Fixture Voice'};
   await saveAlertPreferences(expected);clear(session);await initializeAlertPreferences();assert.deepEqual(session,expected);
   clear(session);await restoreAlertPreferences();assert.deepEqual(session,expected);
   await saveAlertPreferences({alertsEnabled:false,speechEnabled:false,suspendedClipEnabled:false});clear(session);await restoreAlertPreferences();assert.equal(session.alertsEnabled,false);assert.equal(session.speechEnabled,false);assert.equal(session.repeatSpeech,true);assert.equal(session.voiceName,'Fixture Voice');

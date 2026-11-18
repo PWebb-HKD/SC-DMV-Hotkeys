@@ -13,6 +13,7 @@ import {safeDriverIdentity, driverName} from './driver-identity.js';
 import {recordStatus, unavailableAlert} from './status-alerts.js';
 import {initializeAlertPreferences, saveAlertPreferences, restoreAlertPreferences} from './alert-settings.js';
 import {AudioAlerts, availableVoices} from './audio-alerts.js';
+import {backgroundMethod, backgroundSearch} from './background-search.js';
 import {configureDmvTheme, initDmvTheme, refreshDmvThemeTabs, isDmvThemePage} from './dmv-theme-settings.js';
 import {darkResultSource, setPdfRouting, isNativePrintUrl} from './pdf-routing.js';
 import {reportBarcode, reportBarcodeDraft, VehiclePartyError} from './barcode-data.js';
@@ -348,13 +349,18 @@ async function runSearch(kind, value, ctx, advance) {
     });
     const tab = await api.tabs.get(result.tabId);
     ctx.run.check();
-    captured = capturePdf(tab, result.portalId).then(() => ({ok: true})).catch(async e => {
+    captured = (result.capture || capturePdf(tab, result.portalId)).then(() => ({ok: true})).catch(async e => {
       if (!isCancelled(e) && !ctx.run.signal.aborted) await ctx.status(`Results ready. PDF follow-ups unavailable: ${e.message}`);
       return {ok: false, error: e.message};
     });
   };
   let result;
-  try { await ctx.beforeSubmit(); result = await search(kind, value, ctx); }
+  try {
+    await ctx.beforeSubmit();
+    const method = backgroundMethod(kind,await api.storage.session.get(['alertsEnabled','backgroundStatusSearch','backgroundSearchMethod']));
+    ctx.backgroundTask = !!method;
+    result = method ? await backgroundSearch(kind,value,ctx,{method,audio:audioAlerts,publish:publishBackgroundReport,sourceId:ctx.sourceId}) : await search(kind, value, ctx);
+  }
   catch (error) {
     // Record the rejected search with its outcome before displaying the error.
     // Queue advancement and history remain guarded against Stop or replacement.
@@ -370,6 +376,40 @@ async function runSearch(kind, value, ctx, advance) {
       if (!isCancelled(error) && !ctx.run.signal.aborted) ctx.status(`Status alert unavailable: ${error.message}`);
     });
   }
+}
+/** Publish an immutable, job-bound report in an inactive tab in the normal browser.
+ * No old attachment URL is fetched on reload. The reader retains the bytes for Print. */
+async function publishBackgroundReport({bytes,report,windowId},ctx) {
+  const api=guardedApi(chrome,ctx.run),id=crypto.randomUUID();
+  // Read preferences before creating a tab so cancellation during storage access
+  // cannot strand a blank results tab without a registered capture/cleanup path.
+  const [settings,{pdfDarkMode}]=await Promise.all([api.storage.session.get('showDriverIdentity'),api.storage.local.get('pdfDarkMode')]);
+  let tab;
+  await ctx.run.step(async()=>{
+    tab=await chrome.tabs.create({windowId,active:false,url:'about:blank'});
+    if(ctx.run.signal.aborted)await chrome.tabs.remove(tab.id).catch(()=>{});
+  });
+  const done=Promise.withResolvers();done.promise.catch(()=>{});
+  const includeDriverIdentity=settings.showDriverIdentity===true;
+  const reader={...done,base64:bytes,url:report.sourceUrl,tabId:tab.id,pdfId:tab.id,includeDriverIdentity,oneShot:true};
+  readers.set(id,reader);
+  const capture={run:new SearchRun(),sameTab:true};
+  capture.run.signal.addEventListener('abort',()=>chrome.runtime.sendMessage({target:'pdf-reader',type:'reader-cancel',id}).catch(()=>{}),{once:true});
+  const abort=()=>capture.run.cancel();ctx.run.signal.addEventListener('abort',abort,{once:true});
+  const timer=setTimeout(()=>done.reject(new Error('Background PDF extraction timed out.')),45000);
+  capture.promise=(async()=>{
+    try {
+      const text=await capture.run.step(()=>done.promise);
+      if(!text.trim())throw new Error('This PDF has no extractable text.');
+      await guardedApi(chrome,capture.run).storage.session.set({[`pdf:${tab.id}`]:{text,...(reader.driverIdentity?{driverIdentity:reader.driverIdentity}:{}),capturedAt:Date.now(),documentId:reader.documentId}});
+      if(reader.viewerError)await guardedApi(chrome,capture.run).storage.session.set({status:`PDF view unavailable: ${reader.viewerError}`});
+    } finally {clearTimeout(timer);ctx.run.signal.removeEventListener('abort',abort);readers.delete(id);if(captures.get(tab.id)===capture)captures.delete(tab.id);}
+  })();
+  capture.promise.catch(()=>{});captures.set(tab.id,capture);
+  try {
+    await api.tabs.update(tab.id,{url:chrome.runtime.getURL(`reader.html?pdf=1&query=1&id=${id}&dark=${pdfDarkMode===true?'1':'0'}#${report.sourceUrl}`)});
+  } catch(error) {capture.run.cancel();await chrome.tabs.remove(tab.id).catch(()=>{});throw error;}
+  return {...report,tabId:tab.id,portalId:undefined,capture:capture.promise};
 }
 /** Recheck settings after extraction so an alert disabled during parsing stays disabled. */
 async function showRecordStatus(kind, value, tabId, captured, ctx) {
@@ -411,6 +451,7 @@ async function collectQueue(source, run, skipResidenceFirst = false) {
 /** Route a validated command. Queue progress commits on results or a visible DMV search error. */
 async function execute(command, value, source, options, run) {
   const ctx = context(run), api = guardedApi(chrome, run);
+  ctx.sourceId=source?.id;
   try {
     run.check(); await api.storage.session.set({status: 'Starting search'});
     if (['plate', 'license', 'customer'].includes(command)) {
@@ -475,7 +516,7 @@ async function execute(command, value, source, options, run) {
     if (isCancelled(e) || run.signal.aborted) return;
     if (e instanceof BlacklistedSearchError) { await showBlacklistWarning(e, run); return; }
     if (/Invalid User ID Or Password|User ID is required|Password is required/i.test(e.message)) await api.storage.session.remove('credentials');
-    await report(e, ctx.tabId, run);
+    await report(e, ctx.backgroundTask ? undefined : ctx.tabId, run);
   }
 }
 /** Common entry point for shortcuts, quick actions, and history replay. Search
@@ -593,7 +634,7 @@ chrome.runtime.onInstalled.addListener(async details => {
 // Only extension-owned views may call this router. Keep the response channel open
 // for async work and use one {ok, value/error} envelope for every request.
 chrome.runtime.onMessage.addListener((message, sender, reply) => {
-  if (message.target === 'audio-player' || message.target === 'pdf-reader') return false;
+  if (message.target === 'audio-player' || message.target === 'pdf-reader' || message.target === 'query-host') return false;
   if(message.type==='dmv-theme-init'&&sender.id===chrome.runtime.id&&sender.tab?.id!=null&&Number.isInteger(sender.frameId)&&isDmvThemePage(sender.url)) {
     (async()=>{await boot;return initDmvTheme(sender);})().then(value=>reply({ok:true,value}),error=>reply({ok:false,error:error.message}));return true;
   }
@@ -606,6 +647,12 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
         const reader = readers.get(message.id);
         if (!reader || reader.tabId != null && sender.tab?.id !== reader.tabId || reader.documentId && reader.documentId !== sender.documentId) throw new Error('Unknown PDF reader.');
         reader.tabId = sender.tab.id;
+        if(reader.oneShot) {
+          captures.get(sender.tab.id)?.run.check();
+          if(reader.started||sender.frameId!==0)throw new Error('Run the DMV search again to reopen this report.');
+          reader.started=true;reader.documentId=sender.documentId;
+          const capture=captures.get(sender.tab.id);if(capture)capture.documentId=sender.documentId;
+        }
         return {base64: reader.base64, url: reader.url, includeDriverIdentity: reader.includeDriverIdentity === true};
       }
       case 'reader-direct-start': return attachPdfViewer(sender);
@@ -685,7 +732,7 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
         return true;
       }
       // These snapshots are restricted to extension-owned pages by the router above.
-      case 'state': return {blacklist: await blacklistState(), ...await chrome.storage.local.get(['vault','pdfDarkMode','dmvDarkMode','shortcutMenuNoTimeout','shortcutMenuAlwaysOnTop']), ...await chrome.storage.session.get(['history', 'queue', 'status', 'alertsEnabled', 'showDriverIdentity', 'speechEnabled', 'repeatSpeech', 'suspendedClipEnabled', 'voiceSource', 'voiceGender', 'voiceName']), voices: await availableVoices().catch(() => []), commands: await chrome.commands.getAll(), extensionId: chrome.runtime.id};
+      case 'state': return {blacklist: await blacklistState(), ...await chrome.storage.local.get(['vault','pdfDarkMode','dmvDarkMode','shortcutMenuNoTimeout','shortcutMenuAlwaysOnTop']), ...await chrome.storage.session.get(['history', 'queue', 'status', 'alertsEnabled', 'backgroundStatusSearch', 'backgroundSearchMethod', 'showDriverIdentity', 'speechEnabled', 'repeatSpeech', 'suspendedClipEnabled', 'voiceSource', 'voiceGender', 'voiceName']), voices: await availableVoices().catch(() => []), commands: await chrome.commands.getAll(), extensionId: chrome.runtime.id};
       // Appearance updates persist independently of credentials and query state.
       case 'dmv-display-settings': {
         await chrome.storage.local.set({dmvDarkMode:message.enabled===true});await configureDmvTheme();await refreshDmvThemeTabs();return message.enabled===true;
@@ -737,6 +784,10 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
         if ('voiceName' in message) settings.voiceName = String(message.voiceName || '');
         audioAlerts.stop();
         await saveAlertPreferences(settings); return true;
+      }
+      case 'background-search-settings': {
+        if(!['window','offscreen'].includes(message.method))throw new Error('Choose an available background search method.');
+        await saveAlertPreferences({backgroundStatusSearch:message.enabled===true,backgroundSearchMethod:message.method});return true;
       }
       case 'driver-identity-settings': {
         await saveAlertPreferences({showDriverIdentity: message.enabled === true}); return true;

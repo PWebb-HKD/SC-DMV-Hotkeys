@@ -359,12 +359,13 @@ try {
     window.close=()=>{if(matchMedia('(display-mode: picture-in-picture)').matches)nativeClose();else window.panelClosed=true;};
     window.openedTabs=[];
     window.sessionAlerts=false;window.showDriverIdentity=false;window.pdfDarkMode=false;window.dmvDarkMode=true;window.shortcutMenuNoTimeout=false;window.shortcutMenuAlwaysOnTop=false;window.blacklistData={hasVault:false,unlocked:false,entries:[]};window.historyErrors=[];window.storageListeners=[];
-    window.audioSettings={};
+    window.audioSettings={};window.backgroundPrefs={backgroundStatusSearch:false,backgroundSearchMethod:'window'};
     window.commandShortcuts=[{name:'plate',shortcut:'Ctrl+Shift+7'},{name:'next',shortcut:'Alt+N'},{name:'_execute_action',shortcut:'Alt+Period'}];
     window.chrome = {
       runtime:{onMessage:{addListener:fn=>window.runtimeListeners.push(fn)},getURL:path=>`${location.origin}/${path}`,connect:()=>({postMessage:()=>{}}),sendMessage:async message=>{
         window.requests.push(message);
-        if(message.type==='state')return {ok:true,value:{shortcutMenuAlwaysOnTop:window.shortcutMenuAlwaysOnTop,shortcutMenuNoTimeout:window.shortcutMenuNoTimeout,dmvDarkMode:window.dmvDarkMode,pdfDarkMode:window.pdfDarkMode,blacklist:window.blacklistData,history:[...window.historyErrors,{kind:'plate',value:'ABC12345',at:Date.now()},{kind:'license',value:'123456789',at:Date.now()}],queue:{values:['123','456'],index:1},commands:window.commandShortcuts,alertsEnabled:window.sessionAlerts,showDriverIdentity:window.showDriverIdentity,...window.audioSettings,voices:[{voiceName:'Microsoft David Desktop',lang:'en-US'},{voiceName:'Microsoft Zira Desktop',lang:'en-US'}]}};
+        if(message.type==='state')return {ok:true,value:{shortcutMenuAlwaysOnTop:window.shortcutMenuAlwaysOnTop,shortcutMenuNoTimeout:window.shortcutMenuNoTimeout,dmvDarkMode:window.dmvDarkMode,pdfDarkMode:window.pdfDarkMode,blacklist:window.blacklistData,history:[...window.historyErrors,{kind:'plate',value:'ABC12345',at:Date.now()},{kind:'license',value:'123456789',at:Date.now()}],queue:{values:['123','456'],index:1},commands:window.commandShortcuts,alertsEnabled:window.sessionAlerts,showDriverIdentity:window.showDriverIdentity,...window.backgroundPrefs,...window.audioSettings,voices:[{voiceName:'Microsoft David Desktop',lang:'en-US'},{voiceName:'Microsoft Zira Desktop',lang:'en-US'}]}};
+        if(message.type==='background-search-settings'){window.backgroundPrefs={backgroundStatusSearch:message.enabled,backgroundSearchMethod:message.method};return {ok:true,value:true};}
         if(message.type==='driver-identity-settings'){window.showDriverIdentity=message.enabled;return {ok:true,value:true};}
         if(message.type==='blacklist-unlock'){
           if(message.passphrase!=='fixture passphrase')return {ok:false,error:'Could not unlock the vault. Check the passphrase.'};
@@ -1102,7 +1103,8 @@ try {
   });
   await tests('suspension details restore full-size text after initial compression and keep scrolling after collapse',async()=>{
     const payload=licenseStatus(mixedSuspensions,statusNow);
-    const page=await fittedAlert(payload,{availHeight:760});
+    // The combined tally fits at 760px; use a smaller work area to require compression.
+    const page=await fittedAlert(payload,{availHeight:600});
     await page.waitForFunction(()=>document.body.dataset.alertFit==='ready');
     const before=await page.locator('.record-status-line').first().evaluate(el=>parseFloat(getComputedStyle(el).fontSize));
     assert.ok(before<20);
@@ -1264,6 +1266,77 @@ try {
     assert.equal(await page.locator('#dmvDarkMode').isChecked(),false);assert.equal(await page.locator('#pdfDarkMode').isChecked(),true);
     assert.equal(await page.evaluate(()=>window.requests.some(x=>x.type==='run')),false);
     await page.screenshot({path:join(screenshots,'settings-wording-v1.8.8.png'),fullPage:true});await page.close();
+  });
+  await tests('background search settings expand below popups and preserve either selected method',async()=>{
+    const page=await ui.newPage();await page.goto(base+'/popup.html');await page.locator('#settingsTab').click();
+    assert.equal(await page.locator('#backgroundSearchSettings').isVisible(),false);
+    await page.locator('#alertsToggle').check();await page.locator('#backgroundSearchSettings').waitFor();
+    assert.equal(await page.locator('#backgroundSearchToggle').isChecked(),false);
+    assert.equal(await page.locator('#backgroundSearchMethod').isDisabled(),true);
+    await page.locator('#backgroundSearchToggle').check();
+    await page.locator('#backgroundSearchMethod').selectOption('offscreen');
+    await page.locator('#aboutTab').click();await page.locator('#settingsTab').click();
+    assert.equal(await page.locator('#backgroundSearchMethod').inputValue(),'offscreen');
+    await page.locator('#alertsToggle').uncheck();assert.equal(await page.locator('#backgroundSearchSettings').isVisible(),false);
+    await page.locator('#alertsToggle').check();assert.equal(await page.locator('#backgroundSearchToggle').isChecked(),true);
+    assert.equal(await page.locator('#backgroundSearchMethod').inputValue(),'offscreen');
+    await page.locator('#backgroundSearchMethod').selectOption('window');
+    assert.deepEqual(await page.evaluate(()=>window.requests.filter(r=>r.type==='background-search-settings').at(-1)),{type:'background-search-settings',enabled:true,method:'window'});
+    assert.equal(await page.evaluate(()=>window.requests.some(r=>r.type==='run')),false);await page.close();
+  });
+  await tests('background report handoff captures window.open, empty handles and attachment links without opening tabs',async()=>{
+    const fixture=await browser.newContext();
+    await fixture.addInitScript({content:await readFile(join(root,'extension/offscreen-main.js'),'utf8')});
+    await fixture.route(`${ROOT}/**`,route=>route.fulfill({contentType:'text/html',body:route.request().url().endsWith('/postback.aspx')?`<script>window.open('${PDF_URL}','results').focus();<\/script>`:`<button id="download">Download</button><a id="attachment" href="${PDF_URL}" target="_blank">PDF</a>`}));
+    const page=await fixture.newPage();await page.goto(MEMBER+'Transactions/DrvRec/Page2.aspx');
+    await page.addScriptTag({content:pageOperation.toString()});
+    await page.evaluate(()=>window.originalOpen=window.open);
+    const operate=(op,args={})=>page.evaluate(([op,args])=>pageOperation(op,args),[op,args]);
+    for(const mode of ['direct','blank','replace','link','unsupported']) {
+      await operate('startBackgroundReport');
+      await page.evaluate(({mode,url})=>{
+        if(mode==='direct')window.open(url,'results').focus();
+        if(mode==='blank'){const w=window.open('','results');w.location.href=url;w.focus();}
+        if(mode==='replace')window.open('','results').location.replace(url);
+        if(mode==='link')document.getElementById('attachment').click();
+        if(mode==='unsupported')window.open('https://other.test/');
+      },{mode,url:PDF_URL});
+      const captured=await operate('backgroundReport');
+      if(mode==='unsupported')assert.match(captured.error,/unsupported/);else assert.equal(captured.url,PDF_URL);
+      assert.equal(fixture.pages().length,1);await operate('stopBackgroundReport');
+      assert.equal(await page.evaluate(()=>window.open===window.originalOpen),true);
+    }
+    await operate('startBackgroundReport',{persistent:true});
+    await page.goto(MEMBER+'Transactions/DrvRec/postback.aspx');
+    await page.addScriptTag({content:pageOperation.toString()});
+    assert.equal((await operate('backgroundReport')).url,PDF_URL);
+    assert.equal(fixture.pages().length,1);
+    await operate('stopBackgroundReport');
+    assert.equal(await page.evaluate(()=>sessionStorage.getItem('__scDmvBackgroundReport')),null);
+    await fixture.close();
+  });
+  await tests('background report reader consumes job bytes, opens original colors and retains native printing',async()=>{
+    const doc=await PDFDocument.create(),font=await doc.embedFont(StandardFonts.Helvetica);
+    doc.addPage([400,400]).drawText('SYNTHETIC BACKGROUND REPORT',{x:20,y:350,font,size:14});
+    const base64=Buffer.from(await doc.save()).toString('base64'),page=await ui.newPage();
+    await page.addInitScript(base64=>{
+      const original=chrome.runtime.sendMessage;
+      chrome.runtime.sendMessage=async message=>{
+        if(message.type==='reader-start'){window.readerHandshake=message;return {ok:true,value:{base64}};}
+        if(message.type==='reader-direct-start')throw new Error('Background reports must use job-bound bytes');
+        if(message.type==='reader-result'){window.pdfResult=message;return {ok:true,value:true};}
+        return original(message);
+      };
+    },base64);
+    await page.goto(base+'/reader.html?pdf=1&query=1&id=fixture&dark=0#'+PDF_URL);
+    await page.waitForFunction(()=>window.pdfResult?.viewReady===true);
+    assert.match(await page.locator('#pdfProgress').textContent(),/Original colors/);
+    assert.equal(await page.locator('#pdfPrint').isEnabled(),true);
+    assert.equal(await page.evaluate(()=>window.readerHandshake.id),'fixture');
+    assert.match(await page.evaluate(()=>window.pdfResult.text),/SYNTHETIC BACKGROUND REPORT/);
+    await page.locator('#pdfPrint').click();await page.waitForFunction(()=>window.requests.some(r=>r.type==='pdf-native-print'));
+    assert.match(await page.evaluate(()=>window.requests.find(r=>r.type==='pdf-native-print').text),/SYNTHETIC BACKGROUND REPORT/);
+    await page.close();
   });
   await tests('PDF dark-view setting is opt-in and changes only the PDF preference',async()=>{
     const page=await ui.newPage();await page.goto(`${base}/popup.html`);await page.locator('#history tr').first().waitFor();await page.locator('#settingsTab').click();

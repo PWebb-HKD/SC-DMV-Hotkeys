@@ -28,7 +28,13 @@
     </section>
     <section id="settingsView" role="tabpanel" aria-labelledby="settingsTab" hidden>
     <div class="alerts-setting">
-      <label class="alerts-toggle" for="alertsToggle"><span>Plate & license status alerts<small>Enable for status popups displaying the status of a Driver's License or Licens Plate. Popups auto close after 90 seconds and 10 seconds if they are valid.</small></span><span class="switch-control"><input id="alertsToggle" type="checkbox" role="switch"><span class="switch-track" aria-hidden="true"></span></span></label>
+      <label class="alerts-toggle" for="alertsToggle"><span>Plate & license status alerts<small>Enable for status popups displaying the status of a Driver's License or Licens Plate. Popups auto close after 90 seconds and 10 seconds if they are valid.</small></span><span class="switch-control"><input id="alertsToggle" type="checkbox" role="switch" aria-controls="backgroundSearchSettings"><span class="switch-track" aria-hidden="true"></span></span></label>
+      <div id="backgroundSearchSettings" class="voice-settings" hidden>
+        <label class="alerts-toggle" for="backgroundSearchToggle"><span>Run record searches in the background<small>For plate, DL and customer searches. Results open without selecting their tab; the status popup still appears.</small></span><span class="switch-control"><input id="backgroundSearchToggle" type="checkbox" role="switch"><span class="switch-track" aria-hidden="true"></span></span></label>
+        <label for="backgroundSearchMethod">Background method (experimental)</label>
+        <select id="backgroundSearchMethod"><option value="window">Separate unfocused query window</option><option value="offscreen">Offscreen iframe</option></select>
+        <p class="hint">The query window can remain visible behind other apps. Offscreen depends on DMV iframe and session support. A failed search is never automatically retried with the other method.</p>
+      </div>
     </div>
     <div class="alerts-setting">
       <label class="alerts-toggle" for="driverIdentityToggle"><span>Show driver photo and name<small>Display the driver name and available photo from newly captured driving records. No-photo placeholders are hidden.</small></span><span class="switch-control"><input id="driverIdentityToggle" type="checkbox" role="switch"><span class="switch-track" aria-hidden="true"></span></span></label>
