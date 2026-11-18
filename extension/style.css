@@ -55,3 +55,8 @@
 .record-suspension-occurrence h5{font-size:14px;margin:0 0 4px;line-height:1.4}
 .record-suspension-occurrence p{font-size:14px;line-height:1.5;margin:0;overflow-wrap:anywhere}
 .record-status-list>li:has(>.record-suspension-details){list-style:none}
+
+/* Optional private identity display uses only the current report's inline photo. */
+.record-driver-identity{text-align:center;margin:16px 0}
+.record-driver-photo{display:block;width:160px;height:160px;object-fit:contain;margin:0 auto 10px;background:white}
+.record-driver-name{font-size:20px;font-weight:600;overflow-wrap:anywhere;margin:0}

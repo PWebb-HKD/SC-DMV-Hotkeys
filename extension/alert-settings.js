@@ -1,5 +1,5 @@
 /** Only non-sensitive alert preferences persist; session keys mirror them for active workflows. */
-export const ALERT_DEFAULTS=Object.freeze({alertsEnabled:false,speechEnabled:false,repeatSpeech:false,suspendedClipEnabled:false,voiceSource:'recordings',voiceGender:'female',voiceName:''});
+export const ALERT_DEFAULTS=Object.freeze({alertsEnabled:false,showDriverIdentity:false,speechEnabled:false,repeatSpeech:false,suspendedClipEnabled:false,voiceSource:'recordings',voiceGender:'female',voiceName:''});
 export const ALERT_KEYS=Object.freeze(Object.keys(ALERT_DEFAULTS));
 let writing=Promise.resolve();
 // Keep preference writes ordered; failure must not block the next user change.

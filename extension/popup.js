@@ -124,6 +124,7 @@ async function refresh() {
   $('shortcutMenuNoTimeout').checked = data.shortcutMenuNoTimeout === true || data.shortcutMenuAlwaysOnTop === true;
   $('shortcutMenuNoTimeout').disabled = data.shortcutMenuAlwaysOnTop === true;
   $('alertsToggle').checked = data.alertsEnabled === true;
+  $('driverIdentityToggle').checked = data.showDriverIdentity === true;
   $('speechToggle').checked = data.speechEnabled === true;
   $('repeatSpeechToggle').checked = data.repeatSpeech === true;
   $('clipToggle').checked = data.suspendedClipEnabled === true;
@@ -187,6 +188,12 @@ for (const [id, key] of [['speechToggle', 'speechEnabled'], ['repeatSpeechToggle
   };
 }
 $('stopAudio').onclick = () => send({type: 'stop-audio'}).catch(error => feedback(error.message));
+$('driverIdentityToggle').onchange = async event => {
+  const input = event.target, enabled = input.checked; input.disabled = true;
+  try { await send({type:'driver-identity-settings',enabled}); feedback(''); }
+  catch(error) { input.checked = !enabled; feedback(error.message); }
+  finally { input.disabled = false; }
+};
 $('alertsToggle').onchange = async event => {
   const input = event.target, enabled = input.checked;
   input.disabled = true;
@@ -213,6 +220,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && (changes.vault || changes.pdfDarkMode || changes.dmvDarkMode || changes.shortcutMenuNoTimeout || changes.shortcutMenuAlwaysOnTop) || area === 'session' && (changes.blacklist || changes.unlockedVault)) refresh().catch(error => feedback(error.message));
   if (area === 'session' && changes.history) refresh().catch(error => feedback(error.message));
   if (area === 'session' && changes.status) $('status').textContent = changes.status.newValue;
+  if (area === 'session' && changes.showDriverIdentity) $('driverIdentityToggle').checked = changes.showDriverIdentity.newValue === true;
   if (area === 'session' && changes.alertsEnabled) $('alertsToggle').checked = changes.alertsEnabled.newValue === true;
   if (area === 'session' && changes.speechEnabled) { $('speechToggle').checked = changes.speechEnabled.newValue === true; voiceSourceUI(); }
   if (area === 'session' && changes.repeatSpeech) $('repeatSpeechToggle').checked = changes.repeatSpeech.newValue === true;

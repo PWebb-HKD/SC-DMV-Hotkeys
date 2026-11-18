@@ -13,7 +13,7 @@ test('first use keeps alerts off and upgrades preserve active session selections
   assert.equal(local.alertPreferences.credentials,undefined);assert.equal(local.alertPreferences.history,undefined);assert.equal(local.alertPreferences.blacklist,undefined);
 });
 test('all selected preferences survive cleared session storage and startup does not replay data',async()=>{
-  const expected={alertsEnabled:true,speechEnabled:true,repeatSpeech:true,suspendedClipEnabled:true,voiceSource:'microsoft',voiceGender:'male',voiceName:'Fixture Voice'};
+  const expected={alertsEnabled:true,showDriverIdentity:true,speechEnabled:true,repeatSpeech:true,suspendedClipEnabled:true,voiceSource:'microsoft',voiceGender:'male',voiceName:'Fixture Voice'};
   await saveAlertPreferences(expected);clear(session);await initializeAlertPreferences();assert.deepEqual(session,expected);
   clear(session);await restoreAlertPreferences();assert.deepEqual(session,expected);
   await saveAlertPreferences({alertsEnabled:false,speechEnabled:false,suspendedClipEnabled:false});clear(session);await restoreAlertPreferences();assert.equal(session.alertsEnabled,false);assert.equal(session.speechEnabled,false);assert.equal(session.repeatSpeech,true);assert.equal(session.voiceName,'Fixture Voice');
@@ -21,5 +21,5 @@ test('all selected preferences survive cleared session storage and startup does 
 test('concurrent changes merge and invalid/private fields cannot enter saved preferences',async()=>{
   await Promise.all([saveAlertPreferences({alertsEnabled:true}),saveAlertPreferences({speechEnabled:true,voiceGender:'female'})]);
   assert.equal(local.alertPreferences.alertsEnabled,true);assert.equal(local.alertPreferences.speechEnabled,true);assert.equal(local.alertPreferences.voiceGender,'female');
-  await saveAlertPreferences({voiceSource:'invalid',voiceGender:'invalid',credentials:'never saved'});assert.equal(local.alertPreferences.voiceSource,'microsoft');assert.equal(local.alertPreferences.voiceGender,'female');assert.equal(local.alertPreferences.credentials,undefined);
+  await saveAlertPreferences({voiceSource:'invalid',voiceGender:'invalid',credentials:'never saved',driverIdentity:{name:'private',photo:'never saved'},showDriverIdentity:'invalid'});assert.equal(local.alertPreferences.voiceSource,'microsoft');assert.equal(local.alertPreferences.voiceGender,'female');assert.equal(local.alertPreferences.credentials,undefined);assert.equal(local.alertPreferences.driverIdentity,undefined);
 });

@@ -3,6 +3,7 @@
  * single authorized job from the worker and returns text/errors by job ID. Reading
  * PDF bytes avoids depending on the browser viewer DOM; this is not an OCR engine.
  */
+import {extractDriverIdentity} from './driver-photo.js';
 import {installNativePrint} from './pdf-print.js';
 import {openDarkViewer} from './pdf-dark-view.js';
 import {getDocument, GlobalWorkerOptions} from './vendor/pdf.mjs';
@@ -26,7 +27,7 @@ try {
   if(direct && id)throw new Error('Run the DMV search again to reopen this report.');
   const response = await chrome.runtime.sendMessage({type: direct ? 'reader-direct-start' : 'reader-start', id});
   if (!response?.ok) throw new Error(response?.error || 'PDF request expired.');
-  let {base64, url} = response.value;
+  let {base64, url, includeDriverIdentity = false} = response.value;
   if(direct) {
     id=response.value.id;
     const locationUrl=new URL(location.href);locationUrl.searchParams.set('id',id);history.replaceState(null,'',locationUrl);
@@ -47,7 +48,7 @@ try {
   loadingTask = getDocument({data, isEvalSupported: false, disableFontFace: true, useSystemFonts: true, cMapUrl: chrome.runtime.getURL('vendor/cmaps/'), cMapPacked: true, standardFontDataUrl: chrome.runtime.getURL('vendor/standard_fonts/'), wasmUrl: chrome.runtime.getURL('vendor/wasm/')});
   const doc = await loadingTask.promise;
   const lines = [];
-  let viewReady = false, viewerError;
+  let viewReady = false, viewerError, driverIdentity;
   try {
     if (doc.numPages > 300) throw new Error('This report exceeds the 300-page extraction limit.');
     // Preserve reading-order line boundaries so adjacent numeric columns do not become one identifier.
@@ -64,6 +65,7 @@ try {
         if (item.hasEOL) { lines.push(line); line = ''; lastY = null; }
       }
       if (line) lines.push(line);
+      if (n === 1 && includeDriverIdentity) driverIdentity = await extractDriverIdentity(page, lines.join('\n'), controller.signal);
       page.cleanup();
     }
     if (new URL(location.href).searchParams.get('dark') === '1') {
@@ -75,7 +77,7 @@ try {
   if (text.length > 1000000) throw new Error('PDF text exceeds the extraction limit.');
   // Printing owns this loaded document and must not depend on a live background capture.
   if(viewReady)printReady.resolve({doc,text});else printReady.reject(new Error(viewerError||'The PDF viewer could not be opened.'));
-  const result=await chrome.runtime.sendMessage({type: 'reader-result', id, text, viewReady, viewerError});
+  const result=await chrome.runtime.sendMessage({type: 'reader-result', id, text, viewReady, viewerError, ...(driverIdentity ? {driverIdentity} : {})});
   if(!result?.ok)throw new Error(result?.error||'The captured report is no longer available.');
 } catch (error) {
   printReady.reject(error);
