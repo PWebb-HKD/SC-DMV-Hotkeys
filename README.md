@@ -1,6 +1,6 @@
 # SC DMV Hotkeys
 
-A Chromium Manifest V3 extension for authorized SCDMV member searches, PDF follow-ups, status alerts, and PDF417 data-entry barcodes. Current version: **1.8.39**.
+A Chromium Manifest V3 extension for authorized SCDMV member searches, PDF follow-ups, status alerts, and PDF417 data-entry barcodes. Current version: **1.8.40**.
 
 ## Install and update
 
@@ -18,6 +18,8 @@ The packaged extension needs no build or npm installation. PDF.js and the barcod
 ## Experimental background searches
 
 In Settings, enable **Plate & license status alerts**, then **Run record searches in the background** immediately below it. Searches use a separate regular Chrome window with an active query tab. It starts blank; the extension checks that it is minimized before opening any DMV page. If Chrome ignores the requested initial state, the extension makes one minimize call on this new helper and checks the state again. If minimization fails, it closes the owned blank tab and stops the query. If you manually restore this helper, it stays restored while the search continues. Existing browser windows and tabs are left alone during query navigation.
+
+Startup waits for the blank tab to finish loading and for the initial login navigation to complete before automation continues. If Chrome rejects that initial navigation while the helper is still blank, the extension attempts it once more before submitting any search. A persistent rejection identifies the login step; turn off background searches to use the normal DMV tab. Later navigation errors identify the failed step, and submitted transactions are not automatically retried.
 
 Plate, DL, customer and same-address searches use the hidden window, including customer searches launched through Collect, Next, Previous or Recent history. Plate, DL and customer results show their status popup without selecting the results tab or focusing the browser. Same-address searches have no status popup, so their completed results tab is selected and its browser window is restored/focused after report capture and history recording. **SCUTTIES always keeps its normal foreground workflow.** Local report tools such as barcodes do not navigate DMV pages.
 

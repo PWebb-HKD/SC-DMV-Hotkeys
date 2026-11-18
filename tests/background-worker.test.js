@@ -158,12 +158,13 @@ test('closing the previous report creates one replacement result tab',async()=>{
 test('failed reuse navigation never closes the existing results tab',async()=>{
   await send({type:'stop'});const old={...latestReport()},update=chrome.tabs.update,from=calls.length;
   chrome.tabs.update=async(id,options)=>{
-    if(id===old.id&&options.url?.includes('query=1'))throw new Error('Synthetic navigation failure');
+    if(id===old.id&&options.url?.includes('query=1'))throw new Error('Navigation rejected.');
     return update(id,options);
   };
   try {
     session.queue={values:['45678901'],index:0};await send({type:'run',command:'next'});
     await wait(()=>hasPanel('notice'));
+    assert.match(Object.values(session).find(value=>value?.type==='notice').message,/opening the captured PDF results tab/);
     assert.equal(tabs.get(old.id).url,old.url);
     assert.equal(calls.slice(from).some(call=>call[0]==='remove-tab'&&call[1]===old.id),false);
   } finally {chrome.tabs.update=update;await send({type:'stop'});}
