@@ -1271,6 +1271,8 @@ try {
     const page=await ui.newPage();await page.goto(base+'/popup.html');await page.locator('#settingsTab').click();
     assert.equal(await page.locator('#backgroundSearchSettings').isVisible(),false);
     await page.locator('#alertsToggle').check();await page.locator('#backgroundSearchSettings').waitFor();
+    const settingText=await page.locator('#backgroundSearchSettings').textContent();
+    assert.match(settingText,/same-address results come into focus/i);assert.match(settingText,/SCUTTIES stays in the foreground/);
     assert.equal(await page.locator('#backgroundSearchToggle').isChecked(),false);
     assert.equal(await page.locator('#backgroundSearchMethod').count(),0);
     await page.locator('#backgroundSearchToggle').check();

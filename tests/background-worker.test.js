@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {LOGIN,MEMBER,PDF_URL} from '../extension/core.js';
 const event=()=>({listeners:[],addListener(fn){this.listeners.push(fn);},removeListener(){}});
 const session={},local={},calls=[],tabs=new Map([[1,{id:1,windowId:1,url:'https://example.test/',active:true}]]);
-let nextTab=2,nextWindow=10,reportArmed=false;
+let nextTab=2,nextWindow=10,reportArmed=false,allowCompletedFocus=false;
 const area=data=>({setAccessLevel:async()=>{},get:async keys=>Object.fromEntries((typeof keys==='string'?[keys]:keys||Object.keys(data)).map(key=>[key,data[key]])),set:async values=>Object.assign(data,values),remove:async keys=>{for(const key of typeof keys==='string'?[keys]:keys)delete data[key];}});
 const runtime={id:'a'.repeat(32),getURL:path=>'chrome-extension://'+'a'.repeat(32)+'/'+path,onMessage:event(),onConnect:event(),onStartup:event(),onInstalled:event(),sendMessage:async message=>{
   calls.push(message);
@@ -24,11 +24,18 @@ globalThis.chrome={runtime,storage:{local:area(local),session:area(session)},
     get:async id=>{if(!tabs.has(id))throw new Error('Missing tab');return {...tabs.get(id)};},
     query:async options=>[...tabs.values()].filter(tab=>(!options.active||tab.active)&&(options.windowId==null||tab.windowId===options.windowId)),
     create:async options=>{calls.push(['tab',options]);const tab={id:nextTab++,windowId:options.windowId||1,status:'complete',...options};tabs.set(tab.id,tab);return {...tab};},
-    update:async(id,options)=>{calls.push(['update-tab',id,options]);Object.assign(tabs.get(id),options);return {...tabs.get(id)};},
+    update:async(id,options)=>{calls.push(['update-tab',id,options]);Object.assign(tabs.get(id),options);if(options.active)for(const tab of tabs.values())if(tab.id!==id&&tab.windowId===tabs.get(id).windowId)tab.active=false;return {...tabs.get(id)};},
     remove:async id=>{calls.push(['remove-tab',id]);tabs.delete(id);},sendMessage:async()=>{}},
   windows:{onRemoved:event(),get:async id=>({id,type:'normal',state:'minimized'}),getAll:async()=>[{id:1,type:'normal',state:'minimized'}],
     create:async options=>{const id=nextWindow++;calls.push(['window',id,options]);if(options.url==='about:blank'){assert.equal(options.type,'normal');assert.equal(options.state,'minimized');assert.equal(options.focused,false);assert.equal(options.width,undefined);const tab={id:nextTab++,windowId:id,url:options.url,status:'complete',active:true};tabs.set(tab.id,tab);return {id,tabs:[tab]};}return {id};},
-    update:async()=>{throw new Error('Background transport must not focus/restore/minimize a window');},remove:async()=>{}},
+    update:async(id,changes)=>{
+      assert.equal(allowCompletedFocus,true,'Alert-backed searches must never focus a browser window');
+      assert.equal(id,1);assert.equal(session.history[0].kind,'address');
+      assert.notEqual(session.history[0].id,'address-fixture','Commit a new history entry before revealing results');
+      assert.equal(latestReport().active,true);
+      assert.deepEqual(changes,changes.state?{state:'normal'}:{focused:true});
+      calls.push(['focus-result',id,changes]);return {id,type:'normal',state:'normal'};
+    },remove:async()=>{}},
   scripting:{executeScript:async({target,args:[op,args]})=>[{result:operation(tabs.get(target.tabId),op,args)}],getRegisteredContentScripts:async()=>[],registerContentScripts:async()=>{},updateContentScripts:async()=>{},insertCSS:async()=>{}},
   webNavigation:{onCommitted:event(),getFrame:async()=>null},commands:{onCommand:event(),getAll:async()=>[]},declarativeNetRequest:{updateDynamicRules:async()=>{}}
 };
@@ -77,4 +84,24 @@ test('Stop cancels an outstanding background reader and keeps its bytes unavaila
   await send({type:'stop'});await wait(()=>calls.some(call=>call?.type==='reader-cancel'&&call.id===id));
   await assert.rejects(readerSend(tab,{type:'reader-start',id}),/Unknown PDF/);
   assert.equal(hasPanel('record-alert'),false);
+});
+test('same-address replay runs hidden and focuses results after history commit without a status popup',async()=>{
+  await send({type:'stop'});session.credentials={user:'synthetic',password:'synthetic'};
+  await send({type:'alerts',enabled:true});await send({type:'background-search-settings',enabled:true});
+  session.history=[{id:'address-fixture',kind:'address',value:'12345678',at:Date.now()}];
+  const previous=latestReport().id,from=calls.length;allowCompletedFocus=true;
+  try {
+    await send({type:'rerun',search:{id:'address-fixture'}});
+    await wait(()=>latestReport().id!==previous&&calls.slice(from).filter(call=>call[0]==='focus-result').length===2);
+    const tab=latestReport(),id=new URL(tab.url).searchParams.get('id');
+    assert.equal(tab.active,true);assert.equal(tab.windowId,1);assert.equal(tabs.get(1).active,false);
+    assert.equal(calls.slice(from).filter(call=>call==='submitted').length,1);
+    assert.ok(calls.slice(from).some(call=>call[0]==='update-tab'&&call[2].url?.includes('/DrvSameRes/Page1.aspx')));
+    const helperTab=calls.slice(from).find(call=>call[0]==='remove-tab')[1];
+    assert.equal(tabs.has(helperTab),false);
+    await readerSend(tab,{type:'reader-start',id});
+    await readerSend(tab,{type:'reader-result',id,text:'Customers at Same Residence\nCustomer Number: 12345678'});
+    await wait(()=>session[`pdf:${tab.id}`]?.text);
+    assert.equal(hasPanel('record-alert'),false);assert.equal(session.history[0].kind,'address');
+  } finally {allowCompletedFocus=false;await send({type:'stop'});}
 });

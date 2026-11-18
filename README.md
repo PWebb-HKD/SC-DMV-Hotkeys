@@ -1,6 +1,6 @@
 # SC DMV Hotkeys
 
-A Chromium Manifest V3 extension for authorized SCDMV member searches, PDF follow-ups, status alerts, and PDF417 data-entry barcodes. Current version: **1.8.34**.
+A Chromium Manifest V3 extension for authorized SCDMV member searches, PDF follow-ups, status alerts, and PDF417 data-entry barcodes. Current version: **1.8.35**.
 
 ## Install and update
 
@@ -17,11 +17,13 @@ The packaged extension needs no build or npm installation. PDF.js and the barcod
 
 ## Experimental background searches
 
-In Settings, enable **Plate & license status alerts**, then **Run record searches in the background** immediately below it. Searches use a separate regular Chrome window with an active query tab. It starts blank; the extension checks that it is minimized before opening any DMV page. If Chrome ignores the requested initial state, the extension makes one minimize call on this new helper and checks the state again. If minimization fails, it closes the owned blank tab and stops the query. If you manually restore this helper, it stays restored while the search continues. Your existing browser windows and tabs are not minimized, restored, focused, or reselected by the background workflow.
+In Settings, enable **Plate & license status alerts**, then **Run record searches in the background** immediately below it. Searches use a separate regular Chrome window with an active query tab. It starts blank; the extension checks that it is minimized before opening any DMV page. If Chrome ignores the requested initial state, the extension makes one minimize call on this new helper and checks the state again. If minimization fails, it closes the owned blank tab and stops the query. If you manually restore this helper, it stays restored while the search continues. Existing browser windows and tabs are left alone during query navigation.
 
-This applies only to plate, DL, and customer searches (including queued customer searches). Other queries retain normal foreground behavior. Reports open in an inactive tab in an existing normal browser window. Parsing sends the report for status analysis before visible PDF rendering, so the status popup does not need you to select the results tab. Optional photo extraction also runs without display animation frames. PDF painting may wait until you view the tab; printing retains the captured original bytes, and the viewer honors the PDF color preference. Keep a normal browser window open, even if minimized. Settings changes apply to the next search.
+Plate, DL, customer and same-address searches use the hidden window, including customer searches launched through Collect, Next, Previous or Recent history. Plate, DL and customer reports open in an inactive tab and show their status popup. Same-address searches have no status popup, so their completed results tab is selected and its browser window is restored/focused after report capture and history recording. **SCUTTIES always keeps its normal foreground workflow.** Local report tools such as barcodes do not navigate DMV pages.
 
-The rejected offscreen iframe method and selector are removed. Existing background opt-in is preserved when upgrading. To test, run a known record while another app has focus, then repeat while using another Chrome tab. Confirm that the status popup appears without clicking the inactive PDF tab. You can manually restore the helper during a search; it must not be minimized again. Native Windows behavior still needs installed-extension testing. Failed transactions are not automatically resubmitted.
+Parsing sends the report for status analysis before visible PDF rendering, so the status popup does not need you to select the results tab. Optional photo extraction also runs without display animation frames. PDF painting may wait until you view the tab; printing retains the captured original bytes, and the viewer honors the PDF color preference. Keep a normal browser window open, even if minimized. Settings changes apply to the next search.
+
+The rejected offscreen iframe method and selector are removed. Existing background opt-in is preserved when upgrading. To test, run a known record while another app has focus, then repeat while using another Chrome tab. Confirm that the status popup appears without clicking the inactive PDF tab. Run a same-address search and check that only its completed results come into focus. You can manually restore the helper during a search; it must not be minimized again. The user confirmed the hidden-window startup works in 1.8.34; the extended same-address behavior still needs installed-extension testing. Failed transactions are not automatically resubmitted.
 
 ## Commands
 

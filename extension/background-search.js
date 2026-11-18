@@ -1,11 +1,11 @@
 /** Unfocused query windows reuse the guarded workflow and blacklist callbacks.
- * Never restore/minimize/focus existing windows. */
+ * Navigation leaves existing windows alone; completed same-address results are revealed. */
 import {LOGIN, ROOT, attachmentUrl} from './core.js';
-import {search, evaluate} from './automation.js';
+import {search, evaluate, focusTab} from './automation.js';
 import {guardedApi} from './run.js';
 
 export function backgroundMethod(kind, settings) {
-  return settings.alertsEnabled === true && settings.backgroundStatusSearch === true && ['plate','license','customer'].includes(kind)
+  return settings.alertsEnabled === true && settings.backgroundStatusSearch === true && ['plate','license','customer','address'].includes(kind)
     ? 'window' : null;
 }
 
@@ -93,6 +93,9 @@ export async function backgroundSearch(kind, value, ctx, {publish, sourceId, api
   ctx.run.check();
   const result = await publish({...captured,windowId},ctx);
   await ctx.resultReady(result);
+  // Same-address reports have no status popup. Reveal only their completed result,
+  // after helper cleanup, immutable capture and the normal history/queue commit.
+  if(kind==='address')await focusTab(result.tabId,{run:ctx.run,browserApi:api});
   ctx.status('Results ready');
   return result;
 }
