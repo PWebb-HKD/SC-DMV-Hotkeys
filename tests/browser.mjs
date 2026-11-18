@@ -11,7 +11,7 @@ import {ROOT, MEMBER, LOGIN, DISCLAIMER, PDF_URL, ownerNumbers, isResidenceRepor
 import {reportBarcode} from '../extension/barcode-data.js';
 import {driverReport} from './barcode-fixtures.js';
 import {plateStatus, licenseStatus} from '../extension/status-alerts.js';
-import {mixedSuspensions, validHeader, susp, statusNow} from './suspension-fixtures.js';
+import {mixedSuspensions, validHeader, susp, revo, statusNow} from './suspension-fixtures.js';
 import {RECORDING_PATHS} from '../extension/voice-recordings.js';
 const {chromium} = dependency('playwright');
 const {PDFDocument, StandardFonts, degrees} = dependency('pdf-lib');
@@ -1144,6 +1144,30 @@ try {
     assert.equal(await page.evaluate(()=>window.alertBounds.height),initial);
     assert.equal(await page.locator('h2.record-status-title').evaluate(el=>getComputedStyle(el).fontSize),'36px');
     await page.screenshot({path:join(screenshots,'suspension-expanded-details.png'),fullPage:true});await page.close();
+  });
+  await tests('revocations share suspension columns and expand their own labeled dates with refreshed timeouts',async()=>{
+    const payload=licenseStatus('Status - DL: SUSPENDED '+[
+      revo('Example',{ticket:''}),susp('Example',{ticket:'SYNTH-S'}),
+      revo('Unlawful Alcohol Concentration',{ticket:'SYNTH-P',end:'01/01/2026'})].join('\n'),statusNow);
+    const page=await statusPage(payload);
+    assert.equal(await page.locator('h2.record-status-title').textContent(),'LICENSE SUSPENDED');
+    const columns=page.locator('.record-suspension-column');
+    assert.deepEqual(await columns.locator('h4').allTextContents(),['Active Suspensions','Pending Reinstatement']);
+    assert.deepEqual(await columns.nth(0).locator('summary').allTextContents(),['Example × 2']);
+    assert.deepEqual(await columns.nth(1).locator('summary').allTextContents(),['DUI/DUAC × 1']);
+    assert.match((await page.locator('.record-status-line').allTextContents())[2],/^2 active suspensions · 1 pending reinstatement$/);
+    await page.clock.fastForward(15000);
+    const details=columns.nth(0).locator('details');await details.locator('summary').click();
+    await page.waitForFunction(()=>document.querySelector('#alertCountdown').textContent.startsWith('Closes in 90 seconds'));
+    assert.deepEqual(await details.locator('.record-suspension-occurrence p').allTextContents(),[
+      'Revocation Begin: 01/01/2025 · Revocation End: INDEFINITE · Violation Date: 01/15/2024',
+      'Ticket #: SYNTH-S · Suspension Begin: 01/01/2025 · Suspension End: INDEFINITE · Violation Date: 01/15/2024']);
+    const pending=columns.nth(1).locator('details');await pending.locator('summary').click();
+    assert.equal(await pending.locator('h5').textContent(),'DUAC');
+    assert.match(await pending.locator('.record-suspension-occurrence p').textContent(),/Ticket #: SYNTH-P · Revocation Begin: 01\/01\/2025 · Revocation End: 01\/01\/2026/);
+    await page.clock.fastForward(15000);await pending.locator('summary').click();
+    await page.waitForFunction(()=>!document.querySelectorAll('.record-suspension-details')[1].open&&document.querySelector('#alertCountdown').textContent.startsWith('Closes in 90 seconds'));
+    await page.screenshot({path:join(screenshots,'revocation-details.png'),fullPage:true});await page.close();
   });
   await tests('suspension buckets render active left and pending right with DUI grouping and IID warning',async()=>{
     const page=await statusPage(licenseStatus(mixedSuspensions,statusNow));
