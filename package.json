@@ -1,12 +1,14 @@
 {
   "name": "scdmv-hotkeys",
-  "version": "1.8.40",
+  "version": "1.8.41",
   "private": true,
   "type": "module",
   "scripts": {
     "test": "node --test tests/*.test.js",
     "check": "node tools/check.mjs",
-    "test:dmv-theme": "node tests/dmv-theme-browser.mjs"
+    "test:dmv-theme": "node tests/dmv-theme-browser.mjs",
+    "demo": "node demo/server.mjs",
+    "test:demo": "node tests/demo-browser.mjs"
   },
   "devDependencies": {
     "darkreader": "4.9.135"

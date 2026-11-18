@@ -4,7 +4,7 @@
 $ErrorActionPreference = 'Stop'
 $project = Split-Path $PSScriptRoot -Parent
 $sourceFiles = @(
-    foreach ($folder in @('extension','tools')) {
+    foreach ($folder in @('extension','tools','demo')) {
         Get-ChildItem -LiteralPath (Join-Path $project $folder) -Recurse -File
     }
     Get-ChildItem -LiteralPath (Join-Path $project 'tests') -File

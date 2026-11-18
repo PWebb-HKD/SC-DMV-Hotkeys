@@ -1,6 +1,6 @@
 # SC DMV Hotkeys
 
-A Chromium Manifest V3 extension for authorized SCDMV member searches, PDF follow-ups, status alerts, and PDF417 data-entry barcodes. Current version: **1.8.40**.
+A Chromium Manifest V3 extension for authorized SCDMV member searches, PDF follow-ups, status alerts, and PDF417 data-entry barcodes. Current version: **1.8.41**.
 
 ## Install and update
 
@@ -127,6 +127,8 @@ The vault uses PBKDF2-SHA-256 and AES-GCM, with a random salt and a fresh IV for
 Permissions support storage, DMV tab automation, scripting, navigation tracking, optional PDF redirection, and local audio. Host access is limited to `https://www.scdmvonline.com/*`; the manifest declares no optional host permissions. There is no external audio service or native helper.
 
 ## Development and validation
+
+The local synthetic practice portal is available with `npm run demo` at `http://127.0.0.1:4173`. Sign in with `demo` / `demo` and use plates DEMO001 through DEMO006. It covers the five-page vehicle workflow, real synthetic PDFs, and previews using the existing status/barcode rendering code. It does not yet connect installed-extension automation to localhost. See [demo/README.md](demo/README.md) for scope, data isolation and checks.
 
 See [DEVELOPMENT.md](DEVELOPMENT.md) for module responsibilities, workflow/storage contracts, and review decisions. First-party files live in `extension/`, maintenance scripts in `tools/`, and synthetic regression cases in `tests/`. Third-party libraries and their licenses remain in `extension/vendor/`.
 

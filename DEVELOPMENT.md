@@ -4,6 +4,8 @@ This guide covers first-party code. Start with the module overview, read each fu
 
 ## Module responsibilities
 
+`demo/` is a standalone loopback-only synthetic vehicle portal, outside the installed extension package. Start it with npm run demo. It reconstructs the five supplied page interfaces using fresh HTML and local handlers, generates real synthetic PDFs without additional runtime dependencies, and serves production status/barcode views through an explicitly local mock worker-message adapter. The adapter parses those PDFs using the bundled PDF.js. Production origin checks, browser permissions, vault and automation are not redirected or relaxed. Node boundary tests live in tests/demo-portal.test.js and Chromium end-to-end checks in tests/demo-browser.mjs. Raw page captures remain outside Git; demo/DOM-CONTRACT.md records only selector/provenance facts. The source ZIP includes demo/; a Chrome Web Store runtime ZIP should include extension/ contents only.
+
 | Area | Modules | Contract and useful checks |
 | --- | --- | --- |
 | Commands, URLs, report identifiers | `core.js` | Shared command IDs, input limits, report recognition, and history replay; core/shortcut tests. |
