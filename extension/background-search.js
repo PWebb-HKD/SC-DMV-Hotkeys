@@ -44,8 +44,9 @@ export async function resultWindow(api, sourceId) {
 /** Clean only the owned portal tab; retain moved tabs and unrelated user pages. */
 async function closeHelper(api, windowId, tabId) {
   const tab=await api.tabs.get(tabId).catch(()=>null);
-  if(tab)await evaluate(tabId,'stopBackgroundReport',{},{browserApi:api}).catch(()=>{});
-  if(tab?.windowId===windowId&&(tab.pendingUrl||tab.url)?.startsWith(`${ROOT}/SCTRNS/`))await api.tabs.remove(tabId).catch(()=>{});
+  const url=tab?.pendingUrl||tab?.url;
+  if(url?.startsWith(`${ROOT}/SCTRNS/`))await evaluate(tabId,'stopBackgroundReport',{},{browserApi:api}).catch(()=>{});
+  if(tab?.windowId===windowId&&(url==='about:blank'||url?.startsWith(`${ROOT}/SCTRNS/`)))await api.tabs.remove(tabId).catch(()=>{});
 }
 
 export async function backgroundSearch(kind, value, ctx, {publish, sourceId, api = chrome}) {
@@ -69,14 +70,24 @@ export async function backgroundSearch(kind, value, ctx, {publish, sourceId, api
   try {
     // Record ownership before the guarded continuation: cancellation can race create.
     await ctx.run.step(async()=>{
-      // Set the initial state only. Never re-minimize a helper the user restores.
+      // Start blank so no portal page can appear before minimization is verified.
+      // Use a regular browser window for the minimized startup path.
       // Chrome forbids width/height together with a minimized initial state.
-      helper = await api.windows.create({url:LOGIN,type:'popup',focused:false,state:'minimized'});
+      helper = await api.windows.create({url:'about:blank',type:'normal',focused:false,state:'minimized'});
       if(ctx.run.signal.aborted)await closeHelper(api,helper.id,helper.tabs?.[0]?.id);
     });
     const tab = helper.tabs?.[0] || (await guarded.tabs.query({windowId:helper.id}))[0];
     if(!tab)throw new Error('The background query window could not be created.');
     helper.tabId=tab.id;
+    let initial=await guarded.windows.get(helper.id);
+    if(initial.state!=='minimized') {
+      // One initialization correction on this owned blank window only. Never
+      // observe or re-minimize it once DMV navigation/manual interaction begins.
+      await guarded.windows.update(helper.id,{state:'minimized',focused:false});
+      initial=await guarded.windows.get(helper.id);
+    }
+    if(initial.state!=='minimized')throw new Error('Chrome could not minimize the query window. No DMV page was opened.');
+    await guarded.tabs.update(tab.id,{url:LOGIN});
     captured = await perform({tabId:tab.id,browserApi:api});
   } finally {if(helper)await closeHelper(api,helper.id,helper.tabId ?? helper.tabs?.[0]?.id);}
   ctx.run.check();

@@ -4,9 +4,10 @@ import {backgroundSearch,backgroundMethod,resultWindow} from '../extension/backg
 import {SearchRun} from '../extension/run.js';
 import {LOGIN,MEMBER,PDF_URL} from '../extension/core.js';
 
-function fixture({failure=false,moved=false}={}) {
+function fixture({failure=false,moved=false,ignoredCreation=false,minimizeFails=false,manualRestore=false}={}) {
   const calls=[],run=new SearchRun(),tabs=new Map([[1,{id:1,windowId:1}]]);
-  let tab={id:9,windowId:2,url:LOGIN,status:'complete'},armed=false,submitted=0;
+  let tab={id:9,windowId:2,url:'about:blank',status:'complete'},armed=false,submitted=0;
+  let helperState=ignoredCreation?'normal':'minimized';
   tabs.set(9,tab);
   const operation=(op,args)=>{
     calls.push(op);
@@ -22,18 +23,24 @@ function fixture({failure=false,moved=false}={}) {
   const api={
     storage:{session:{get:async()=>({lastQuery:0}),set:async()=>{}}},
     tabs:{get:async id=>{if(id===9&&moved)return {...tab,windowId:3};return tabs.get(id);},
-      update:async(id,changes)=>{assert.equal(changes.active,undefined);Object.assign(tab,changes);return {...tab};},
+      update:async(id,changes)=>{calls.push(['navigate',id,changes]);assert.equal(changes.active,undefined);Object.assign(tab,changes);if(manualRestore&&changes.url===LOGIN)helperState='normal';return {...tab};},
       remove:async id=>{calls.push(['remove',id]);tabs.delete(id);},query:async()=>[...tabs.values()]},
-    windows:{get:async()=>({id:1,type:'normal',state:'minimized'}),getAll:async()=>[{id:1,type:'normal'}],
+    windows:{get:async id=>{calls.push(['get-window',id]);return {id,type:'normal',state:id===2?helperState:'minimized'};},getAll:async()=>[{id:1,type:'normal'}],
       create:async options=>{calls.push(['window',options]);return {id:2,tabs:[tab]};},
-      update:async()=>{throw new Error('Must not focus/restore/minimize windows');}},
+      update:async(id,changes)=>{
+        assert.equal(id,2,'Only the owned helper may be initialized');
+        assert.equal(tab.url,'about:blank','Minimize only before DMV navigation');
+        assert.deepEqual(changes,{state:'minimized',focused:false});
+        calls.push(['initialize-window',id,changes]);if(!minimizeFails)helperState='minimized';
+        return {id,state:helperState};
+      }},
     scripting:{executeScript:async({args:[op,args]})=>[{result:operation(op,args)}]}
   };
   globalThis.chrome=api;
   const ctx={run,status:()=>{},credentials:async()=>({user:'fixture',password:'fixture'}),beforeSubmit:async()=>calls.push('authorize'),resultReady:async result=>calls.push(['ready',result.tabId])};
   const options={api,sourceId:1,
     publish:async data=>{calls.push(['publish',data]);return {...data.report,tabId:20};}};
-  return {calls,ctx,options,api,get submitted(){return submitted;}};
+  return {calls,ctx,options,api,get submitted(){return submitted;},get helperState(){return helperState;}};
 }
 
 test('background queries require popup opt-in and only apply to plate/license/customer',()=>{
@@ -55,7 +62,39 @@ test('query submits once, checks blacklist, captures bytes and publishes without
   assert.ok(f.calls.indexOf('fetchPdf')<f.calls.findIndex(call=>call[0]==='publish'));
   const options=f.calls.find(call=>call[0]==='window')[1];
   assert.equal(options.focused,false);assert.equal(options.state,'minimized');
+  assert.equal(options.type,'normal');assert.equal(options.url,'about:blank');
   assert.equal(options.width,undefined);assert.equal(options.height,undefined);
+  assert.equal(f.calls.some(call=>call[0]==='initialize-window'),false);
+  assert.ok(f.calls.findIndex(call=>call[0]==='get-window'&&call[1]===2)<f.calls.findIndex(call=>call[0]==='navigate'));
+  assert.deepEqual(f.calls.filter(call=>call[0]==='remove'),[['remove',9]]);
+});
+test('ignored minimized creation is corrected once before opening any DMV page',async()=>{
+  const f=fixture({ignoredCreation:true});await backgroundSearch('license','12345678',f.ctx,f.options);
+  const updates=f.calls.filter(call=>call[0]==='initialize-window');assert.equal(updates.length,1);
+  assert.equal(updates[0][1],2);
+  const correction=f.calls.indexOf(updates[0]),navigation=f.calls.findIndex(call=>call[0]==='navigate');
+  assert.ok(correction<navigation);assert.equal(f.submitted,1);
+  assert.equal(f.calls.filter(call=>call[0]==='get-window'&&call[1]===2).length,2);
+});
+test('failed minimization stops before DMV navigation and closes the owned blank tab',async()=>{
+  const f=fixture({ignoredCreation:true,minimizeFails:true});
+  await assert.rejects(backgroundSearch('license','12345678',f.ctx,f.options),/No DMV page was opened/);
+  assert.equal(f.calls.some(call=>call[0]==='navigate'),false);assert.equal(f.submitted,0);
+  assert.deepEqual(f.calls.filter(call=>call[0]==='remove'),[['remove',9]]);
+  assert.equal(f.calls.some(call=>call[0]==='publish'),false);
+});
+test('manually restoring the helper during navigation never triggers another minimize',async()=>{
+  const f=fixture({ignoredCreation:true,manualRestore:true});await backgroundSearch('license','12345678',f.ctx,f.options);
+  assert.equal(f.helperState,'normal');assert.equal(f.submitted,1);
+  assert.equal(f.calls.filter(call=>call[0]==='initialize-window').length,1);
+});
+test('Stop while initial minimization is pending prevents any DMV page from opening',async()=>{
+  const f=fixture({ignoredCreation:true}),gate=Promise.withResolvers(),started=Promise.withResolvers();
+  f.api.windows.update=async()=>{started.resolve();return gate.promise;};
+  const task=backgroundSearch('license','12345678',f.ctx,f.options);
+  await started.promise;f.ctx.run.cancel();await assert.rejects(task,{name:'AbortError'});
+  gate.resolve({id:2,state:'minimized'});
+  assert.equal(f.calls.some(call=>call[0]==='navigate'),false);assert.equal(f.submitted,0);
   assert.deepEqual(f.calls.filter(call=>call[0]==='remove'),[['remove',9]]);
 });
 test('query failures never resubmit the transaction',async()=>{

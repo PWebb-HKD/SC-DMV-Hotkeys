@@ -27,7 +27,7 @@ globalThis.chrome={runtime,storage:{local:area(local),session:area(session)},
     update:async(id,options)=>{calls.push(['update-tab',id,options]);Object.assign(tabs.get(id),options);return {...tabs.get(id)};},
     remove:async id=>{calls.push(['remove-tab',id]);tabs.delete(id);},sendMessage:async()=>{}},
   windows:{onRemoved:event(),get:async id=>({id,type:'normal',state:'minimized'}),getAll:async()=>[{id:1,type:'normal',state:'minimized'}],
-    create:async options=>{const id=nextWindow++;calls.push(['window',id,options]);if(options.url===LOGIN){assert.equal(options.state,'minimized');assert.equal(options.focused,false);assert.equal(options.width,undefined);const tab={id:nextTab++,windowId:id,url:LOGIN,status:'complete',active:true};tabs.set(tab.id,tab);return {id,tabs:[tab]};}return {id};},
+    create:async options=>{const id=nextWindow++;calls.push(['window',id,options]);if(options.url==='about:blank'){assert.equal(options.type,'normal');assert.equal(options.state,'minimized');assert.equal(options.focused,false);assert.equal(options.width,undefined);const tab={id:nextTab++,windowId:id,url:options.url,status:'complete',active:true};tabs.set(tab.id,tab);return {id,tabs:[tab]};}return {id};},
     update:async()=>{throw new Error('Background transport must not focus/restore/minimize a window');},remove:async()=>{}},
   scripting:{executeScript:async({target,args:[op,args]})=>[{result:operation(tabs.get(target.tabId),op,args)}],getRegisteredContentScripts:async()=>[],registerContentScripts:async()=>{},updateContentScripts:async()=>{},insertCSS:async()=>{}},
   webNavigation:{onCommitted:event(),getFrame:async()=>null},commands:{onCommand:event(),getAll:async()=>[]},declarativeNetRequest:{updateDynamicRules:async()=>{}}

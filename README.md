@@ -1,6 +1,6 @@
 # SC DMV Hotkeys
 
-A Chromium Manifest V3 extension for authorized SCDMV member searches, PDF follow-ups, status alerts, and PDF417 data-entry barcodes. Current version: **1.8.33**.
+A Chromium Manifest V3 extension for authorized SCDMV member searches, PDF follow-ups, status alerts, and PDF417 data-entry barcodes. Current version: **1.8.34**.
 
 ## Install and update
 
@@ -17,7 +17,7 @@ The packaged extension needs no build or npm installation. PDF.js and the barcod
 
 ## Experimental background searches
 
-In Settings, enable **Plate & license status alerts**, then **Run record searches in the background** immediately below it. Searches use a separate query window that starts minimized, with an active tab inside it. If you manually restore this helper, it stays restored while the search continues. Your existing browser windows and tabs are not minimized, restored, focused, or reselected by the background workflow.
+In Settings, enable **Plate & license status alerts**, then **Run record searches in the background** immediately below it. Searches use a separate regular Chrome window with an active query tab. It starts blank; the extension checks that it is minimized before opening any DMV page. If Chrome ignores the requested initial state, the extension makes one minimize call on this new helper and checks the state again. If minimization fails, it closes the owned blank tab and stops the query. If you manually restore this helper, it stays restored while the search continues. Your existing browser windows and tabs are not minimized, restored, focused, or reselected by the background workflow.
 
 This applies only to plate, DL, and customer searches (including queued customer searches). Other queries retain normal foreground behavior. Reports open in an inactive tab in an existing normal browser window. Parsing sends the report for status analysis before visible PDF rendering, so the status popup does not need you to select the results tab. Optional photo extraction also runs without display animation frames. PDF painting may wait until you view the tab; printing retains the captured original bytes, and the viewer honors the PDF color preference. Keep a normal browser window open, even if minimized. Settings changes apply to the next search.
 
