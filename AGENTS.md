@@ -20,6 +20,12 @@ Default to latest main, preserve explicitly required unmerged dependencies, sync
 
 When the user says **Merge TB**, read and follow [.agents/skills/merge-tb/SKILL.md](.agents/skills/merge-tb/SKILL.md). Merge the current test branch into main, verify and push main successfully, then delete the merged test branch locally and remotely. If multiple test branches exist, ask which one to merge and delete before proceeding unless the user already explicitly selected it. Creating or discussing this skill does not invoke a merge.
 
+## v1.8.28 Patch Test Branch Preparation — 2026-11-17
+
+- The user invoked New PTB. Created fix/v1.8.28-patch-test from latest main a3af3e5. Synchronized manifest, package, lockfile (including its root entry), and README release version from 1.8.27 to 1.8.28.
+- Version-only preparation; no implementation work was requested or added. Main remains unchanged. Further code/UI revisions on this branch require another patch increment.
+- Validation: npm run check and git diff --check passed. Application tests were not rerun for this version-only preparation.
+
 ## v1.8.27 Merge — 2026-11-17
 
 - The user invoked Merge TB. The sole current test branch, fix/v1.8.25-patch-test (58f80d5), merged into main without conflicts in merge commit 00da64a. Synchronized release files declare version 1.8.27.
