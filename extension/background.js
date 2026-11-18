@@ -9,6 +9,7 @@ import {search, scutties, evaluate, focusTab, PortalSearchError} from './automat
 import {saveCredentials, unlockCredentials, blacklistState, addBlacklistEntry, removeBlacklistEntry, forgetCredentials, replaceCredentials, clearSavedUserInfo} from './vault.js';
 import {checkBlacklist, driverIdentifiers, validateBlacklist, BlacklistedSearchError} from './blacklist.js';
 import {SearchRun, guardedApi, isCancelled} from './run.js';
+import {safeDriverIdentity, driverName} from './driver-identity.js';
 import {recordStatus, unavailableAlert} from './status-alerts.js';
 import {initializeAlertPreferences, saveAlertPreferences, restoreAlertPreferences} from './alert-settings.js';
 import {AudioAlerts, availableVoices} from './audio-alerts.js';
@@ -156,6 +157,7 @@ async function capturePdf(tab, portalId, forceDirect = false) {
     const cacheKey = `pdf:${tab.id}`;
     if ((await api.storage.session.get(cacheKey))[cacheKey]?.text) {resolveReady(null);return;}
     const {pdfDarkMode = false} = await api.storage.local.get('pdfDarkMode');
+    const includeDriverIdentity = (await api.storage.session.get('showDriverIdentity')).showDriverIdentity === true;
     capture.sameTab = forceDirect || !!darkResultSource(tab.pendingUrl || tab.url, chrome.runtime.getURL('reader.html')) || (pdfDarkMode && !!portalId);
     const {pdfCreated = {}, pdfSources = {}} = await api.storage.session.get(['pdfCreated', 'pdfSources']);
     if (!pdfCreated[tab.id]) throw new Error('This PDF predates extension tracking. Run its search again so the extension can capture the correct report.');
@@ -168,7 +170,7 @@ async function capturePdf(tab, portalId, forceDirect = false) {
       try { base64 = await evaluate(parent.id, 'fetchPdf', {url: sourceUrl}, {run}); } catch { run.check(); }
     }
     const id = crypto.randomUUID();
-    const promise = new Promise((resolve, reject) => {readers.set(id, {resolve, reject, base64, url: sourceUrl, pdfId: tab.id});});
+    const promise = new Promise((resolve, reject) => {readers.set(id, {resolve, reject, base64, url: sourceUrl, pdfId: tab.id, includeDriverIdentity});});
     let readerTab, timer;
     try {
       run.check();
@@ -177,11 +179,11 @@ async function capturePdf(tab, portalId, forceDirect = false) {
       const cancelled = () => chrome.runtime.sendMessage({target:'pdf-reader',type:'reader-cancel',id}).catch(() => {});
       if(capture.sameTab)run.signal.addEventListener('abort',cancelled,{once:true});
       reader.cancelled = cancelled;
-      resolveReady({id, base64, url: sourceUrl, sameTab: capture.sameTab});
+      resolveReady({id, base64, url: sourceUrl, includeDriverIdentity, sameTab: capture.sameTab});
       timer = setTimeout(() => reader.reject(new Error('PDF text extraction timed out.')), 45000);
       const text = await run.step(() => promise);
       if (!text.trim()) throw new Error('This PDF has no extractable text. Scanned PDFs require OCR; enter a number manually.');
-      await api.storage.session.set({[cacheKey]: {text, capturedAt: Date.now(), ...(capture.documentId ? {documentId:capture.documentId} : {})}});
+      await api.storage.session.set({[cacheKey]: {text, ...(reader.driverIdentity ? {driverIdentity:reader.driverIdentity} : {}), capturedAt: Date.now(), ...(capture.documentId ? {documentId:capture.documentId} : {})}});
       if (capture.sameTab) await track(async () => {
         const {pdfViewSources = {}} = await api.storage.session.get('pdfViewSources');
         pdfViewSources[tab.id] = true; await api.storage.session.set({pdfViewSources});
@@ -376,12 +378,16 @@ async function showRecordStatus(kind, value, tabId, captured, ctx) {
   if (!enabled(await api.storage.session.get(['alertsEnabled', 'speechEnabled', 'suspendedClipEnabled']))) return;
   const capture = await ctx.run.step(() => captured);
   try { await api.tabs.get(tabId); } catch (error) { ctx.run.check(); return; }
-  const key = `pdf:${tabId}`, data = await api.storage.session.get(['alertsEnabled', 'speechEnabled', 'repeatSpeech', 'suspendedClipEnabled', 'voiceSource', 'voiceGender', 'voiceName', key]);
+  const key = `pdf:${tabId}`, data = await api.storage.session.get(['alertsEnabled', 'showDriverIdentity', 'speechEnabled', 'repeatSpeech', 'suspendedClipEnabled', 'voiceSource', 'voiceGender', 'voiceName', key]);
   if (!enabled(data)) return;
   const alert = capture?.ok && data[key]?.text
     ? recordStatus(kind, data[key].text)
     : unavailableAlert(kind === 'plate' ? 'plate' : 'license', capture?.error || 'The results PDF could not be read.');
   if (!alert) return;
+  if (data.showDriverIdentity && alert.recordType === 'license') {
+    const identity = safeDriverIdentity(data[key]?.driverIdentity || {name:driverName(data[key]?.text)});
+    if (identity) alert.driverIdentity = identity;
+  }
   ctx.run.check();
   if (data.speechEnabled || data.suspendedClipEnabled) audioAlerts.play(alert, data, ctx.run.signal).catch(error => {
     if (!ctx.run.signal.aborted) ctx.status(`Audio alert unavailable: ${error.message}`);
@@ -600,13 +606,14 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
         const reader = readers.get(message.id);
         if (!reader || reader.tabId != null && sender.tab?.id !== reader.tabId || reader.documentId && reader.documentId !== sender.documentId) throw new Error('Unknown PDF reader.');
         reader.tabId = sender.tab.id;
-        return {base64: reader.base64, url: reader.url};
+        return {base64: reader.base64, url: reader.url, includeDriverIdentity: reader.includeDriverIdentity === true};
       }
       case 'reader-direct-start': return attachPdfViewer(sender);
       case 'pdf-native-print': return openNativePrint(sender,message.url,message.text);
       case 'reader-result': {
         const reader = readers.get(message.id);
         if (!reader || sender.tab?.id !== reader.tabId || reader.documentId && reader.documentId !== sender.documentId) throw new Error('Unknown PDF reader.');
+        reader.driverIdentity = reader.includeDriverIdentity ? safeDriverIdentity(message.driverIdentity) : undefined;
         reader.viewReady = message.viewReady === true; reader.viewerError = message.viewerError;
         if (message.error) reader.reject(new Error(message.error)); else reader.resolve(message.text);
         return true;
@@ -678,7 +685,7 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
         return true;
       }
       // These snapshots are restricted to extension-owned pages by the router above.
-      case 'state': return {blacklist: await blacklistState(), ...await chrome.storage.local.get(['vault','pdfDarkMode','dmvDarkMode','shortcutMenuNoTimeout','shortcutMenuAlwaysOnTop']), ...await chrome.storage.session.get(['history', 'queue', 'status', 'alertsEnabled', 'speechEnabled', 'repeatSpeech', 'suspendedClipEnabled', 'voiceSource', 'voiceGender', 'voiceName']), voices: await availableVoices().catch(() => []), commands: await chrome.commands.getAll(), extensionId: chrome.runtime.id};
+      case 'state': return {blacklist: await blacklistState(), ...await chrome.storage.local.get(['vault','pdfDarkMode','dmvDarkMode','shortcutMenuNoTimeout','shortcutMenuAlwaysOnTop']), ...await chrome.storage.session.get(['history', 'queue', 'status', 'alertsEnabled', 'showDriverIdentity', 'speechEnabled', 'repeatSpeech', 'suspendedClipEnabled', 'voiceSource', 'voiceGender', 'voiceName']), voices: await availableVoices().catch(() => []), commands: await chrome.commands.getAll(), extensionId: chrome.runtime.id};
       // Appearance updates persist independently of credentials and query state.
       case 'dmv-display-settings': {
         await chrome.storage.local.set({dmvDarkMode:message.enabled===true});await configureDmvTheme();await refreshDmvThemeTabs();return message.enabled===true;
@@ -730,6 +737,9 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
         if ('voiceName' in message) settings.voiceName = String(message.voiceName || '');
         audioAlerts.stop();
         await saveAlertPreferences(settings); return true;
+      }
+      case 'driver-identity-settings': {
+        await saveAlertPreferences({showDriverIdentity: message.enabled === true}); return true;
       }
       case 'alerts': {
         const enabled = message.enabled === true;

@@ -20,6 +20,27 @@ Default to latest main, preserve explicitly required unmerged dependencies, sync
 
 When the user says **Merge TB**, read and follow [.agents/skills/merge-tb/SKILL.md](.agents/skills/merge-tb/SKILL.md). Merge the current test branch into main, verify and push main successfully, then delete the merged test branch locally and remotely. If multiple test branches exist, ask which one to merge and delete before proceeding unless the user already explicitly selected it. Creating or discussing this skill does not invoke a merge.
 
+## v1.8.30 Combined Suspension Tally Line — 2026-11-17
+
+- Continued on fix/v1.8.28-patch-test with synchronized release version 1.8.30. Main remains unchanged.
+- The pending reinstatement tally now follows the active suspension total in the same status line, separated by a middle dot (for example, 7 active suspensions · 4 pending reinstatement). Zero-pending results retain the active tally alone. Reason columns, expandable occurrence details, parsing, and voice behavior are unchanged.
+- Verified npm run check, git diff --check, all 48 focused status/suspension/report-layout unit tests, and six targeted browser checks including single-line tally rendering and initial window fitting/alignment. Full unit/general browser/theme/barcode suites were not rerun for this display-only revision.
+
+## v1.8.29 Optional Driver Photo and Name — 2026-11-17
+
+- Continued on fix/v1.8.28-patch-test; synchronized release files declare 1.8.29. Main remains unchanged.
+- Added Settings → Show driver photo and name, default off, persisted via validated alert preferences with a session mirror. The option applies to newly captured reports. License/customer status alerts show the driver's header name and available photo beneath the main status; plate and blacklist alerts do not receive identity cards. Names and images never enter voice announcements.
+- An opted-in, job-bound PDF.js reader extracts only an unambiguous portrait-sized image in the first-page header, using the PDF's graphics transforms and original loaded document. Unknown/ambiguous layouts retain name-only display rather than guessing another image. Images use bounded inline PNG data, validated at worker receipt and display. Identity is stored only in the existing session report snapshot/popup payload; only the boolean preference persists locally. No old mutable report URL is refetched to obtain a photo.
+- The user supplied a second no-photo example. Both supplied placeholder records match the known standard No Photo Available graphic, while the real-photo record does not. Detection uses a central text-only perceptual signature excluding identifying border text, with white/ink limits and bounded resampling tolerance. Matches suppress the PNG and show only the name plus No photo available text. Other unsupported artwork is not guessed to be a placeholder.
+- Verified all three private PDFs through the actual bundled PDF.js reader and popup: the real portrait displayed, both placeholders were hidden, and each name matched its report header. Six additional rescale/JPEG/replaced-edge-identifier checks passed. Only non-identifying placeholder glyph geometry is encoded in the matcher; uploaded documents, portraits, names, identifiers, and extracted text remain outside Git. Committed regression data is synthetic.
+- Verification: npm run check, all 257 unit tests, and the complete 82-check general browser/fixture suite passed. Coverage includes preference persistence/defaults, worker gating/session-only identity, requested-reader ownership, opt-out extraction, header image selection and ambiguity, no-photo false-positive guards, display escaping, and existing PDF rendering/printing/cancellation. Theme and barcode decoder suites were not rerun; installed-extension validation remains blocked by managed browser policy.
+
+## v1.8.28 Patch Test Branch Preparation — 2026-11-17
+
+- The user invoked New PTB. Created fix/v1.8.28-patch-test from latest main a3af3e5. Synchronized manifest, package, lockfile (including its root entry), and README release version from 1.8.27 to 1.8.28.
+- Version-only preparation; no implementation work was requested or added. Main remains unchanged. Further code/UI revisions on this branch require another patch increment.
+- Validation: npm run check and git diff --check passed. Application tests were not rerun for this version-only preparation.
+
 ## v1.8.27 Merge — 2026-11-17
 
 - The user invoked Merge TB. The sole current test branch, fix/v1.8.25-patch-test (58f80d5), merged into main without conflicts in merge commit 00da64a. Synchronized release files declare version 1.8.27.

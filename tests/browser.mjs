@@ -358,13 +358,14 @@ try {
     window.panelClosed=false;const nativeClose=window.close.bind(window);
     window.close=()=>{if(matchMedia('(display-mode: picture-in-picture)').matches)nativeClose();else window.panelClosed=true;};
     window.openedTabs=[];
-    window.sessionAlerts=false;window.pdfDarkMode=false;window.dmvDarkMode=true;window.shortcutMenuNoTimeout=false;window.shortcutMenuAlwaysOnTop=false;window.blacklistData={hasVault:false,unlocked:false,entries:[]};window.historyErrors=[];window.storageListeners=[];
+    window.sessionAlerts=false;window.showDriverIdentity=false;window.pdfDarkMode=false;window.dmvDarkMode=true;window.shortcutMenuNoTimeout=false;window.shortcutMenuAlwaysOnTop=false;window.blacklistData={hasVault:false,unlocked:false,entries:[]};window.historyErrors=[];window.storageListeners=[];
     window.audioSettings={};
     window.commandShortcuts=[{name:'plate',shortcut:'Ctrl+Shift+7'},{name:'next',shortcut:'Alt+N'},{name:'_execute_action',shortcut:'Alt+Period'}];
     window.chrome = {
       runtime:{onMessage:{addListener:fn=>window.runtimeListeners.push(fn)},getURL:path=>`${location.origin}/${path}`,connect:()=>({postMessage:()=>{}}),sendMessage:async message=>{
         window.requests.push(message);
-        if(message.type==='state')return {ok:true,value:{shortcutMenuAlwaysOnTop:window.shortcutMenuAlwaysOnTop,shortcutMenuNoTimeout:window.shortcutMenuNoTimeout,dmvDarkMode:window.dmvDarkMode,pdfDarkMode:window.pdfDarkMode,blacklist:window.blacklistData,history:[...window.historyErrors,{kind:'plate',value:'ABC12345',at:Date.now()},{kind:'license',value:'123456789',at:Date.now()}],queue:{values:['123','456'],index:1},commands:window.commandShortcuts,alertsEnabled:window.sessionAlerts,...window.audioSettings,voices:[{voiceName:'Microsoft David Desktop',lang:'en-US'},{voiceName:'Microsoft Zira Desktop',lang:'en-US'}]}};
+        if(message.type==='state')return {ok:true,value:{shortcutMenuAlwaysOnTop:window.shortcutMenuAlwaysOnTop,shortcutMenuNoTimeout:window.shortcutMenuNoTimeout,dmvDarkMode:window.dmvDarkMode,pdfDarkMode:window.pdfDarkMode,blacklist:window.blacklistData,history:[...window.historyErrors,{kind:'plate',value:'ABC12345',at:Date.now()},{kind:'license',value:'123456789',at:Date.now()}],queue:{values:['123','456'],index:1},commands:window.commandShortcuts,alertsEnabled:window.sessionAlerts,showDriverIdentity:window.showDriverIdentity,...window.audioSettings,voices:[{voiceName:'Microsoft David Desktop',lang:'en-US'},{voiceName:'Microsoft Zira Desktop',lang:'en-US'}]}};
+        if(message.type==='driver-identity-settings'){window.showDriverIdentity=message.enabled;return {ok:true,value:true};}
         if(message.type==='blacklist-unlock'){
           if(message.passphrase!=='fixture passphrase')return {ok:false,error:'Could not unlock the vault. Check the passphrase.'};
           window.blacklistData.unlocked=true;return {ok:true,value:window.blacklistData};
@@ -970,7 +971,7 @@ try {
     return page;
   }
   const longAlert=()=>({type:'record-alert',recordType:'license',tone:'danger',autoCloseMs:90000,sections:[{
-    title:'LICENSE SUSPENDED',lines:['2 Prior DUS convictions within 5 years','1 Prior DUI/DUAC convictions within 10 years','7 active suspensions','4 pending reinstatement'],listTitle:'Suspension Reasons:',columns:[
+    title:'LICENSE SUSPENDED',lines:['2 Prior DUS convictions within 5 years','1 Prior DUI/DUAC convictions within 10 years','7 active suspensions · 4 pending reinstatement'],listTitle:'Suspension Reasons:',columns:[
       {title:'Active Suspensions',items:['Habitual Offender × 1','Failure to Pay Traffic Ticket × 4','Failure to Pay Property Tax × 1','Failure to Show proof of Insurance × 1']},
       {title:'Pending Reinstatement',items:['Driving Under Suspension × 2','DUI/DUAC × 1','Implied Consent × 1']}
     ]}]});
@@ -1044,6 +1045,61 @@ try {
     await page.clock.fastForward(89000);assert.equal(await page.evaluate(()=>window.closedByAlert),false);
     await page.clock.fastForward(1000);assert.equal(await page.evaluate(()=>window.closedByAlert),true);await page.close();
   });
+  await tests('driver identity placeholder detection does not mistake blank backgrounds or unrelated images for no photo',async()=>{
+    const page=await ui.newPage();await page.goto(base+'/popup.html');
+    const result=await page.evaluate(async()=>{
+      const {isNoPhotoPlaceholder}=await import('./no-photo.js');
+      return ['white','blue','portrait','text'].map(kind=>{
+        const c=document.createElement('canvas');c.width=c.height=300;const ctx=c.getContext('2d');
+        ctx.fillStyle=kind==='blue'?'#4780b4':'white';ctx.fillRect(0,0,300,300);
+        if(kind==='portrait'){ctx.fillStyle='#ba8b65';ctx.beginPath();ctx.ellipse(150,140,70,100,0,0,Math.PI*2);ctx.fill();}
+        if(kind==='text'){ctx.fillStyle='#003c56';ctx.font='italic 32px Arial';ctx.fillText('NOT A PORTRAIT',20,150);}
+        return isNoPhotoPlaceholder(c);
+      });
+    });
+    assert.deepEqual(result,[false,false,false,false]);await page.close();
+  });
+  await tests('driver identity setting defaults off and updates the saved preference through the worker message',async()=>{
+    const page=await ui.newPage();await page.goto(base+'/popup.html');await page.locator('#settingsTab').click();
+    const toggle=page.getByRole('switch',{name:/Show driver photo and name/});assert.equal(await toggle.isChecked(),false);
+    await toggle.check();await page.waitForFunction(()=>window.showDriverIdentity===true);
+    assert.ok(await page.evaluate(()=>window.requests.some(r=>r.type==='driver-identity-settings'&&r.enabled===true)));
+    await page.evaluate(()=>{window.storageListeners.forEach(fn=>fn({showDriverIdentity:{newValue:false}},'session'));});
+    assert.equal(await toggle.isChecked(),false);await page.close();
+  });
+  await tests('driver identity card displays photo below status and hides absent placeholders without HTML or external URLs',async()=>{
+    const drawing=await ui.newPage();const png=await drawing.evaluate(()=>{const c=document.createElement('canvas');c.width=c.height=16;c.getContext('2d').fillRect(0,0,16,16);return c.toDataURL('image/png');});await drawing.close();
+    for(const [identity,images] of [[{name:'SYNTHETIC, DRIVER',photo:png},1],[{name:'SYNTHETIC, DRIVER',photo:'',noPhoto:true},0],[{name:'<img src=x>',photo:'https://example.invalid/private.png'},0]]){
+      const payload=licenseStatus(validHeader,statusNow);payload.driverIdentity=identity;
+      const page=await statusPage(payload),card=page.locator('.record-driver-identity');await card.waitFor();
+      assert.equal(await card.evaluate(el=>el.previousElementSibling.tagName),'H2');
+      assert.equal(await card.locator('img').count(),images);assert.equal(await card.locator('.record-driver-name').textContent(),identity.name);
+      if(images)await page.waitForFunction(()=>document.querySelector('.record-driver-photo').naturalWidth===16);
+      if(identity.noPhoto)assert.match(await card.textContent(),/No photo available/);
+      assert.equal(await card.locator('.record-driver-name img').count(),0);await page.close();
+    }
+    const hidden=await statusPage(licenseStatus(validHeader,statusNow));assert.equal(await hidden.locator('.record-driver-identity').count(),0);await hidden.close();
+  });
+  await tests('driver identity extraction reads only an unambiguous first-page header image and respects opt out',async()=>{
+    const drawing=await ui.newPage();const png=await drawing.evaluate(()=>{const c=document.createElement('canvas');c.width=c.height=160;const ctx=c.getContext('2d');ctx.fillStyle='#4780b4';ctx.fillRect(0,0,160,160);return c.toDataURL('image/png').split(',')[1];});await drawing.close();
+    for(const [enabled,photoCount,expectPhoto] of [[true,1,true],[false,1,false],[true,0,false],[true,2,false]]){
+      const doc=await PDFDocument.create(),font=await doc.embedFont(StandardFonts.Helvetica),page=doc.addPage([612,792]);
+      page.drawText('Driver License No: 123456789',{x:50,y:470,size:10,font});page.drawText('Name: SYNTHETIC, DRIVER Address: 123 EXAMPLE ROAD',{x:50,y:450,size:10,font});
+      const image=await doc.embedPng(Buffer.from(png,'base64'));
+      if(photoCount)page.drawImage(image,{x:234,y:518,width:144,height:144});
+      if(photoCount===2)page.drawImage(image,{x:50,y:518,width:144,height:144});
+      page.drawImage(image,{x:234,y:30,width:60,height:60});
+      const view=await ui.newPage();await view.addInitScript(({base64,enabled})=>{const old=chrome.runtime.sendMessage;chrome.runtime.sendMessage=async m=>{
+        if(m.type==='reader-start')return {ok:true,value:{base64,includeDriverIdentity:enabled}};
+        if(m.type==='reader-result'){window.photoResult=m;return {ok:true};}return old(m);
+      };},{base64:Buffer.from(await doc.save()).toString('base64'),enabled});
+      await view.goto(base+'/reader.html?id=synthetic-photo');await view.waitForFunction(()=>window.photoResult,{timeout:20000});
+      const r=await view.evaluate(()=>window.photoResult);assert.equal(r.error,undefined);
+      if(!enabled)assert.equal(r.driverIdentity,undefined);
+      else {assert.equal(r.driverIdentity.name,'SYNTHETIC, DRIVER');assert.equal(!!r.driverIdentity.photo,expectPhoto);}
+      await view.close();
+    }
+  });
   await tests('suspension details restore full-size text after initial compression and keep scrolling after collapse',async()=>{
     const payload=licenseStatus(mixedSuspensions,statusNow);
     const page=await fittedAlert(payload,{availHeight:760});
@@ -1089,7 +1145,9 @@ try {
     assert.deepEqual(await columns.nth(1).locator('summary').allTextContents(),['Driving Under Suspension × 1','DUI/DUAC × 1']);
     const left=await columns.nth(0).boundingBox(),right=await columns.nth(1).boundingBox();
     assert.ok(right.x>=left.x+left.width);assert.equal(left.y,right.y);
-    assert.deepEqual((await page.locator('.record-status-line').allTextContents()).slice(0,4),['0 Prior DUS convictions within 5 years','3 Prior DUI/DUAC convictions within 10 years','3 active suspensions','2 pending reinstatement']);
+    assert.deepEqual((await page.locator('.record-status-line').allTextContents()).slice(0,3),['0 Prior DUS convictions within 5 years','3 Prior DUI/DUAC convictions within 10 years','3 active suspensions · 2 pending reinstatement']);
+    const tally=page.locator('.record-status-line').nth(2);
+    assert.equal(await tally.evaluate(el=>el.getBoundingClientRect().height<=parseFloat(getComputedStyle(el).lineHeight)+1),true);
     assert.equal(await page.locator('.record-status-warning').evaluate(el=>el.previousElementSibling.tagName),'H2');
     await page.screenshot({path:join(screenshots,'suspension-buckets.png'),fullPage:true});
     await page.setViewportSize({width:360,height:700});

@@ -9,6 +9,7 @@ const local={history:[{id:'old-persistent',kind:'plate',value:'OLD123',at:1}]}, 
 const tabs=new Map([[1,{id:1,url:`${MEMBER}Transactions/DrvRec/Page2.aspx`,status:'complete',windowId:1,active:false}],[2,{id:2,url:PDF_URL,status:'complete',windowId:1,active:true}]]);
 const windows=[], submissions=[], navigations=[], submittedQueries=[];
 let serverFailureStage='', nextId=3, invalid=false, invalidAfterSubmit=false, technicalFailure=false, loginRejected=false, blockSubmitted=false, captureBlocked=false, onResultFocus=null;
+let reportIdentity;
 let reportText='Driver License No: 123456789 Name: TEST, PERSON\nDOB: 01/01/2000';
 let pauseAlertWindow=false,alertWindowRelease;
 const removedWindows=[],removedTabs=[];
@@ -42,7 +43,7 @@ globalThis.chrome={
       if(serverFailureStage==='download'){tab.url=MEMBER+'ErrorPage.aspx';return [{result:true}];}
       const pdf={id:nextId++,url:PDF_URL,status:'complete',windowId:1,openerTabId:tab.id,active:false};tabs.set(pdf.id,pdf);
       if(captureBlocked)session.pdfCreated[pdf.id]=Date.now();
-      else session[`pdf:${pdf.id}`]={text:reportText,capturedAt:Date.now()};
+      else session[`pdf:${pdf.id}`]={text:reportText,capturedAt:Date.now(),...(reportIdentity?{driverIdentity:reportIdentity}:{})};
     }
     return [{result}];
   }},commands:{onCommand:event(),getAll:async()=>[]},permissions:{contains:async()=>true}
@@ -224,6 +225,20 @@ test('browser startup restores the saved alert preference',async()=>{
   await send({type:'alerts',enabled:true});
   delete session.alertsEnabled;for(const listener of runtime.onStartup.listeners)await listener();
   assert.equal(session.alertsEnabled,true);assert.equal(local.alertPreferences.alertsEnabled,true);await send({type:'alerts',enabled:false});
+});
+test('driver identity preference gates license alerts and never attaches identity to plate alerts',async()=>{
+  await send({type:'alerts',enabled:true});await send({type:'driver-identity-settings',enabled:true});
+  assert.equal((await send({type:'state'})).showDriverIdentity,true);assert.equal(local.alertPreferences.showDriverIdentity,true);
+  reportIdentity={name:'SYNTHETIC, DRIVER',photo:'data:image/png;base64,AAAA'};
+  await input('44000011');await wait(()=>panel('record-alert'));
+  let data=session[`panel:${new URL(panel('record-alert').url).searchParams.get('id')}`];
+  assert.deepEqual(data.driverIdentity,reportIdentity);
+  assert.equal(local.alertPreferences.driverIdentity,undefined);
+  await send({type:'driver-identity-settings',enabled:false});await input('44000012');await wait(()=>panel('record-alert'));
+  data=session[`panel:${new URL(panel('record-alert').url).searchParams.get('id')}`];assert.equal(data.driverIdentity,undefined);
+  await send({type:'driver-identity-settings',enabled:true});await input('PHOTO123','plate');await wait(()=>panel('record-alert'));
+  data=session[`panel:${new URL(panel('record-alert').url).searchParams.get('id')}`];assert.equal(data.driverIdentity,undefined);
+  await send({type:'driver-identity-settings',enabled:false});reportIdentity=undefined;await send({type:'alerts',enabled:false});
 });
 test('turning alerts off during popup creation closes the late window as well',async()=>{
   await send({type:'alerts',enabled:true});pauseAlertWindow=true;
@@ -562,14 +577,17 @@ test('redirected PDF captures in the DMV results tab, rejects other documents, s
   const fromReader=(message,overrides={})=>new Promise((resolve,reject)=>runtime.onMessage.listeners[0](message,{id:runtime.id,tab:{id:tab.id},url:tab.url,frameId:0,documentId,...overrides},r=>r.ok?resolve(r.value):reject(new Error(r.error))));
   await assert.rejects(send({type:'reader-direct-start'}),/Unknown PDF results/);
   await assert.rejects(fromReader({type:'reader-direct-start'},{frameId:1}),/Unknown PDF results/);
-  let job=await fromReader({type:'reader-direct-start'});assert.equal(job.url,PDF_URL+'?a=1&b=2');assert.equal(job.sameTab,true);
+  await send({type:'driver-identity-settings',enabled:true});
+  let job=await fromReader({type:'reader-direct-start'});assert.equal(job.includeDriverIdentity,true);assert.equal(job.url,PDF_URL+'?a=1&b=2');assert.equal(job.sameTab,true);
   assert.equal(nextId,next);assert.equal(removedTabs.includes(tab.id),false);
   // Chrome can report loading again after the reader replaces its own URL with the job ID.
   const ownUrl=new URL(tab.url);ownUrl.searchParams.set('id',job.id);tab.url=ownUrl.href;
   await chrome.tabs.onUpdated.listeners[0](tab.id,{url:tab.url,status:'loading'},tab);
   assert.equal(runtimeMessages.some(m=>m.type==='reader-cancel'&&m.id===job.id),false,'same-document loading must not destroy the PDF worker');
   await assert.rejects(fromReader({type:'reader-result',id:job.id,text:'wrong document'},{documentId:'different-document'}),/Unknown PDF reader/);
-  await fromReader({type:'reader-result',id:job.id,text:driverReport,viewReady:true});await wait(()=>session.pdfViewSources?.[tab.id]&&session[`pdf:${tab.id}`]);
+  await fromReader({type:'reader-result',id:job.id,text:driverReport,viewReady:true,driverIdentity:{name:'SYNTHETIC, DRIVER',photo:'data:image/png;base64,AAAA'}});await wait(()=>session.pdfViewSources?.[tab.id]&&session[`pdf:${tab.id}`]);
+  assert.equal(session[`pdf:${tab.id}`].driverIdentity.name,'SYNTHETIC, DRIVER');
+  assert.equal(local.alertPreferences.driverIdentity,undefined);await send({type:'driver-identity-settings',enabled:false});
   await chrome.tabs.onUpdated.listeners[0](tab.id,{status:'loading'},tab);assert.equal(session[`pdf:${tab.id}`].text,driverReport);
   await send({type:'run',command:'barcode'});await wait(barcodeData);assert.match(barcodeData().payload,/DAQ123456789/);await send({type:'stop'});
   const url=new URL(tab.url);url.searchParams.set('id',job.id);tab.url=url.href;
@@ -577,8 +595,9 @@ test('redirected PDF captures in the DMV results tab, rejects other documents, s
   // A newly redirected report reusing the same named tab must discard the previous person's text.
   tab.url=runtime.getURL(`reader.html?dark=1&pdf=1#${PDF_URL}`);documentId='direct-second';
   tab.documentId=documentId;await chrome.webNavigation.onCommitted.listeners[0]({tabId:tab.id,frameId:0,documentId,url:tab.url});assert.equal(session[`pdf:${tab.id}`],undefined);
-  job=await fromReader({type:'reader-direct-start'});
-  await fromReader({type:'reader-result',id:job.id,text:driverReport.replace('123456789','987654321'),viewReady:true});await wait(()=>session[`pdf:${tab.id}`]);
+  job=await fromReader({type:'reader-direct-start'});assert.equal(job.includeDriverIdentity,false);
+  await fromReader({type:'reader-result',id:job.id,text:driverReport.replace('123456789','987654321'),viewReady:true,driverIdentity:{name:'UNREQUESTED',photo:'data:image/png;base64,AAAA'}});await wait(()=>session[`pdf:${tab.id}`]);
+  assert.equal(session[`pdf:${tab.id}`].driverIdentity,undefined);
   assert.match(session[`pdf:${tab.id}`].text,/987654321/);assert.equal(nextId,next);
   await chrome.tabs.onRemoved.listeners[0](tab.id);assert.equal(session[`pdf:${tab.id}`],undefined);assert.equal(session.pdfViewSources[tab.id],undefined);
   // Stopping a pending read notifies that document without removing the user's results tab.

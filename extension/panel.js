@@ -4,6 +4,7 @@
  * user input, renders plain text, and submits the panel ID with the response.
  */
 import {COMMANDS, normalize} from './core.js';
+import {safeDriverIdentity} from './driver-identity.js';
 import {fitRecordAlert} from './record-alert-layout.js';
 const $ = id => document.getElementById(id), id = new URL(location.href).searchParams.get('id');
 let data, unlocking = false, submitted = false, barcodeChoice;
@@ -50,6 +51,21 @@ try {
       for (const section of data.sections || []) {
         const block = document.createElement('section'); block.className = 'record-status-section';
         if (section.title) { const title = document.createElement('h2'); title.className = 'record-status-title'; title.textContent = section.title; block.append(title); }
+        if (section === data.sections[0] && data.recordType === 'license' && !data.blacklist) {
+          const identity = safeDriverIdentity(data.driverIdentity);
+          if (identity) {
+            const card = document.createElement('div'); card.className = 'record-driver-identity';
+            if (identity.photo) {
+              const image = document.createElement('img'); image.className = 'record-driver-photo';
+              image.alt = 'Driver photo from the driving record'; image.src = identity.photo;
+              image.addEventListener('error', () => { image.hidden = true; }); card.append(image);
+            } else {
+              const missing = document.createElement('p'); missing.textContent = identity.noPhoto ? 'No photo available' : 'Photo unavailable'; card.append(missing);
+            }
+            const name = document.createElement('p'); name.className = 'record-driver-name';
+            name.textContent = identity.name || 'Name unavailable'; card.append(name); block.append(card);
+          }
+        }
         for (const warning of section.warnings || []) {
           const p = document.createElement('p'); p.className = 'record-status-title record-status-warning';
           p.textContent = warning; block.append(p);

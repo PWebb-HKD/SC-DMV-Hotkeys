@@ -192,8 +192,8 @@ function evaluateLicenseStatus(raw, now = new Date()) {
   if (statuses.has('SUSPENDED')) {
     const summary = suspensionSummary(text, today), priors = recentDus(text, today);
     const duiDuac = duiDuacSummary(offenseBlocks(text), today);
-    const lines = [`${priors} Prior DUS convictions within 5 years`, `${duiDuac.count} Prior DUI/DUAC convictions within 10 years`, `${summary.active} active suspension${summary.active === 1 ? '' : 's'}`];
-    if (summary.pending) lines.push(`${summary.pending} pending reinstatement`);
+    const tally = `${summary.active} active suspension${summary.active === 1 ? '' : 's'}${summary.pending ? ` · ${summary.pending} pending reinstatement` : ''}`;
+    const lines = [`${priors} Prior DUS convictions within 5 years`, `${duiDuac.count} Prior DUI/DUAC convictions within 10 years`, tally];
     if (!summary.groups.length) lines.push('No active suspension blocks matched the date criteria.');
     if (summary.unreadable) lines.push(`${summary.unreadable} suspension entr${summary.unreadable === 1 ? 'y could' : 'ies could'} not be evaluated.`);
     const items = summary.groups.map(group => `${group.reason} × ${group.count}`);
