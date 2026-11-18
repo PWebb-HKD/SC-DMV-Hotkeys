@@ -20,6 +20,13 @@ Default to latest main, preserve explicitly required unmerged dependencies, sync
 
 When the user says **Merge TB**, read and follow [.agents/skills/merge-tb/SKILL.md](.agents/skills/merge-tb/SKILL.md). Merge the current test branch into main, verify and push main successfully, then delete the merged test branch locally and remotely. If multiple test branches exist, ask which one to merge and delete before proceeding unless the user already explicitly selected it. Creating or discussing this skill does not invoke a merge.
 
+## v1.8.40 Merge — 2026-11-18
+
+- The user invoked Merge TB. The sole test branch, fix/v1.8.40-background-navigation (27a5f019e43dc93810af4344947e9cc24f5bad28), merged into main without conflicts in merge commit 8a03316. Local/remote test tips matched and main was current with origin/main. Release files remain synchronized at 1.8.40; this documentation-only merge record requires no patch bump.
+- Includes serialized blank/login startup, pending-login recognition, one bounded initial-login recovery before submission, cancellation/manual-control safeguards and contextual navigation rejection messages. Application and test files match the tested branch tip exactly.
+- Verified on merged main: npm run check, git diff --check, all 312 unit tests and the complete 91-check general Chromium/fixture suite passed. No live DMV transactions were submitted. Barcode decoder, theme and private-PDF checks were not rerun. Managed policy still prevents installed-extension/native Windows verification; the specific native cause of the reported rejection remains unconfirmed here, as recorded in the revision entry below.
+- Merge TB authorizes pushing main and deleting only this merged test branch locally/remotely after successful push and confirmation of its unchanged remote tip, using an explicit expected-tip lease. Preserve the unrelated local work branch and verify live refs before future branch work.
+
 ## v1.8.40 Background Startup Navigation Rejection — 2026-11-18
 
 - The user invoked New PTB after reporting an almost-immediate Navigation rejected error after submitting a background search; they confirmed foreground searches still work. Created fix/v1.8.40-background-navigation from latest main 4b0ea68 and synchronized manifest, package, lockfile/root entry and README to 1.8.40. Main remains unchanged.
