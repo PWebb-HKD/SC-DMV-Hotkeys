@@ -20,6 +20,13 @@ Default to latest main, preserve explicitly required unmerged dependencies, sync
 
 When the user says **Merge TB**, read and follow [.agents/skills/merge-tb/SKILL.md](.agents/skills/merge-tb/SKILL.md). Merge the current test branch into main, verify and push main successfully, then delete the merged test branch locally and remotely. If multiple test branches exist, ask which one to merge and delete before proceeding unless the user already explicitly selected it. Creating or discussing this skill does not invoke a merge.
 
+## v1.8.27 Merge — 2026-11-17
+
+- The user invoked Merge TB. The sole current test branch, fix/v1.8.25-patch-test (58f80d5), merged into main without conflicts in merge commit 00da64a. Synchronized release files declare version 1.8.27.
+- This merge includes expandable suspension occurrences, individual reason mini headers, optional ticket numbers and dates, timeout resets on disclosure toggles, and full-size scrollable text after the first toggle. Application and test files match the tested branch tip.
+- Verified on merged main: npm run check, all 254 unit tests, and ten distinct targeted browser checks covering occurrence details, pointer/keyboard toggles and timeout resets, full-size scrolling, five initial window fitting/alignment cases, suspension columns, and suspended-popup rendering. Full general browser/theme/barcode suites were not rerun for this merge; installed-extension validation remains blocked by managed policy.
+- Merge TB authorizes deletion of only this merged branch locally and remotely after main is successfully pushed and the unchanged test tip is verified. Confirm actual remote state before future branch work.
+
 ## v1.8.27 Readable Suspension Detail Scrolling — 2026-11-17
 
 - Continued on fix/v1.8.25-patch-test with synchronized release version 1.8.27. Main is unchanged.
