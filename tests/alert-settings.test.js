@@ -2,7 +2,7 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
 import {ALERT_DEFAULTS,ALERT_KEYS,initializeAlertPreferences,saveAlertPreferences,restoreAlertPreferences} from '../extension/alert-settings.js';
 const local={},session={};
-const store=data=>({get:async keys=>Object.fromEntries((Array.isArray(keys)?keys:[keys]).map(key=>[key,data[key]])),set:async values=>Object.assign(data,values)});
+const store=data=>({get:async keys=>Object.fromEntries((Array.isArray(keys)?keys:[keys]).map(key=>[key,data[key]])),set:async values=>Object.assign(data,values),remove:async key=>{delete data[key];}});
 globalThis.chrome={storage:{local:store(local),session:store(session)}};
 const clear=object=>{for(const key of Object.keys(object))delete object[key];};
 test('first use keeps alerts off and upgrades preserve active session selections without saving private data',async()=>{
@@ -13,7 +13,7 @@ test('first use keeps alerts off and upgrades preserve active session selections
   assert.equal(local.alertPreferences.credentials,undefined);assert.equal(local.alertPreferences.history,undefined);assert.equal(local.alertPreferences.blacklist,undefined);
 });
 test('all selected preferences survive cleared session storage and startup does not replay data',async()=>{
-  const expected={alertsEnabled:true,showDriverIdentity:true,speechEnabled:true,repeatSpeech:true,suspendedClipEnabled:true,voiceSource:'microsoft',voiceGender:'male',voiceName:'Fixture Voice'};
+  const expected={alertsEnabled:true,backgroundStatusSearch:true,showDriverIdentity:true,speechEnabled:true,repeatSpeech:true,suspendedClipEnabled:true,voiceSource:'microsoft',voiceGender:'male',voiceName:'Fixture Voice'};
   await saveAlertPreferences(expected);clear(session);await initializeAlertPreferences();assert.deepEqual(session,expected);
   clear(session);await restoreAlertPreferences();assert.deepEqual(session,expected);
   await saveAlertPreferences({alertsEnabled:false,speechEnabled:false,suspendedClipEnabled:false});clear(session);await restoreAlertPreferences();assert.equal(session.alertsEnabled,false);assert.equal(session.speechEnabled,false);assert.equal(session.repeatSpeech,true);assert.equal(session.voiceName,'Fixture Voice');
@@ -22,4 +22,12 @@ test('concurrent changes merge and invalid/private fields cannot enter saved pre
   await Promise.all([saveAlertPreferences({alertsEnabled:true}),saveAlertPreferences({speechEnabled:true,voiceGender:'female'})]);
   assert.equal(local.alertPreferences.alertsEnabled,true);assert.equal(local.alertPreferences.speechEnabled,true);assert.equal(local.alertPreferences.voiceGender,'female');
   await saveAlertPreferences({voiceSource:'invalid',voiceGender:'invalid',credentials:'never saved',driverIdentity:{name:'private',photo:'never saved'},showDriverIdentity:'invalid'});assert.equal(local.alertPreferences.voiceSource,'microsoft');assert.equal(local.alertPreferences.voiceGender,'female');assert.equal(local.alertPreferences.credentials,undefined);assert.equal(local.alertPreferences.driverIdentity,undefined);
+});
+
+test('upgrade removes the rejected method and preserves background opt-in and other choices',async()=>{
+  local.alertPreferences={...ALERT_DEFAULTS,backgroundStatusSearch:true,backgroundSearchMethod:'offscreen',showDriverIdentity:true};
+  session.backgroundSearchMethod='offscreen';
+  const prefs=await initializeAlertPreferences();
+  assert.equal(prefs.backgroundStatusSearch,true);assert.equal(prefs.showDriverIdentity,true);
+  assert.equal(session.backgroundSearchMethod,undefined);assert.equal(local.alertPreferences.backgroundSearchMethod,undefined);
 });

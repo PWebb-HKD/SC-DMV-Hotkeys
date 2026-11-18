@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "SC DMV Hotkeys",
-  "version": "1.8.30",
+  "version": "1.8.38",
   "minimum_chrome_version": "140",
   "description": "Keyboard shortcuts for automating user-input searches through the SCDMV online portal and customizing CSS dark mode styling.",
   "permissions": [
@@ -98,6 +98,17 @@
       ],
       "run_at": "document_start",
       "all_frames": true
+    },
+    {
+      "matches": [
+        "https://www.scdmvonline.com/SCTRNS/*"
+      ],
+      "js": [
+        "background-report.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": false,
+      "world": "MAIN"
     }
   ]
 }

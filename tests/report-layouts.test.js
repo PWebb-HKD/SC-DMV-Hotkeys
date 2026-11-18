@@ -19,7 +19,7 @@ cases.forEach(([name, title, active, pending], i) => test(`report layout: ${name
   assert.equal(result.sections[0].title, title);
   if (active != null) assert.equal(result.activeSuspensions, active);
   if (pending != null) assert.equal(result.pendingReinstatement, pending);
-  assert.equal(result.autoCloseMs, title === 'VALID LICENSE' ? 10000 : 90000);
+  assert.equal(result.autoCloseMs, title === 'VALID LICENSE' ? 30000 : 90000);
 }));
 
 test('current ID layout becomes ID ONLY when the DL status is NO SUSPENSION', () => {

@@ -128,6 +128,26 @@ try {
         }
         $('recordAlert').append(details);
       }
+      if(data.recordType==='plate'&&!data.blacklist&&data.owners?.length) {
+        const owners=document.createElement('section');owners.className='record-owners';
+        const heading=document.createElement('h3');heading.textContent=data.owners.length===1?'Registered owner':'Registered owners';owners.append(heading);
+        const list=document.createElement('ol');list.className='record-owner-list';
+        for(const [ownerIndex,owner] of data.owners.entries()) {
+          const row=document.createElement('li');row.className='record-owner';
+          const name=document.createElement(owner.number?'button':'p');name.className='record-owner-name';name.textContent=owner.name||'Name unavailable';
+          if(owner.number) {
+            name.type='button';name.classList.add('record-owner-search');name.title='Run a customer-number search for this owner';
+            name.onclick=async()=>{
+              const buttons=[...document.querySelectorAll('.record-owner-search')];buttons.forEach(button=>button.disabled=true);
+              try{await send({type:'alert-owner-search',id,ownerIndex});}
+              catch(error){$('error').textContent=error.message;buttons.forEach(button=>button.disabled=false);}
+            };
+          }
+          const address=document.createElement('p');address.className='record-owner-address';address.textContent=owner.address||'Address unavailable';
+          row.append(name,address);list.append(row);
+        }
+        owners.append(list);$('recordAlert').append(owners);
+      }
       $('cancel').hidden = true; $('submit').textContent = 'Close'; $('submit').focus({preventScroll: true});
       let deadline = Date.now() + (data.autoCloseMs || 90000);
       $('alertCountdown').hidden = false;

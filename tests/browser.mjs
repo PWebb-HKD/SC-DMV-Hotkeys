@@ -359,12 +359,13 @@ try {
     window.close=()=>{if(matchMedia('(display-mode: picture-in-picture)').matches)nativeClose();else window.panelClosed=true;};
     window.openedTabs=[];
     window.sessionAlerts=false;window.showDriverIdentity=false;window.pdfDarkMode=false;window.dmvDarkMode=true;window.shortcutMenuNoTimeout=false;window.shortcutMenuAlwaysOnTop=false;window.blacklistData={hasVault:false,unlocked:false,entries:[]};window.historyErrors=[];window.storageListeners=[];
-    window.audioSettings={};
+    window.audioSettings={};window.backgroundPrefs={backgroundStatusSearch:false};
     window.commandShortcuts=[{name:'plate',shortcut:'Ctrl+Shift+7'},{name:'next',shortcut:'Alt+N'},{name:'_execute_action',shortcut:'Alt+Period'}];
     window.chrome = {
       runtime:{onMessage:{addListener:fn=>window.runtimeListeners.push(fn)},getURL:path=>`${location.origin}/${path}`,connect:()=>({postMessage:()=>{}}),sendMessage:async message=>{
         window.requests.push(message);
-        if(message.type==='state')return {ok:true,value:{shortcutMenuAlwaysOnTop:window.shortcutMenuAlwaysOnTop,shortcutMenuNoTimeout:window.shortcutMenuNoTimeout,dmvDarkMode:window.dmvDarkMode,pdfDarkMode:window.pdfDarkMode,blacklist:window.blacklistData,history:[...window.historyErrors,{kind:'plate',value:'ABC12345',at:Date.now()},{kind:'license',value:'123456789',at:Date.now()}],queue:{values:['123','456'],index:1},commands:window.commandShortcuts,alertsEnabled:window.sessionAlerts,showDriverIdentity:window.showDriverIdentity,...window.audioSettings,voices:[{voiceName:'Microsoft David Desktop',lang:'en-US'},{voiceName:'Microsoft Zira Desktop',lang:'en-US'}]}};
+        if(message.type==='state')return {ok:true,value:{shortcutMenuAlwaysOnTop:window.shortcutMenuAlwaysOnTop,shortcutMenuNoTimeout:window.shortcutMenuNoTimeout,dmvDarkMode:window.dmvDarkMode,pdfDarkMode:window.pdfDarkMode,blacklist:window.blacklistData,history:[...window.historyErrors,{kind:'plate',value:'ABC12345',at:Date.now()},{kind:'license',value:'123456789',at:Date.now()}],queue:{values:['123','456'],index:1},commands:window.commandShortcuts,alertsEnabled:window.sessionAlerts,showDriverIdentity:window.showDriverIdentity,...window.backgroundPrefs,...window.audioSettings,voices:[{voiceName:'Microsoft David Desktop',lang:'en-US'},{voiceName:'Microsoft Zira Desktop',lang:'en-US'}]}};
+        if(message.type==='background-search-settings'){window.backgroundPrefs={backgroundStatusSearch:message.enabled};return {ok:true,value:true};}
         if(message.type==='driver-identity-settings'){window.showDriverIdentity=message.enabled;return {ok:true,value:true};}
         if(message.type==='blacklist-unlock'){
           if(message.passphrase!=='fixture passphrase')return {ok:false,error:'Could not unlock the vault. Check the passphrase.'};
@@ -1061,9 +1062,16 @@ try {
   });
   await tests('driver identity setting defaults off and updates the saved preference through the worker message',async()=>{
     const page=await ui.newPage();await page.goto(base+'/popup.html');await page.locator('#settingsTab').click();
-    const toggle=page.getByRole('switch',{name:/Show driver photo and name/});assert.equal(await toggle.isChecked(),false);
+    const toggle=page.locator('#driverIdentityToggle');assert.equal(await toggle.isChecked(),false);
+    assert.equal(await toggle.isVisible(),false);assert.equal(await page.locator('#alertsToggle').getAttribute('aria-controls'),'statusAlertSettings');
+    await page.locator('#alertsToggle').check();assert.equal(await toggle.isVisible(),true);
+    assert.equal(await toggle.evaluate(el=>!!el.closest('#statusAlertSettings')),true);
     await toggle.check();await page.waitForFunction(()=>window.showDriverIdentity===true);
     assert.ok(await page.evaluate(()=>window.requests.some(r=>r.type==='driver-identity-settings'&&r.enabled===true)));
+    await page.locator('#alertsToggle').uncheck();assert.equal(await toggle.isVisible(),false);assert.equal(await toggle.isChecked(),true);
+    await page.locator('#alertsToggle').check();assert.equal(await toggle.isVisible(),true);assert.equal(await toggle.isChecked(),true);
+    await page.locator('#aboutTab').click();await page.locator('#settingsTab').click();assert.equal(await toggle.isChecked(),true);
+    await page.screenshot({path:join(screenshots,'nested-status-settings.png'),fullPage:true});
     await page.evaluate(()=>{window.storageListeners.forEach(fn=>fn({showDriverIdentity:{newValue:false}},'session'));});
     assert.equal(await toggle.isChecked(),false);await page.close();
   });
@@ -1102,7 +1110,8 @@ try {
   });
   await tests('suspension details restore full-size text after initial compression and keep scrolling after collapse',async()=>{
     const payload=licenseStatus(mixedSuspensions,statusNow);
-    const page=await fittedAlert(payload,{availHeight:760});
+    // The combined tally fits at 760px; use a smaller work area to require compression.
+    const page=await fittedAlert(payload,{availHeight:600});
     await page.waitForFunction(()=>document.body.dataset.alertFit==='ready');
     const before=await page.locator('.record-status-line').first().evaluate(el=>parseFloat(getComputedStyle(el).fontSize));
     assert.ok(before<20);
@@ -1201,7 +1210,7 @@ try {
     assert.equal(headingAppearance.textAlign,'center');
     assert.equal(await page.locator('body').evaluate(el=>el.classList.contains('status-success')),true);
     await page.screenshot({path:join(screenshots,'temporary-alcohol-license.png'),fullPage:true});
-    await page.clock.fastForward(9000);assert.equal(await page.evaluate(()=>window.closedByAlert),false);
+    await page.clock.fastForward(29000);assert.equal(await page.evaluate(()=>window.closedByAlert),false);
     await page.clock.fastForward(1000);assert.equal(await page.evaluate(()=>window.closedByAlert),true);await page.close();
   });
   await tests('plate popups render vehicle details beneath valid, expired and suspended statuses in smaller large white text',async()=>{
@@ -1224,6 +1233,59 @@ try {
     assert.match(await page.locator('.record-vehicle-details').textContent(),/Model: <img src=x>.*Body style: Unavailable/s);
     assert.equal(await page.locator('.record-vehicle-details img').count(),0);await page.close();
   });
+  await tests('tag registered owners appear below vehicle information in report order for every status',async()=>{
+    const owners='Owner Number: 1 Owner Name: FIRST, OWNER Owner Address: 100 FIRST ROAD, COLUMBIA SC 29201 '+
+      'Owner Number: 2 Owner Name: SECOND BUSINESS LLC Owner Address: 200 SECOND ROAD, CHARLESTON SC 29401 ';
+    for(const [expiry,enforcement] of [['11/01/2026',''],['10/27/2026',''],['11/01/2026','Enforcement Description: Insurance suspension Enforcement Statute: 56-1-460'],['','']]) {
+      const payload=plateStatus(`VIN: SYNTHETIC Year: 2026 Make: TEST Model: MODEL Body: 4S Empty Weight: 3000 ${owners}Last Transaction: RENEWAL Plate Class: ABC Decal Exp Date: ${expiry} ${enforcement}`,fixedNow);
+      const page=await statusPage(payload),list=page.locator('.record-owners');await list.waitFor();
+      assert.equal(await list.evaluate(el=>el.previousElementSibling.classList.contains('record-vehicle-details')),true);
+      assert.deepEqual(await list.locator('.record-owner-name').allTextContents(),['FIRST, OWNER','SECOND BUSINESS LLC']);
+      assert.deepEqual(await list.locator('.record-owner-address').allTextContents(),['100 FIRST ROAD, COLUMBIA SC 29201','200 SECOND ROAD, CHARLESTON SC 29401']);
+      assert.equal(await list.evaluate(el=>getComputedStyle(el).color),'rgb(255, 255, 255)');
+      assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+      await page.close();
+    }
+  });
+  await tests('tag owner details preserve missing fields and render names and addresses only as text',async()=>{
+    const payload=plateStatus('VIN: TEST Year: 2026 Make: TEST Model: MODEL Body: SD Empty Weight: 3000 Owner Number: 1 Owner Name: <img src=x> Owner Address: Owner Number: 2 Owner Name: Owner Address: <b>200 SECOND ROAD</b> Last Transaction: RENEWAL Plate Class: ABC Decal Exp Date: 11/01/2026',fixedNow);
+    const page=await statusPage(payload);await page.locator('.record-owners').waitFor();
+    assert.deepEqual(await page.locator('.record-owner-name').allTextContents(),['<img src=x>','Name unavailable']);
+    assert.deepEqual(await page.locator('.record-owner-address').allTextContents(),['Address unavailable','<b>200 SECOND ROAD</b>']);
+    assert.equal(await page.locator('.record-owners img,.record-owners b').count(),0);await page.close();
+    const absent=await statusPage(plateStatus('Plate Class: ABC Decal Exp Date: 11/01/2026',fixedNow));
+    assert.equal(await absent.locator('.record-owners').count(),0);await absent.close();
+  });
+  await tests('tag owner names launch the selected saved owner search by mouse or keyboard',async()=>{
+    const report='VIN: TEST Year: 2026 Make: TEST Model: MODEL Body: SD Empty Weight: 3000 '+
+      'Owner Number: 1111 Owner Name: FIRST, OWNER Owner Address: 100 FIRST ROAD, COLUMBIA SC 29201 '+
+      'Owner Number: C0002222 Owner Name: SECOND, OWNER Last Transaction: RENEWAL Plate Class: ABC Decal Exp Date: 11/01/2026';
+    for(const mode of ['mouse','keyboard']) {
+      const page=await statusPage(plateStatus(report,fixedNow)),names=page.locator('.record-owner-search');await names.first().waitFor();
+      assert.deepEqual(await page.locator('.record-owner-address').allTextContents(),['100 FIRST ROAD, COLUMBIA SC 29201','100 FIRST ROAD, COLUMBIA SC 29201']);
+      if(mode==='mouse')await names.nth(1).click();else {await names.nth(1).focus();await page.keyboard.press('Enter');}
+      await page.waitForFunction(()=>window.requests.some(r=>r.type==='alert-owner-search'));
+      assert.deepEqual(await page.evaluate(()=>window.requests.find(r=>r.type==='alert-owner-search')),{type:'alert-owner-search',id:'record-status',ownerIndex:1});
+      assert.equal(await page.evaluate(()=>window.closedByAlert),false);await page.close();
+    }
+    const missing=await statusPage(plateStatus(report.replace('Owner Number: 1111','Owner Number: INVALID').replace('Owner Number: C0002222','Owner Number:'),fixedNow));
+    assert.equal(await missing.locator('.record-owner-search').count(),0);await missing.close();
+  });
+  await tests('tag owner list participates in popup height fitting without shrinking the status heading',async()=>{
+    const owners=Array.from({length:6},(_,index)=>`Owner Number: ${index+1} Owner Name: SYNTHETIC OWNER ${index+1} Owner Address: ${index+1} LONG EXAMPLE ROAD, COLUMBIA SC 29201`).join(' ');
+    const payload=plateStatus(`VIN: TEST Year: 2026 Make: TEST Model: MODEL Body: SD Empty Weight: 3000 ${owners} Last Transaction: RENEWAL Plate Class: ABC Decal Exp Date: 11/01/2026`,fixedNow);
+    const page=await fittedAlert(payload,{availHeight:760});
+    // Readable minimum text may leave bottom padding below the viewport; content
+    // and Close must still be visible. Capture the viewport without resizing it.
+    await page.waitForFunction(()=>document.body.dataset.alertFit==='ready'&&document.querySelector('#submit').getBoundingClientRect().bottom<=innerHeight);
+    assert.equal(await page.locator('.record-owner').count(),6);
+    assert.equal(await page.locator('.record-status-title').evaluate(el=>getComputedStyle(el).fontSize),'36px');
+    assert.equal(await page.evaluate(()=>window.alertBounds.height<=760),true);assert.equal(await page.evaluate(()=>scrollY),0);
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+    assert.equal(await page.locator('#submit').evaluate(el=>el.getBoundingClientRect().bottom<=innerHeight),true);
+    await page.screenshot({path:join(screenshots,'tag-owners-fitted.png')});
+    await page.locator('#submit').click();await page.waitForFunction(()=>window.closedByAlert);await page.close();
+  });
   await tests('combined plate alert renders large red headings, remains open for 90 seconds, then closes',async()=>{
     const payload=plateStatus('Plate Class: ABC Decal Exp Date: 09/27/2025 Enforcement Description: <img src=x> Insurance suspension Enforcement Statute: 56-1-460',fixedNow);
     const page=await statusPage(payload);
@@ -1245,9 +1307,9 @@ try {
     await page.screenshot({path:join(screenshots,'license-alert.png'),fullPage:true});
     await page.keyboard.press('Escape');await page.waitForFunction(()=>window.closedByAlert);await page.close();
   });
-  await tests('green plate and license alerts close after ten seconds',async()=>{
+  await tests('green plate and license alerts close after thirty seconds',async()=>{
     const payloads=[plateStatus('Plate Class: ABC Decal Exp Date: 10/28/2026',fixedNow),licenseStatus(`Status - DL: NO SUSPENSION Driver License No:123456789 Name: FICTIONAL, PERSON ${currentHeader} DL Renewal 01/01/2020 10/28/2026 01/01/2020`,fixedNow)];
-    for(const payload of payloads){const page=await statusPage(payload);assert.equal(await page.locator('.record-status-title').evaluate(el=>getComputedStyle(el).color),'rgb(67, 220, 121)');await page.clock.fastForward(9000);assert.equal(await page.evaluate(()=>window.closedByAlert),false);await page.clock.fastForward(1000);assert.equal(await page.evaluate(()=>window.closedByAlert),true);await page.close();}
+    for(const payload of payloads){const page=await statusPage(payload);assert.equal(await page.locator('.record-status-title').evaluate(el=>getComputedStyle(el).color),'rgb(67, 220, 121)');await page.clock.fastForward(10000);assert.equal(await page.evaluate(()=>window.closedByAlert),false);await page.clock.fastForward(19000);assert.equal(await page.evaluate(()=>window.closedByAlert),false);await page.clock.fastForward(1000);assert.equal(await page.evaluate(()=>window.closedByAlert),true);await page.close();}
   });
   await tests('combined Dark Mode group exposes two keyboard-accessible independent saved switches',async()=>{
     const page=await ui.newPage();await page.goto(base+'/popup.html');await page.locator('#settingsTab').click();
@@ -1265,6 +1327,115 @@ try {
     assert.equal(await page.evaluate(()=>window.requests.some(x=>x.type==='run')),false);
     await page.screenshot({path:join(screenshots,'settings-wording-v1.8.8.png'),fullPage:true});await page.close();
   });
+  await tests('background search setting expands below popups and preserves its saved choice',async()=>{
+    const page=await ui.newPage();await page.goto(base+'/popup.html');await page.locator('#settingsTab').click();
+    assert.equal(await page.locator('#backgroundSearchSettings').isVisible(),false);
+    await page.locator('#alertsToggle').check();await page.locator('#backgroundSearchSettings').waitFor();
+    const settingText=await page.locator('#backgroundSearchSettings').textContent();
+    assert.match(settingText,/same-address results come into focus/i);assert.match(settingText,/SCUTTIES stays in the foreground/);
+    assert.equal(await page.locator('#backgroundSearchToggle').isChecked(),false);
+    assert.equal(await page.locator('#backgroundSearchMethod').count(),0);
+    await page.locator('#backgroundSearchToggle').check();
+    await page.locator('#aboutTab').click();await page.locator('#settingsTab').click();
+    assert.equal(await page.locator('#backgroundSearchToggle').isChecked(),true);
+    await page.locator('#alertsToggle').uncheck();assert.equal(await page.locator('#backgroundSearchSettings').isVisible(),false);
+    await page.locator('#alertsToggle').check();assert.equal(await page.locator('#backgroundSearchToggle').isChecked(),true);
+    assert.deepEqual(await page.evaluate(()=>window.requests.filter(r=>r.type==='background-search-settings').at(-1)),{type:'background-search-settings',enabled:true});
+    assert.equal(await page.evaluate(()=>window.requests.some(r=>r.type==='run')),false);await page.close();
+  });
+  await tests('background report handoff captures window.open, empty handles and attachment links without opening tabs',async()=>{
+    const fixture=await browser.newContext();
+    await fixture.addInitScript({content:await readFile(join(root,'extension/background-report.js'),'utf8')});
+    await fixture.route(`${ROOT}/**`,route=>route.fulfill({contentType:'text/html',body:route.request().url().endsWith('/postback.aspx')?`<script>window.open('${PDF_URL}','results').focus();<\/script>`:`<button id="download">Download</button><a id="attachment" href="${PDF_URL}" target="_blank">PDF</a>`}));
+    const page=await fixture.newPage();await page.goto(MEMBER+'Transactions/DrvRec/Page2.aspx');
+    await page.addScriptTag({content:pageOperation.toString()});
+    await page.evaluate(()=>window.originalOpen=window.open);
+    const operate=(op,args={})=>page.evaluate(([op,args])=>pageOperation(op,args),[op,args]);
+    for(const mode of ['direct','blank','replace','link','unsupported']) {
+      await operate('startBackgroundReport');
+      await page.evaluate(({mode,url})=>{
+        if(mode==='direct')window.open(url,'results').focus();
+        if(mode==='blank'){const w=window.open('','results');w.location.href=url;w.focus();}
+        if(mode==='replace')window.open('','results').location.replace(url);
+        if(mode==='link')document.getElementById('attachment').click();
+        if(mode==='unsupported')window.open('https://other.test/');
+      },{mode,url:PDF_URL});
+      const captured=await operate('backgroundReport');
+      if(mode==='unsupported')assert.match(captured.error,/unsupported/);else assert.equal(captured.url,PDF_URL);
+      assert.equal(fixture.pages().length,1);await operate('stopBackgroundReport');
+      assert.equal(await page.evaluate(()=>window.open===window.originalOpen),true);
+    }
+    await operate('startBackgroundReport',{persistent:true});
+    await page.goto(MEMBER+'Transactions/DrvRec/postback.aspx');
+    await page.addScriptTag({content:pageOperation.toString()});
+    assert.equal((await operate('backgroundReport')).url,PDF_URL);
+    assert.equal(fixture.pages().length,1);
+    await operate('stopBackgroundReport');
+    assert.equal(await page.evaluate(()=>sessionStorage.getItem('__scDmvBackgroundReport')),null);
+    await fixture.close();
+  });
+  await tests('background report reader consumes job bytes, opens original colors and retains native printing',async()=>{
+    const doc=await PDFDocument.create(),font=await doc.embedFont(StandardFonts.Helvetica);
+    doc.addPage([400,400]).drawText('SYNTHETIC BACKGROUND REPORT',{x:20,y:350,font,size:14});
+    const base64=Buffer.from(await doc.save()).toString('base64'),page=await ui.newPage();
+    await page.addInitScript(base64=>{
+      const original=chrome.runtime.sendMessage;
+      chrome.runtime.sendMessage=async message=>{
+        if(message.type==='reader-start'){window.readerHandshake=message;return {ok:true,value:{base64}};}
+        if(message.type==='reader-direct-start')throw new Error('Background reports must use job-bound bytes');
+        if(message.type==='reader-result'){window.pdfResult=message;return {ok:true,value:true};}
+        return original(message);
+      };
+    },base64);
+    await page.goto(base+'/reader.html?pdf=1&query=1&id=fixture&dark=0#'+PDF_URL);
+    await page.waitForFunction(()=>window.pdfResult?.text&&document.body.dataset.pdfView==='ready');
+    assert.match(await page.locator('#pdfProgress').textContent(),/Original colors/);
+    assert.equal(await page.locator('#pdfPrint').isEnabled(),true);
+    assert.equal(await page.evaluate(()=>window.readerHandshake.id),'fixture');
+    assert.match(await page.evaluate(()=>window.pdfResult.text),/SYNTHETIC BACKGROUND REPORT/);
+    await page.locator('#pdfPrint').click();await page.waitForFunction(()=>window.requests.some(r=>r.type==='pdf-native-print'));
+    assert.match(await page.evaluate(()=>window.requests.find(r=>r.type==='pdf-native-print').text),/SYNTHETIC BACKGROUND REPORT/);
+    await page.close();
+  });
+  await tests('background status parsing and optional photo finish while PDF display frames are paused',async()=>{
+    const drawing=await ui.newPage();const png=await drawing.evaluate(()=>{const c=document.createElement('canvas');c.width=c.height=160;const context=c.getContext('2d');context.fillStyle='#4780b4';context.fillRect(0,0,160,160);return c.toDataURL('image/png').split(',')[1];});await drawing.close();
+    const doc=await PDFDocument.create(),font=await doc.embedFont(StandardFonts.Helvetica),sheet=doc.addPage([612,792]);
+    sheet.drawText('Driver License No: 123456789',{x:50,y:470,size:10,font});
+    sheet.drawText('Name: SYNTHETIC, DRIVER Address: 123 EXAMPLE ROAD',{x:50,y:450,size:10,font});
+    sheet.drawText('Status - DL: SUSPENDED',{x:50,y:430,size:10,font});
+    sheet.drawImage(await doc.embedPng(Buffer.from(png,'base64')),{x:234,y:518,width:144,height:144});
+    const base64=Buffer.from(await doc.save()).toString('base64');
+    for(const dark of [false,true])for(const identity of [false,true]) {
+      const page=await ui.newPage();
+      await page.addInitScript(({base64,identity})=>{
+        const frames=new Map(),request=window.requestAnimationFrame.bind(window),cancel=window.cancelAnimationFrame.bind(window);
+        let paused=true,id=0;window.pausedFrameCount=0;window.results=[];
+        window.requestAnimationFrame=callback=>{if(!paused)return request(callback);window.pausedFrameCount++;frames.set(--id,callback);return id;};
+        window.cancelAnimationFrame=id=>{if(!frames.delete(id))cancel(id);};
+        window.releaseDisplayFrames=()=>{paused=false;for(const callback of frames.values())request(callback);frames.clear();};
+        const send=chrome.runtime.sendMessage;
+        chrome.runtime.sendMessage=async message=>{
+          if(message.type==='reader-start')return {ok:true,value:{base64,includeDriverIdentity:identity}};
+          if(message.type==='reader-result'){window.results.push(message);return {ok:true,value:true};}
+          return send(message);
+        };
+      },{base64,identity});
+      await page.goto(base+`/reader.html?pdf=1&query=1&id=paused-fixture&dark=${dark?'1':'0'}#`+PDF_URL);
+      // No click, bringToFront, or display-frame release is permitted before this assertion.
+      try {await page.waitForFunction(()=>window.results.length===1&&window.pausedFrameCount>0,{},{timeout:15000,polling:100});}
+      catch(error){console.log('Paused-frame fixture diagnostics', {dark,identity,...await page.evaluate(()=>({results:window.results.map(r=>({hasText:!!r.text,error:r.error,hasIdentity:!!r.driverIdentity})),frames:window.pausedFrameCount,view:document.body.dataset.pdfView,note:document.querySelector('#readingNote').textContent}))});throw error;}
+      const result=await page.evaluate(()=>window.results[0]);
+      assert.match(result.text,/Status - DL: SUSPENDED/);assert.equal(result.error,undefined);
+      if(identity)assert.match(result.driverIdentity.photo,/^data:image\/png;base64,/);else assert.equal(result.driverIdentity,undefined);
+      assert.equal(await page.evaluate(()=>document.body.dataset.pdfView),'loading');
+      assert.equal(await page.locator('#pdfPrint').isEnabled(),true);
+      assert.equal(await page.locator('canvas[data-ready=true]').count(),0);
+      // Selecting/painting later must not submit another extraction result or fetch another PDF.
+      await page.evaluate(()=>window.releaseDisplayFrames());
+      await page.waitForFunction(()=>document.body.dataset.pdfView==='ready');
+      assert.equal(await page.evaluate(()=>window.results.length),1);await page.close();
+    }
+  });
   await tests('PDF dark-view setting is opt-in and changes only the PDF preference',async()=>{
     const page=await ui.newPage();await page.goto(`${base}/popup.html`);await page.locator('#history tr').first().waitFor();await page.locator('#settingsTab').click();
     assert.equal(await page.locator('#pdfDarkMode').isChecked(),false);await page.locator('#pdfDarkMode').check();
@@ -1280,7 +1451,7 @@ try {
     doc.addPage([400,400]).drawText('SECOND PAGE',{x:20,y:350,font,size:16});
     const base64=Buffer.from(await doc.save()).toString('base64');
     await page.addInitScript(base64=>{const original=chrome.runtime.sendMessage;chrome.runtime.sendMessage=async message=>{if(message.type==='reader-start'||message.type==='reader-direct-start')return {ok:true,value:{base64,id:'synthetic-direct'}};if(message.type==='reader-result'){window.pdfResult=message;return {ok:true,value:true};}return original(message);};},base64);
-    await page.goto(base+'/reader.html?dark=1&pdf=1#https://www.scdmvonline.com/SCTRNS/Member/Transactions/ViewAttachment.aspx');await page.waitForFunction(()=>window.pdfResult?.viewReady===true);
+    await page.goto(base+'/reader.html?dark=1&pdf=1#https://www.scdmvonline.com/SCTRNS/Member/Transactions/ViewAttachment.aspx');await page.waitForFunction(()=>window.pdfResult?.text&&document.body.dataset.pdfView==='ready');
     const pixels=()=>page.locator('.pdf-sheet:first-child .pdf-page').evaluate(canvas=>{const ctx=canvas.getContext('2d');return {photo:[...ctx.getImageData(150,195,180,180).data],paper:[...ctx.getImageData(5,5,1,1).data],bright:[...ctx.getImageData(20,45,500,40).data].filter((v,i)=>i%4!==3&&v>200).length};});
     assert.equal(new URL(page.url()).searchParams.get('id'),'synthetic-direct');
     const dark=await pixels();assert.deepEqual(dark.paper,[24,26,27,255]);assert.ok(dark.bright>100);
@@ -1303,7 +1474,7 @@ try {
       return {ok:false};
     };},base64);
     await page.goto(base+'/reader.html?dark=1&pdf=1#https://www.scdmvonline.com/SCTRNS/Member/Transactions/ViewAttachment.aspx');
-    await page.waitForFunction(()=>window.pdfResult?.viewReady===true);assert.equal(await page.locator('.pdf-sheet').count(),30);
+    await page.waitForFunction(()=>window.pdfResult?.text&&document.body.dataset.pdfView==='ready');assert.equal(await page.locator('.pdf-sheet').count(),30);
     assert.ok(await page.locator('.pdf-page').count()<=5);assert.equal(await page.locator('.pdf-sheet:last-child canvas').count(),0);
     await page.locator('.pdf-sheet:last-child').scrollIntoViewIfNeeded();await page.locator('.pdf-sheet:last-child canvas[data-ready=true]').waitFor();
     await page.waitForFunction(()=>!document.querySelector('.pdf-sheet:first-child canvas'));assert.ok(await page.locator('.pdf-page').count()<=5);
@@ -1323,7 +1494,7 @@ try {
       return {ok:false};
     };},base64);
     await page.goto(base+'/reader.html?dark=1&pdf=1#https://www.scdmvonline.com/SCTRNS/Member/Transactions/ViewAttachment.aspx');
-    await page.waitForFunction(()=>window.pdfResult?.viewReady===true);await page.waitForFunction(()=>document.querySelectorAll('.pdf-text-surface').length===12);
+    await page.waitForFunction(()=>window.pdfResult?.text&&document.body.dataset.pdfView==='ready');await page.waitForFunction(()=>document.querySelectorAll('.pdf-text-surface').length===12);
     const first=page.locator('.pdf-sheet:first-child .textLayer span').filter({hasText:text});
     const copy=async(locator,vertical=false)=>{
       await locator.scrollIntoViewIfNeeded();const box=await locator.boundingBox();assert.ok(box.width>0&&box.height>0);
@@ -1372,7 +1543,7 @@ try {
       };
     },base64);
     await page.goto(base+'/reader.html?dark=1&pdf=1#https://www.scdmvonline.com/SCTRNS/Member/Transactions/ViewAttachment.aspx',{waitUntil:'commit'});
-    await page.waitForFunction(()=>window.pdfResult?.viewReady===true&&!document.querySelector('#pdfPrint').disabled);
+    await page.waitForFunction(()=>window.pdfResult?.text&&document.body.dataset.pdfView==='ready'&&!document.querySelector('#pdfPrint').disabled);
     await page.locator('#pdfPrint').click();await page.waitForFunction(()=>document.querySelector('#pdfPrintStatus').textContent.startsWith('Original PDF opened'));
     assert.equal(requests,1);assert.ok(native.url().startsWith('blob:'));
     assert.equal(await page.evaluate(()=>window.readerAcked===true),false);await page.evaluate(()=>window.releaseReaderAck());

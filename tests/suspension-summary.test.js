@@ -58,7 +58,7 @@ test('IID warning applies to every status and old/completed DUI blocks without c
 test('IID flags stay bound to DUI/DUAC suspension blocks and do not leak between blocks', () => {
   const n=susp('Driving Under the Influence',{iid:'N'}), y=susp('Other reason',{iid:'Y'});
   for (const blocks of [n+'\n'+y,y+'\n'+n,viol('Driving Under the Influence','A','01/01/2025')+' IID Required: Y',n.replace('IID Required: N','IID Required: YES')]) {
-    const r=result(validHeader+' '+blocks);assert.equal(r.iidRequired,undefined);assert.equal(r.autoCloseMs,10000);
+    const r=result(validHeader+' '+blocks);assert.equal(r.iidRequired,undefined);assert.equal(r.autoCloseMs,30000);
   }
   assert.equal(result(validHeader+' '+susp('Unlawful Alcohol Concentration',{iid:'Y'})).iidRequired,true);
 });

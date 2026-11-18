@@ -185,7 +185,7 @@ function vehicleValues(raw, partyIndex = 0) {
   const body = text.slice(start).split(/\b(?:Enforcement\s+Description\s*:|Document\s+obtained\s+from\s+DMV\s+web\s+site\s*:)/i)[0];
   // Relationship metadata ends the name field but is not part of barcode identity.
   const partyLabels = ['Owner', 'Customer', 'Registrant/Lessee'].flatMap(type => ['Number', 'Name', 'Relationship', 'Address'].map(field => `${type} ${field}`));
-  const labels = ['VIN', 'Year', 'Make', 'Model', 'Body', 'Empty Weight', 'Title Number', 'Status', 'Issue Date', 'Dup', ...partyLabels, 'Mailing Address', 'Last Transaction', 'Plate Number', 'Plate Class', 'Vehicle Type', 'Date of Issue', 'Plate Exp Date', 'Decal Exp Date', 'Decal Number', 'Window Sticker Number', 'GVW', 'Equip Number', 'Annual Fee', 'County', 'Municipality', 'School District', 'Vehicle Housed Address', 'Insurance'];
+  const labels = ['VIN', 'Year', 'Make', 'Model', 'Body', 'Empty Weight', 'Title Number', 'Status', 'Issue Date', 'Dup', ...partyLabels, 'Lessee Address', 'Registrant Address', 'Mailing Address', 'Last Transaction', 'Plate Number', 'Plate Class', 'Vehicle Type', 'Date of Issue', 'Plate Exp Date', 'Decal Exp Date', 'Decal Number', 'Window Sticker Number', 'GVW', 'Equip Number', 'Annual Fee', 'County', 'Municipality', 'School District', 'Vehicle Housed Address', 'Insurance'];
   const v = labeled(body, labels);
   // Bind identity to the first listed party, rather than independently choosing
   // the first nonempty name/address found anywhere in the vehicle record.
@@ -199,7 +199,7 @@ function vehicleValues(raw, partyIndex = 0) {
     const selected = parties[partyIndex], category = flat(selected.match[1]).replace(/\s*\/\s*/g, '/').toLowerCase();
     const first = labeled(body.slice(selected.match.index, selected.end), labels);
     v['owner name'] = first[`${category} name`] || '';
-    v['owner address'] = first[`${category} address`] || '';
+    v['owner address'] = first[`${category} address`] || (category==='registrant/lessee' ? first['lessee address']||first['registrant address'] : '') || '';
   }
   return {v, parties};
 }

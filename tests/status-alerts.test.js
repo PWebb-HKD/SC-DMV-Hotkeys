@@ -33,7 +33,7 @@ test('expiration duration reports calendar years, months, and days without DST d
 });
 test('ordinary plates use Decal Exp Date; an expiration of today remains valid', () => {
   const valid = plateStatus(vehicle('10/28/2026'), NOW);
-  assert.deepEqual(titles(valid), ['TAG VALID']); assert.equal(valid.autoCloseMs, 10000);
+  assert.deepEqual(titles(valid), ['TAG VALID']); assert.equal(valid.autoCloseMs, 30000);
   assert.deepEqual(titles(plateStatus(vehicle('10/27/2026'), NOW)), ['EXPIRED']);
 });
 test('T45V temporary plates use Plate Exp Date instead of Decal Exp Date', () => {
@@ -121,7 +121,7 @@ test('ID-only classes ignore single-letter parentheses', () => {
 test('current licenses use the second Renewal date, with today valid and yesterday expired', () => {
   assert.deepEqual(titles(licenseStatus(driver(current('DL (C)', '10/28/2026')), NOW)), ['VALID LICENSE']);
   assert.deepEqual(titles(licenseStatus(driver(current('DL (C)', '10/27/2026')), NOW)), ['LICENSE EXPIRED']);
-  assert.equal(licenseStatus(driver(), NOW).autoCloseMs, 10000);
+  assert.equal(licenseStatus(driver(), NOW).autoCloseMs, 30000);
 });
 test('Current expiration accepts Modify, Duplicate, and a missing Printed Date', () => {
   for (const row of [
@@ -156,7 +156,7 @@ test('PDF whitespace changes are tolerated and residence/SCUTTIES result types d
   assert.deepEqual(titles(recordStatus('customer', driver(), NOW)), ['VALID LICENSE']);
 });
 
-for (const plateClass of ['T45V TEMPORARY PLATE-VEHICLE', 'E45V EVR TEMPORARY PLATE-VEHICLE', 'E60V EVR TEMPORARY PLATE-VEHICLE']) {
+for (const plateClass of ['T45V TEMPORARY PLATE-VEHICLE', 'T60V TEMPORARY PLATE-VEHICLE', 'E45V EVR TEMPORARY PLATE-VEHICLE', 'E60V EVR TEMPORARY PLATE-VEHICLE']) {
   test(`${plateClass}: status uses plate expiry with blank or conflicting decal dates`, () => {
     for (const decal of ['', '01/01/2000', '01/01/2099']) {
       const text = `Plate Class: ${plateClass} Vehicle Type: 4 Plate Exp Date: 10/28/2026 Decal Exp Date: ${decal}`;
@@ -202,7 +202,7 @@ test('temporary alcohol status is valid with a display-only qualifier and curren
     const report = driver(current('TA DL D')).replace('NO SUSPENSION', status) + ' CDL: DISQUALIFIED';
     const result = licenseStatus(report, NOW);
     assert.equal(result.tone, 'success');
-    assert.equal(result.autoCloseMs, 10000);
+    assert.equal(result.autoCloseMs, 30000);
     assert.deepEqual(result.sections, [{title: 'VALID LICENSE', lines: ['TEMPORARY ALCOHOL LICENSE']}]);
     assert.deepEqual(recordStatus('customer', report.replace(/ /g, '\n\t'), NOW), result);
     assert.deepEqual(titles(licenseStatus(report.replace('10/28/2026', '10/27/2026'), NOW)), ['LICENSE EXPIRED']);
