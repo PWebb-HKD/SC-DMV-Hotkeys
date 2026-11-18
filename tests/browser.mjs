@@ -971,7 +971,7 @@ try {
     return page;
   }
   const longAlert=()=>({type:'record-alert',recordType:'license',tone:'danger',autoCloseMs:90000,sections:[{
-    title:'LICENSE SUSPENDED',lines:['2 Prior DUS convictions within 5 years','1 Prior DUI/DUAC convictions within 10 years','7 active suspensions','4 pending reinstatement'],listTitle:'Suspension Reasons:',columns:[
+    title:'LICENSE SUSPENDED',lines:['2 Prior DUS convictions within 5 years','1 Prior DUI/DUAC convictions within 10 years','7 active suspensions · 4 pending reinstatement'],listTitle:'Suspension Reasons:',columns:[
       {title:'Active Suspensions',items:['Habitual Offender × 1','Failure to Pay Traffic Ticket × 4','Failure to Pay Property Tax × 1','Failure to Show proof of Insurance × 1']},
       {title:'Pending Reinstatement',items:['Driving Under Suspension × 2','DUI/DUAC × 1','Implied Consent × 1']}
     ]}]});
@@ -1145,7 +1145,9 @@ try {
     assert.deepEqual(await columns.nth(1).locator('summary').allTextContents(),['Driving Under Suspension × 1','DUI/DUAC × 1']);
     const left=await columns.nth(0).boundingBox(),right=await columns.nth(1).boundingBox();
     assert.ok(right.x>=left.x+left.width);assert.equal(left.y,right.y);
-    assert.deepEqual((await page.locator('.record-status-line').allTextContents()).slice(0,4),['0 Prior DUS convictions within 5 years','3 Prior DUI/DUAC convictions within 10 years','3 active suspensions','2 pending reinstatement']);
+    assert.deepEqual((await page.locator('.record-status-line').allTextContents()).slice(0,3),['0 Prior DUS convictions within 5 years','3 Prior DUI/DUAC convictions within 10 years','3 active suspensions · 2 pending reinstatement']);
+    const tally=page.locator('.record-status-line').nth(2);
+    assert.equal(await tally.evaluate(el=>el.getBoundingClientRect().height<=parseFloat(getComputedStyle(el).lineHeight)+1),true);
     assert.equal(await page.locator('.record-status-warning').evaluate(el=>el.previousElementSibling.tagName),'H2');
     await page.screenshot({path:join(screenshots,'suspension-buckets.png'),fullPage:true});
     await page.setViewportSize({width:360,height:700});

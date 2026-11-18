@@ -20,6 +20,12 @@ Default to latest main, preserve explicitly required unmerged dependencies, sync
 
 When the user says **Merge TB**, read and follow [.agents/skills/merge-tb/SKILL.md](.agents/skills/merge-tb/SKILL.md). Merge the current test branch into main, verify and push main successfully, then delete the merged test branch locally and remotely. If multiple test branches exist, ask which one to merge and delete before proceeding unless the user already explicitly selected it. Creating or discussing this skill does not invoke a merge.
 
+## v1.8.30 Combined Suspension Tally Line — 2026-11-17
+
+- Continued on fix/v1.8.28-patch-test with synchronized release version 1.8.30. Main remains unchanged.
+- The pending reinstatement tally now follows the active suspension total in the same status line, separated by a middle dot (for example, 7 active suspensions · 4 pending reinstatement). Zero-pending results retain the active tally alone. Reason columns, expandable occurrence details, parsing, and voice behavior are unchanged.
+- Verified npm run check, git diff --check, all 48 focused status/suspension/report-layout unit tests, and six targeted browser checks including single-line tally rendering and initial window fitting/alignment. Full unit/general browser/theme/barcode suites were not rerun for this display-only revision.
+
 ## v1.8.29 Optional Driver Photo and Name — 2026-11-17
 
 - Continued on fix/v1.8.28-patch-test; synchronized release files declare 1.8.29. Main remains unchanged.

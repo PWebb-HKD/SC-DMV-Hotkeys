@@ -8,7 +8,7 @@ const result = text => licenseStatus(text, statusNow);
 test('separate active and pending buckets group DUI/DUAC together and preserve DUS/DUI line order', () => {
   const r = result(mixedSuspensions);
   assert.equal(r.activeSuspensions, 3); assert.equal(r.pendingReinstatement, 2); assert.equal(r.priorDuiDuac, 3);
-  assert.deepEqual(r.sections[0].lines.slice(0,4), ['0 Prior DUS convictions within 5 years','3 Prior DUI/DUAC convictions within 10 years','3 active suspensions','2 pending reinstatement']);
+  assert.deepEqual(r.sections[0].lines.slice(0,3), ['0 Prior DUS convictions within 5 years','3 Prior DUI/DUAC convictions within 10 years','3 active suspensions · 2 pending reinstatement']);
   assert.deepEqual(r.sections[0].columns.map(({title,items})=>({title,items})), [
     {title:'Active Suspensions',items:['DUI/DUAC × 2','Failure to Pay Traffic Ticket × 1']},
     {title:'Pending Reinstatement',items:['Driving Under Suspension × 1','DUI/DUAC × 1']}
