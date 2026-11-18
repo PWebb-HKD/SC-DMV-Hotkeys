@@ -128,6 +128,18 @@ try {
         }
         $('recordAlert').append(details);
       }
+      if(data.recordType==='plate'&&!data.blacklist&&data.owners?.length) {
+        const owners=document.createElement('section');owners.className='record-owners';
+        const heading=document.createElement('h3');heading.textContent=data.owners.length===1?'Registered owner':'Registered owners';owners.append(heading);
+        const list=document.createElement('ol');list.className='record-owner-list';
+        for(const owner of data.owners) {
+          const row=document.createElement('li');row.className='record-owner';
+          const name=document.createElement('p');name.className='record-owner-name';name.textContent=owner.name||'Name unavailable';
+          const address=document.createElement('p');address.className='record-owner-address';address.textContent=owner.address||'Address unavailable';
+          row.append(name,address);list.append(row);
+        }
+        owners.append(list);$('recordAlert').append(owners);
+      }
       $('cancel').hidden = true; $('submit').textContent = 'Close'; $('submit').focus({preventScroll: true});
       let deadline = Date.now() + (data.autoCloseMs || 90000);
       $('alertCountdown').hidden = false;

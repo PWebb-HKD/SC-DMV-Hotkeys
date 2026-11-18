@@ -28,14 +28,14 @@
     </section>
     <section id="settingsView" role="tabpanel" aria-labelledby="settingsTab" hidden>
     <div class="alerts-setting">
-      <label class="alerts-toggle" for="alertsToggle"><span>Plate & license status alerts<small>Enable for status popups displaying the status of a Driver's License or Licens Plate. Popups auto close after 90 seconds and 10 seconds if they are valid.</small></span><span class="switch-control"><input id="alertsToggle" type="checkbox" role="switch" aria-controls="backgroundSearchSettings"><span class="switch-track" aria-hidden="true"></span></span></label>
-      <div id="backgroundSearchSettings" class="voice-settings" hidden>
-        <label class="alerts-toggle" for="backgroundSearchToggle"><span>Run record searches in the background<small>Plate, DL, customer and same-address searches run in the hidden window. Plate, DL and customer results show a status popup; same-address results come into focus. SCUTTIES stays in the foreground.</small></span><span class="switch-control"><input id="backgroundSearchToggle" type="checkbox" role="switch"><span class="switch-track" aria-hidden="true"></span></span></label>
-        <p class="hint">Searches use a separate query window that starts minimized. You can restore it while a search is running.</p>
+      <label class="alerts-toggle" for="alertsToggle"><span>Plate & license status alerts<small>Enable for status popups displaying the status of a Driver's License or Licens Plate. Popups auto close after 90 seconds and 10 seconds if they are valid.</small></span><span class="switch-control"><input id="alertsToggle" type="checkbox" role="switch" aria-controls="statusAlertSettings"><span class="switch-track" aria-hidden="true"></span></span></label>
+      <div id="statusAlertSettings" class="voice-settings status-alert-settings" hidden>
+        <label class="alerts-toggle" for="driverIdentityToggle"><span>Show driver photo and name<small>Display the driver name and available photo from newly captured driving records. No-photo placeholders are hidden.</small></span><span class="switch-control"><input id="driverIdentityToggle" type="checkbox" role="switch"><span class="switch-track" aria-hidden="true"></span></span></label>
+        <div id="backgroundSearchSettings">
+          <label class="alerts-toggle" for="backgroundSearchToggle"><span>Run record searches in the background<small>Plate, DL, customer and same-address searches run in the hidden window. Plate, DL and customer results show a status popup; same-address results come into focus. SCUTTIES stays in the foreground.</small></span><span class="switch-control"><input id="backgroundSearchToggle" type="checkbox" role="switch"><span class="switch-track" aria-hidden="true"></span></span></label>
+          <p class="hint">Searches use a separate query window that starts minimized. You can restore it while a search is running.</p>
+        </div>
       </div>
-    </div>
-    <div class="alerts-setting">
-      <label class="alerts-toggle" for="driverIdentityToggle"><span>Show driver photo and name<small>Display the driver name and available photo from newly captured driving records. No-photo placeholders are hidden.</small></span><span class="switch-control"><input id="driverIdentityToggle" type="checkbox" role="switch"><span class="switch-track" aria-hidden="true"></span></span></label>
     </div>
     <div class="alerts-setting">
       <label class="alerts-toggle" for="speechToggle"><span>Voice status alerts<small>Plays voice alerts of the status of a Driver's License or License Plate.</small></span><span class="switch-control"><input id="speechToggle" type="checkbox" role="switch" aria-controls="voiceSettings"><span class="switch-track" aria-hidden="true"></span></span></label>

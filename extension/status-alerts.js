@@ -68,10 +68,33 @@ function vehicleDetails(text) {
   return {make: flat(make), model: flat(model), year: /^\d{4}$/.test(flat(year)) ? flat(year) : '', body: flat(body)};
 }
 
+/** Preserve numbered registration parties in report order. Each identity is read
+ * only from its own category/block; missing fields never borrow another address. */
+function vehicleOwners(text) {
+  const start=text.search(/\bVIN\s*:/i);
+  if(start<0)return [];
+  const body=text.slice(start).split(/\b(?:Enforcement\s+Description|Document\s+obtained\s+from\s+DMV\s+web\s+site)\s*:/i)[0];
+  const party='(?:Owner|Customer|Registrant\\s*\\/\\s*Lessee)\\s+(?:Number|Name|Address|Relationship)';
+  const other='VIN|Year|Make|Model|Body|Empty Weight|Title Number|Status|Issue Date|Dup|Mailing Address|Last Transaction|Plate Number|Plate Class|Vehicle Type|Date of Issue|Plate Exp Date|Decal Exp Date|Decal Number|Window Sticker Number|GVW|Equip Number|Annual Fee|County|Municipality|School District|Vehicle Housed Address|Insurance';
+  const labels=[...body.matchAll(new RegExp(`\\b(${party}|${other.replace(/ /g,'\\s+')})\\s*:`, 'gi'))];
+  const owners=[];let current;
+  for(const [index,label] of labels.entries()) {
+    const key=flat(label[1]).replace(/\s*\/\s*/g,'/').toLowerCase();
+    const category=key.match(/^(owner|customer|registrant\/lessee) number$/)?.[1];
+    if(category){current={category,name:'',address:''};owners.push(current);continue;}
+    if(!current)continue;
+    const value=flat(body.slice(label.index+label[0].length,labels[index+1]?.index??body.length));
+    if(key===`${current.category} name`&&!current.name)current.name=value;
+    if(key===`${current.category} address`&&!current.address)current.address=value;
+  }
+  return owners.map(({name,address})=>({name,address}));
+}
+
 /** Combine enforcement and expiration findings; temporary tags use Plate Exp Date. */
 export function plateStatus(raw, now = new Date()) {
   const text = flat(raw), today = reportToday(now), sections = [];
-  const vehicle = vehicleDetails(text), details = vehicle ? {vehicle} : {};
+  const vehicle = vehicleDetails(text), owners = vehicleOwners(text);
+  const details = {...(vehicle ? {vehicle} : {}), ...(owners.length ? {owners} : {})};
   const enforcement = /\bEnforcement\s+Description\s*:\s*([\s\S]*?)\bEnforcement\s+Statute\s*:\s*/gi;
   for (const match of text.matchAll(enforcement)) {
     const description = flat(match[1]);

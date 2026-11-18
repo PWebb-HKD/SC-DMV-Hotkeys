@@ -125,7 +125,7 @@ async function refresh() {
   $('shortcutMenuNoTimeout').disabled = data.shortcutMenuAlwaysOnTop === true;
   $('alertsToggle').checked = data.alertsEnabled === true;
   $('backgroundSearchToggle').checked = data.backgroundStatusSearch === true;
-  backgroundSearchUI();
+  statusAlertSettingsUI();
   $('driverIdentityToggle').checked = data.showDriverIdentity === true;
   $('speechToggle').checked = data.speechEnabled === true;
   $('repeatSpeechToggle').checked = data.repeatSpeech === true;
@@ -196,21 +196,21 @@ $('driverIdentityToggle').onchange = async event => {
   catch(error) { input.checked = !enabled; feedback(error.message); }
   finally { input.disabled = false; }
 };
-function backgroundSearchUI() {
-  $('backgroundSearchSettings').hidden = !$('alertsToggle').checked;
+function statusAlertSettingsUI() {
+  $('statusAlertSettings').hidden = !$('alertsToggle').checked;
   $('alertsToggle').setAttribute('aria-expanded',String($('alertsToggle').checked));
 }
 $('backgroundSearchToggle').onchange=async()=>{
   try {await send({type:'background-search-settings',enabled:$('backgroundSearchToggle').checked});feedback('');}
   catch(error){feedback(error.message);await refresh();}
-  backgroundSearchUI();
+  statusAlertSettingsUI();
 };
 $('alertsToggle').onchange = async event => {
   const input = event.target, enabled = input.checked;
   input.disabled = true;
   try { await send({type: 'alerts', enabled}); feedback(''); }
   catch (error) { input.checked = !enabled; feedback(error.message); }
-  finally { input.disabled = false; backgroundSearchUI(); }
+  finally { input.disabled = false; statusAlertSettingsUI(); }
 };
 $('aboutTab').onclick = () => { tab('about'); refresh().catch(error => feedback(error.message)); };
 for (const [id, label] of [['plate', "Plate Search"], ['license', "DL # Search"], ['customer', "Customer # Search"], ['owners', "Get Customer #'s \nfrom current page"], ['previous', 'Previous customer'], ['next', 'Next customer'], ['address', 'Same address'], ['scutties', 'SCUTTIES'], ['barcode', 'Barcode'], ['help', 'Shortcut Menu']]) {
@@ -234,7 +234,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'session' && changes.showDriverIdentity) $('driverIdentityToggle').checked = changes.showDriverIdentity.newValue === true;
   if(area==='session'&&changes.backgroundStatusSearch)$('backgroundSearchToggle').checked=changes.backgroundStatusSearch.newValue===true;
   if (area === 'session' && changes.alertsEnabled) $('alertsToggle').checked = changes.alertsEnabled.newValue === true;
-  if(area==='session'&&(changes.alertsEnabled||changes.backgroundStatusSearch))backgroundSearchUI();
+  if(area==='session'&&(changes.alertsEnabled||changes.backgroundStatusSearch))statusAlertSettingsUI();
   if (area === 'session' && changes.speechEnabled) { $('speechToggle').checked = changes.speechEnabled.newValue === true; voiceSourceUI(); }
   if (area === 'session' && changes.repeatSpeech) $('repeatSpeechToggle').checked = changes.repeatSpeech.newValue === true;
   if (area === 'session' && changes.suspendedClipEnabled) $('clipToggle').checked = changes.suspendedClipEnabled.newValue === true;

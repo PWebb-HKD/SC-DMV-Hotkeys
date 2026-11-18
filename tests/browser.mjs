@@ -1062,9 +1062,16 @@ try {
   });
   await tests('driver identity setting defaults off and updates the saved preference through the worker message',async()=>{
     const page=await ui.newPage();await page.goto(base+'/popup.html');await page.locator('#settingsTab').click();
-    const toggle=page.getByRole('switch',{name:/Show driver photo and name/});assert.equal(await toggle.isChecked(),false);
+    const toggle=page.locator('#driverIdentityToggle');assert.equal(await toggle.isChecked(),false);
+    assert.equal(await toggle.isVisible(),false);assert.equal(await page.locator('#alertsToggle').getAttribute('aria-controls'),'statusAlertSettings');
+    await page.locator('#alertsToggle').check();assert.equal(await toggle.isVisible(),true);
+    assert.equal(await toggle.evaluate(el=>!!el.closest('#statusAlertSettings')),true);
     await toggle.check();await page.waitForFunction(()=>window.showDriverIdentity===true);
     assert.ok(await page.evaluate(()=>window.requests.some(r=>r.type==='driver-identity-settings'&&r.enabled===true)));
+    await page.locator('#alertsToggle').uncheck();assert.equal(await toggle.isVisible(),false);assert.equal(await toggle.isChecked(),true);
+    await page.locator('#alertsToggle').check();assert.equal(await toggle.isVisible(),true);assert.equal(await toggle.isChecked(),true);
+    await page.locator('#aboutTab').click();await page.locator('#settingsTab').click();assert.equal(await toggle.isChecked(),true);
+    await page.screenshot({path:join(screenshots,'nested-status-settings.png'),fullPage:true});
     await page.evaluate(()=>{window.storageListeners.forEach(fn=>fn({showDriverIdentity:{newValue:false}},'session'));});
     assert.equal(await toggle.isChecked(),false);await page.close();
   });
@@ -1225,6 +1232,44 @@ try {
     const page=await statusPage(payload);await page.locator('.record-vehicle-details').waitFor();
     assert.match(await page.locator('.record-vehicle-details').textContent(),/Model: <img src=x>.*Body style: Unavailable/s);
     assert.equal(await page.locator('.record-vehicle-details img').count(),0);await page.close();
+  });
+  await tests('tag registered owners appear below vehicle information in report order for every status',async()=>{
+    const owners='Owner Number: 1 Owner Name: FIRST, OWNER Owner Address: 100 FIRST ROAD, COLUMBIA SC 29201 '+
+      'Owner Number: 2 Owner Name: SECOND BUSINESS LLC Owner Address: 200 SECOND ROAD, CHARLESTON SC 29401 ';
+    for(const [expiry,enforcement] of [['11/01/2026',''],['10/27/2026',''],['11/01/2026','Enforcement Description: Insurance suspension Enforcement Statute: 56-1-460'],['','']]) {
+      const payload=plateStatus(`VIN: SYNTHETIC Year: 2026 Make: TEST Model: MODEL Body: 4S Empty Weight: 3000 ${owners}Last Transaction: RENEWAL Plate Class: ABC Decal Exp Date: ${expiry} ${enforcement}`,fixedNow);
+      const page=await statusPage(payload),list=page.locator('.record-owners');await list.waitFor();
+      assert.equal(await list.evaluate(el=>el.previousElementSibling.classList.contains('record-vehicle-details')),true);
+      assert.deepEqual(await list.locator('.record-owner-name').allTextContents(),['FIRST, OWNER','SECOND BUSINESS LLC']);
+      assert.deepEqual(await list.locator('.record-owner-address').allTextContents(),['100 FIRST ROAD, COLUMBIA SC 29201','200 SECOND ROAD, CHARLESTON SC 29401']);
+      assert.equal(await list.evaluate(el=>getComputedStyle(el).color),'rgb(255, 255, 255)');
+      assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+      await page.close();
+    }
+  });
+  await tests('tag owner details preserve missing fields and render names and addresses only as text',async()=>{
+    const payload=plateStatus('VIN: TEST Year: 2026 Make: TEST Model: MODEL Body: SD Empty Weight: 3000 Owner Number: 1 Owner Name: <img src=x> Owner Address: Owner Number: 2 Owner Name: Owner Address: <b>200 SECOND ROAD</b> Last Transaction: RENEWAL Plate Class: ABC Decal Exp Date: 11/01/2026',fixedNow);
+    const page=await statusPage(payload);await page.locator('.record-owners').waitFor();
+    assert.deepEqual(await page.locator('.record-owner-name').allTextContents(),['<img src=x>','Name unavailable']);
+    assert.deepEqual(await page.locator('.record-owner-address').allTextContents(),['Address unavailable','<b>200 SECOND ROAD</b>']);
+    assert.equal(await page.locator('.record-owners img,.record-owners b').count(),0);await page.close();
+    const absent=await statusPage(plateStatus('Plate Class: ABC Decal Exp Date: 11/01/2026',fixedNow));
+    assert.equal(await absent.locator('.record-owners').count(),0);await absent.close();
+  });
+  await tests('tag owner list participates in popup height fitting without shrinking the status heading',async()=>{
+    const owners=Array.from({length:6},(_,index)=>`Owner Number: ${index+1} Owner Name: SYNTHETIC OWNER ${index+1} Owner Address: ${index+1} LONG EXAMPLE ROAD, COLUMBIA SC 29201`).join(' ');
+    const payload=plateStatus(`VIN: TEST Year: 2026 Make: TEST Model: MODEL Body: SD Empty Weight: 3000 ${owners} Last Transaction: RENEWAL Plate Class: ABC Decal Exp Date: 11/01/2026`,fixedNow);
+    const page=await fittedAlert(payload,{availHeight:760});
+    // Readable minimum text may leave bottom padding below the viewport; content
+    // and Close must still be visible. Capture the viewport without resizing it.
+    await page.waitForFunction(()=>document.body.dataset.alertFit==='ready'&&document.querySelector('#submit').getBoundingClientRect().bottom<=innerHeight);
+    assert.equal(await page.locator('.record-owner').count(),6);
+    assert.equal(await page.locator('.record-status-title').evaluate(el=>getComputedStyle(el).fontSize),'36px');
+    assert.equal(await page.evaluate(()=>window.alertBounds.height<=760),true);assert.equal(await page.evaluate(()=>scrollY),0);
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+    assert.equal(await page.locator('#submit').evaluate(el=>el.getBoundingClientRect().bottom<=innerHeight),true);
+    await page.screenshot({path:join(screenshots,'tag-owners-fitted.png')});
+    await page.locator('#submit').click();await page.waitForFunction(()=>window.closedByAlert);await page.close();
   });
   await tests('combined plate alert renders large red headings, remains open for 90 seconds, then closes',async()=>{
     const payload=plateStatus('Plate Class: ABC Decal Exp Date: 09/27/2025 Enforcement Description: <img src=x> Insurance suspension Enforcement Statute: 56-1-460',fixedNow);

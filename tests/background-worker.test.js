@@ -2,6 +2,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {LOGIN,MEMBER,PDF_URL} from '../extension/core.js';
+import {vehicleReport} from './barcode-fixtures.js';
 const event=()=>({listeners:[],addListener(fn){this.listeners.push(fn);},removeListener(){}});
 const session={},local={},calls=[],tabs=new Map([[1,{id:1,windowId:1,url:'https://example.test/',active:true}]]);
 let nextTab=2,nextWindow=10,reportArmed=false,allowCompletedFocus=false,reportBase64='JVBERi1zeW50aGV0aWM=';
@@ -185,4 +186,20 @@ test('a late old snapshot write is cleared before the replacement report is publ
     await readerSend(tab,{type:'reader-result',id,text:'NEW SNAPSHOT 67890123'});
     await wait(()=>session[`pdf:${tab.id}`]?.text==='NEW SNAPSHOT 67890123');
   } finally {release.resolve();chrome.storage.session.set=write;await send({type:'stop'});}
+});
+test('tag status popup includes every owner even when driver photo/name display is off',async()=>{
+  await send({type:'stop'});session.showDriverIdentity=false;
+  session.history=[{id:'plate-owner-fixture',kind:'plate',value:'TEST123',at:Date.now()}];
+  const previous=latestReport().url;await send({type:'rerun',search:{id:'plate-owner-fixture'}});
+  await wait(()=>latestReport().url!==previous&&session.history[0].id!=='plate-owner-fixture');
+  const tab={...latestReport()},id=new URL(tab.url).searchParams.get('id');
+  const job=await readerSend(tab,{type:'reader-start',id});assert.equal(job.includeDriverIdentity,false);
+  const report=vehicleReport.replace('Last Transaction:', 'Owner Number: 2222 Owner Name: SECOND SYNTHETIC LLC Owner Address: 200 SECOND ROAD, COLUMBIA SC 29201 Last Transaction:');
+  await readerSend(tab,{type:'reader-result',id,text:report});await wait(()=>hasPanel('record-alert'));
+  const alert=Object.values(session).find(value=>value?.type==='record-alert');
+  assert.equal(alert.recordType,'plate');
+  assert.deepEqual(alert.owners,[{name:'EXAMPLE-SAMPLE, JANE MARIE',address:'123 EXAMPLE ROAD, COLUMBIA SC 292010123'},
+    {name:'SECOND SYNTHETIC LLC',address:'200 SECOND ROAD, COLUMBIA SC 29201'}]);
+  assert.equal(JSON.stringify(local).includes('SECOND SYNTHETIC LLC'),false);
+  await send({type:'stop'});
 });

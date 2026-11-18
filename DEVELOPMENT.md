@@ -20,6 +20,14 @@ This guide covers first-party code. Start with the module overview, read each fu
 | DMV theme | `dmv-theme-start.js`, `dmv-theme.js`, `dmv-theme-settings.js`, `dmv-theme.css` | Early-paint styling and narrowly authorized appearance updates; theme-browser/queue tests. |
 | Extension UI | `popup.js`, `panel.js`, `shortcut-setup.js`, `shortcut-menu.js` and their HTML/CSS | Settings, prompt/status rendering, actual shortcut assignments, and user confirmations; browser tests. |
 
+## Status popup owner details and settings grouping
+
+`plateStatus` attaches ordered `owners: [{name,address}]` display data for numbered Owner, Customer and Registrant/Lessee blocks in the vehicle body. `vehicleOwners` starts at VIN and stops at enforcement/footer data. Read only category-matched Name/Address fields between known labels, including Relationship and Mailing Address boundaries; never borrow from another numbered block or substitute a mailing address. Preserve Unicode, punctuation and report order rather than applying barcode name/address normalization. Missing fields stay empty and the panel labels them unavailable. Barcode mapping and owner queue rules are separate and unchanged.
+
+The plate panel renders an ordered owner list after its vehicle grid, including unavailable-status results when owners were parsed. Names/addresses use textContent, white supporting text and the existing dynamic height/font controller; main status headings remain fixed. Owners never enter voice sections, persistent preferences or license/blacklist cards. They remain derived display data within the existing trusted-session report/panel lifecycle.
+
+The Settings status-alert switch controls `statusAlertSettings`, which contains the existing photo/name and background-search switches. Keep their saved preference keys and choices when collapsing or disabling the parent. Voice controls remain independent. Photo/name stays a single combined toggle and no owner-display preference is added.
+
 ## Execution contexts and trust boundaries
 
 The manifest requires Chrome 140 or newer because worker startup restricts both local and session storage to `TRUSTED_CONTEXTS`. `StorageArea.setAccessLevel` existed for session storage earlier, but support for local storage starts in Chrome 140 ([compatibility reference](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/storage/StorageArea/setAccessLevel#browser_compatibility)). Keep the minimum aligned with this requirement; skipping the local-storage restriction would change the storage access policy.
