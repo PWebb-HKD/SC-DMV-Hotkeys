@@ -3,6 +3,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {LOGIN,MEMBER,PDF_URL} from '../extension/core.js';
 import {vehicleReport} from './barcode-fixtures.js';
+import {saveCredentials,addBlacklistEntry} from '../extension/vault.js';
 const event=()=>({listeners:[],addListener(fn){this.listeners.push(fn);},removeListener(){}});
 const session={},local={},calls=[],tabs=new Map([[1,{id:1,windowId:1,url:'https://example.test/',active:true}]]);
 let nextTab=2,nextWindow=10,reportArmed=false,allowCompletedFocus=false,reportBase64='JVBERi1zeW50aGV0aWM=';
@@ -198,8 +199,39 @@ test('tag status popup includes every owner even when driver photo/name display 
   await readerSend(tab,{type:'reader-result',id,text:report});await wait(()=>hasPanel('record-alert'));
   const alert=Object.values(session).find(value=>value?.type==='record-alert');
   assert.equal(alert.recordType,'plate');
-  assert.deepEqual(alert.owners,[{name:'EXAMPLE-SAMPLE, JANE MARIE',address:'123 EXAMPLE ROAD, COLUMBIA SC 292010123'},
-    {name:'SECOND SYNTHETIC LLC',address:'200 SECOND ROAD, COLUMBIA SC 29201'}]);
+  assert.deepEqual(alert.owners,[{number:'12345678',name:'EXAMPLE-SAMPLE, JANE MARIE',address:'123 EXAMPLE ROAD, COLUMBIA SC 292010123'},
+    {number:'2222',name:'SECOND SYNTHETIC LLC',address:'200 SECOND ROAD, COLUMBIA SC 29201'}]);
   assert.equal(JSON.stringify(local).includes('SECOND SYNTHETIC LLC'),false);
   await send({type:'stop'});
+});
+async function ownerPanel() {
+  await send({type:'stop'});session.history=[{id:'owner-click-fixture',kind:'plate',value:'TEST123',at:Date.now()}];
+  const previous=latestReport().url;await send({type:'rerun',search:{id:'owner-click-fixture'}});
+  await wait(()=>latestReport().url!==previous&&session.history[0].id!=='owner-click-fixture');
+  const tab={...latestReport()},id=new URL(tab.url).searchParams.get('id');
+  await readerSend(tab,{type:'reader-start',id});
+  const text=vehicleReport.replace('Last Transaction:','Owner Number: C0002222 Owner Name: SECOND SYNTHETIC OWNER Last Transaction:');
+  await readerSend(tab,{type:'reader-result',id,text});await wait(()=>hasPanel('record-alert'));
+  const [key,data]=Object.entries(session).find(([key,data])=>key.startsWith('panel:')&&data?.recordType==='plate');
+  return {id:key.slice(6),data,url:runtime.getURL('panel.html?id='+key.slice(6))};
+}
+test('owner click resolves the saved customer number, rejects stale/foreign views and skips input prompts',async()=>{
+  const owner=await ownerPanel();
+  await assert.rejects(send({type:'alert-owner-search',id:owner.id,ownerIndex:1}),/no longer available/);
+  for(const ownerIndex of [-1,'1',99])await assert.rejects(send({type:'alert-owner-search',id:owner.id,ownerIndex},{url:owner.url}),/Choose an owner|no valid customer number/);
+  assert.equal(owner.data.owners[1].number,'2222');
+  const from=calls.length;await send({type:'alert-owner-search',id:owner.id,ownerIndex:1,number:'99999999'},{url:owner.url});
+  await wait(()=>session.history[0]?.kind==='customer'&&session.history[0].value==='2222');
+  assert.equal(calls.slice(from).filter(call=>call==='submitted').length,1);assert.equal(hasPanel('input'),false);
+  await assert.rejects(send({type:'alert-owner-search',id:owner.id,ownerIndex:0},{url:owner.url}),/no longer available/);
+  await send({type:'stop'});
+});
+test('owner customer search uses the normal blacklist checks before any DMV navigation',async()=>{
+  await saveCredentials({user:'synthetic',password:'synthetic'},'synthetic owner test passphrase');
+  await addBlacklistEntry('customer','2222');
+  const owner=await ownerPanel(),from=calls.length;
+  await send({type:'alert-owner-search',id:owner.id,ownerIndex:1},{url:owner.url});
+  await wait(()=>Object.values(session).some(data=>data?.type==='record-alert'&&data.blacklist));
+  assert.equal(calls.slice(from).some(call=>call==='submitted'||call[0]==='window'&&call[2].url==='about:blank'),false);
+  assert.equal(session.history[0].kind,'plate');await send({type:'stop'});
 });

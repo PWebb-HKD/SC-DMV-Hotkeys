@@ -211,7 +211,7 @@ test('a combined plate status creates one alert and a new search closes it befor
   await input('44000001');await wait(()=>panel('record-alert'));
   assert.ok(removedWindows.includes(previous.id));
   const current=panel('record-alert'),result=session[`panel:${new URL(current.url).searchParams.get('id')}`];
-  assert.equal(result.sections[0].title,'VALID LICENSE');assert.equal(result.autoCloseMs,10000);
+  assert.equal(result.sections[0].title,'VALID LICENSE');assert.equal(result.autoCloseMs,30000);
   await send({type:'alerts',enabled:false});assert.equal(panel('record-alert'),undefined);assert.ok(removedWindows.includes(current.id));
 });
 test('disabling alerts or replacing a query suppresses a pending PDF analysis',async()=>{

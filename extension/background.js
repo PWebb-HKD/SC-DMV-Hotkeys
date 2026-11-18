@@ -447,7 +447,7 @@ async function showRecordStatus(kind, value, tabId, captured, ctx) {
   if (data.speechEnabled || data.suspendedClipEnabled) audioAlerts.play(alert, data, ctx.run.signal).catch(error => {
     if (!ctx.run.signal.aborted) ctx.status(`Audio alert unavailable: ${error.message}`);
   });
-  if (data.alertsEnabled) await createPanel({...alert, subject: `${COMMANDS[kind].label}: ${value}`}, {}, ctx.run);
+  if (data.alertsEnabled) await createPanel({...alert, subject: `${COMMANDS[kind].label}: ${value}`, ...(kind==='plate'?{sourceId:tabId}:{})}, {}, ctx.run);
 }
 /** Create the queue from one report snapshot for both Collect and an empty Next.
  * index is the one-based position of the last completed attempt (zero before any),
@@ -683,6 +683,17 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
         reader.driverIdentity = reader.includeDriverIdentity ? safeDriverIdentity(message.driverIdentity) : undefined;
         reader.viewReady = message.viewReady === true; reader.viewerError = message.viewerError;
         if (message.error) reader.reject(new Error(message.error)); else reader.resolve(message.text);
+        return true;
+      }
+      case 'alert-owner-search': {
+        const entry=panels.get(message.id);
+        if(!entry||entry.data.type!=='record-alert'||entry.data.recordType!=='plate'||entry.data.blacklist||sender.url!==chrome.runtime.getURL(`panel.html?id=${message.id}`))throw new Error('This owner alert is no longer available.');
+        entry.run.check();
+        if(!Number.isInteger(message.ownerIndex)||message.ownerIndex<0)throw new Error('Choose an owner from this alert.');
+        const number=normalize('customer',entry.data.owners?.[message.ownerIndex]?.number);
+        if(!number)throw new Error('This owner has no valid customer number.');
+        // Resolve only the saved owner entry, never a number supplied by the view.
+        dispatch('customer',{value:number,replay:true,sourceId:entry.data.sourceId}).catch(error=>report(error));
         return true;
       }
       // Panel replies are normalized and authorized again before they can continue a workflow.

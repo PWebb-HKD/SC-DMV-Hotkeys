@@ -1210,7 +1210,7 @@ try {
     assert.equal(headingAppearance.textAlign,'center');
     assert.equal(await page.locator('body').evaluate(el=>el.classList.contains('status-success')),true);
     await page.screenshot({path:join(screenshots,'temporary-alcohol-license.png'),fullPage:true});
-    await page.clock.fastForward(9000);assert.equal(await page.evaluate(()=>window.closedByAlert),false);
+    await page.clock.fastForward(29000);assert.equal(await page.evaluate(()=>window.closedByAlert),false);
     await page.clock.fastForward(1000);assert.equal(await page.evaluate(()=>window.closedByAlert),true);await page.close();
   });
   await tests('plate popups render vehicle details beneath valid, expired and suspended statuses in smaller large white text',async()=>{
@@ -1256,6 +1256,21 @@ try {
     const absent=await statusPage(plateStatus('Plate Class: ABC Decal Exp Date: 11/01/2026',fixedNow));
     assert.equal(await absent.locator('.record-owners').count(),0);await absent.close();
   });
+  await tests('tag owner names launch the selected saved owner search by mouse or keyboard',async()=>{
+    const report='VIN: TEST Year: 2026 Make: TEST Model: MODEL Body: SD Empty Weight: 3000 '+
+      'Owner Number: 1111 Owner Name: FIRST, OWNER Owner Address: 100 FIRST ROAD, COLUMBIA SC 29201 '+
+      'Owner Number: C0002222 Owner Name: SECOND, OWNER Last Transaction: RENEWAL Plate Class: ABC Decal Exp Date: 11/01/2026';
+    for(const mode of ['mouse','keyboard']) {
+      const page=await statusPage(plateStatus(report,fixedNow)),names=page.locator('.record-owner-search');await names.first().waitFor();
+      assert.deepEqual(await page.locator('.record-owner-address').allTextContents(),['100 FIRST ROAD, COLUMBIA SC 29201','100 FIRST ROAD, COLUMBIA SC 29201']);
+      if(mode==='mouse')await names.nth(1).click();else {await names.nth(1).focus();await page.keyboard.press('Enter');}
+      await page.waitForFunction(()=>window.requests.some(r=>r.type==='alert-owner-search'));
+      assert.deepEqual(await page.evaluate(()=>window.requests.find(r=>r.type==='alert-owner-search')),{type:'alert-owner-search',id:'record-status',ownerIndex:1});
+      assert.equal(await page.evaluate(()=>window.closedByAlert),false);await page.close();
+    }
+    const missing=await statusPage(plateStatus(report.replace('Owner Number: 1111','Owner Number: INVALID').replace('Owner Number: C0002222','Owner Number:'),fixedNow));
+    assert.equal(await missing.locator('.record-owner-search').count(),0);await missing.close();
+  });
   await tests('tag owner list participates in popup height fitting without shrinking the status heading',async()=>{
     const owners=Array.from({length:6},(_,index)=>`Owner Number: ${index+1} Owner Name: SYNTHETIC OWNER ${index+1} Owner Address: ${index+1} LONG EXAMPLE ROAD, COLUMBIA SC 29201`).join(' ');
     const payload=plateStatus(`VIN: TEST Year: 2026 Make: TEST Model: MODEL Body: SD Empty Weight: 3000 ${owners} Last Transaction: RENEWAL Plate Class: ABC Decal Exp Date: 11/01/2026`,fixedNow);
@@ -1292,9 +1307,9 @@ try {
     await page.screenshot({path:join(screenshots,'license-alert.png'),fullPage:true});
     await page.keyboard.press('Escape');await page.waitForFunction(()=>window.closedByAlert);await page.close();
   });
-  await tests('green plate and license alerts close after ten seconds',async()=>{
+  await tests('green plate and license alerts close after thirty seconds',async()=>{
     const payloads=[plateStatus('Plate Class: ABC Decal Exp Date: 10/28/2026',fixedNow),licenseStatus(`Status - DL: NO SUSPENSION Driver License No:123456789 Name: FICTIONAL, PERSON ${currentHeader} DL Renewal 01/01/2020 10/28/2026 01/01/2020`,fixedNow)];
-    for(const payload of payloads){const page=await statusPage(payload);assert.equal(await page.locator('.record-status-title').evaluate(el=>getComputedStyle(el).color),'rgb(67, 220, 121)');await page.clock.fastForward(9000);assert.equal(await page.evaluate(()=>window.closedByAlert),false);await page.clock.fastForward(1000);assert.equal(await page.evaluate(()=>window.closedByAlert),true);await page.close();}
+    for(const payload of payloads){const page=await statusPage(payload);assert.equal(await page.locator('.record-status-title').evaluate(el=>getComputedStyle(el).color),'rgb(67, 220, 121)');await page.clock.fastForward(10000);assert.equal(await page.evaluate(()=>window.closedByAlert),false);await page.clock.fastForward(19000);assert.equal(await page.evaluate(()=>window.closedByAlert),false);await page.clock.fastForward(1000);assert.equal(await page.evaluate(()=>window.closedByAlert),true);await page.close();}
   });
   await tests('combined Dark Mode group exposes two keyboard-accessible independent saved switches',async()=>{
     const page=await ui.newPage();await page.goto(base+'/popup.html');await page.locator('#settingsTab').click();

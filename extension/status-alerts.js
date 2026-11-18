@@ -3,6 +3,7 @@
  * 24-hour intervals, so daylight-saving changes cannot alter an expiration decision.
  * The output is display data (sections/tone/timeout), never HTML or browser actions.
  */
+import {normalize} from './core.js';
 const DAY = 86400000;
 const DATE = '(\\d{2}\\s*\\/\\s*\\d{2}\\s*\\/\\s*\\d{4})';
 const FLAT_DATE = /\d{2}\s*\/\s*\d{2}\s*\/\s*\d{4}/;
@@ -46,16 +47,16 @@ export function expirationAge(expired, today) {
 }
 /** Build display-only status data and choose the standard success or warning/error lifetime. */
 function alert(recordType, tone, sections, extra = {}) {
-  return {type: 'record-alert', recordType, tone, sections, autoCloseMs: tone === 'success' ? 10000 : 90000, ...extra};
+  return {type: 'record-alert', recordType, tone, sections, autoCloseMs: tone === 'success' ? 30000 : 90000, ...extra};
 }
 /** Report unreadable status explicitly instead of inferring a valid license or plate. */
 export function unavailableAlert(recordType, message) {
   return alert(recordType, 'warning', [{title: 'STATUS UNAVAILABLE', lines: [message]}]);
 }
 
-/** Recognize 45-day, EVR 45-day, and EVR 60-day temporary vehicle plate classes. */
+/** Recognize the reported 45/60-day and EVR temporary vehicle plate classes. */
 export function isTemporaryPlate(plateClass) {
-  return /^(?:T45V|E45V|E60V)\b/i.test(flat(plateClass));
+  return /^(?:T45V|T60V|E45V|E60V)\b/i.test(flat(plateClass));
 }
 
 /** Read the vehicle heading only; VIN is a delimiter, never display data. */
@@ -68,26 +69,33 @@ function vehicleDetails(text) {
   return {make: flat(make), model: flat(model), year: /^\d{4}$/.test(flat(year)) ? flat(year) : '', body: flat(body)};
 }
 
-/** Preserve numbered registration parties in report order. Each identity is read
- * only from its own category/block; missing fields never borrow another address. */
+/** Preserve numbered registration parties and address aliases. DMV omits a shared
+ * co-owner address label; only that omission inherits the first co-owner address. */
 function vehicleOwners(text) {
   const start=text.search(/\bVIN\s*:/i);
   if(start<0)return [];
   const body=text.slice(start).split(/\b(?:Enforcement\s+Description|Document\s+obtained\s+from\s+DMV\s+web\s+site)\s*:/i)[0];
   const party='(?:Owner|Customer|Registrant\\s*\\/\\s*Lessee)\\s+(?:Number|Name|Address|Relationship)';
   const other='VIN|Year|Make|Model|Body|Empty Weight|Title Number|Status|Issue Date|Dup|Mailing Address|Last Transaction|Plate Number|Plate Class|Vehicle Type|Date of Issue|Plate Exp Date|Decal Exp Date|Decal Number|Window Sticker Number|GVW|Equip Number|Annual Fee|County|Municipality|School District|Vehicle Housed Address|Insurance';
-  const labels=[...body.matchAll(new RegExp(`\\b(${party}|${other.replace(/ /g,'\\s+')})\\s*:`, 'gi'))];
+  const labels=[...body.matchAll(new RegExp(`\\b(${party}|(?:Lessee|Registrant)\\s+Address|${other.replace(/ /g,'\\s+')})\\s*:`, 'gi'))];
   const owners=[];let current;
   for(const [index,label] of labels.entries()) {
     const key=flat(label[1]).replace(/\s*\/\s*/g,'/').toLowerCase();
     const category=key.match(/^(owner|customer|registrant\/lessee) number$/)?.[1];
-    if(category){current={category,name:'',address:''};owners.push(current);continue;}
-    if(!current)continue;
     const value=flat(body.slice(label.index+label[0].length,labels[index+1]?.index??body.length));
+    if(category){
+      let number='';try{number=normalize('customer',value);}catch{}
+      current={category,name:'',address:'',addressPresent:false,number};owners.push(current);continue;
+    }
+    if(!current)continue;
     if(key===`${current.category} name`&&!current.name)current.name=value;
-    if(key===`${current.category} address`&&!current.address)current.address=value;
+    if(key===`${current.category} address`||current.category==='registrant/lessee'&&['lessee address','registrant address'].includes(key)) {
+      current.addressPresent=true;
+      if(!current.address)current.address=value;
+    }
   }
-  return owners.map(({name,address})=>({name,address}));
+  return owners.map((owner,index)=>({...(owner.number?{number:owner.number}:{}),name:owner.name,address:owner.address||(
+    index>0&&!owner.addressPresent&&['owner','customer'].includes(owner.category)&&owner.category===owners[0].category?owners[0].address:'')}));
 }
 
 /** Combine enforcement and expiration findings; temporary tags use Plate Exp Date. */

@@ -2,7 +2,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {driverBarcode, vehicleBarcode, reportBarcode, frameAamva, ownerAddress, raceEthnicity, VehiclePartyError} from '../extension/barcode-data.js';
+import {driverBarcode, vehicleBarcode, reportBarcode, reportBarcodeDraft, frameAamva, ownerAddress, raceEthnicity, VehiclePartyError} from '../extension/barcode-data.js';
 import {driverReport, vehicleReport} from './barcode-fixtures.js';
 import {COMMANDS} from '../extension/core.js';
 const fields = payload => Object.fromEntries(payload.slice(33).replace(/\r$/, '').split('\n').map(field => [field.slice(0, 3), field.slice(3)]));
@@ -150,7 +150,7 @@ test('record detection rejects unrelated documents; non-ASCII input cannot corru
   assert.throws(() => frameAamva([{type: 'DL', fields: [['DCS', '\u4e2d']]}]), /ASCII/);
 });
 
-for (const plateClass of ['T45V TEMPORARY PLATE-VEHICLE', 'E45V EVR TEMPORARY PLATE-VEHICLE', 'E60V EVR TEMPORARY PLATE-VEHICLE']) {
+for (const plateClass of ['T45V TEMPORARY PLATE-VEHICLE', 'T60V TEMPORARY PLATE-VEHICLE', 'E45V EVR TEMPORARY PLATE-VEHICLE', 'E60V EVR TEMPORARY PLATE-VEHICLE']) {
   test(`${plateClass}: blank decal dates inherit plate expiry and display years are excluded`, () => {
     const temporary = vehicleReport.replace('ABC PRIVATE PASSENGER', plateClass)
       .replace('TEST123', 'TEST1234 2026');
@@ -282,5 +282,19 @@ test('party relationship labels terminate owner names without borrowing a later 
     assert.ok(!Object.values(f).some(value=>/RELATIONSHIP|LATER|PERSON/.test(value)));
     // Even when the user explicitly selects a later party, do not inherit the first address.
     assert.throws(()=>vehicleBarcode(report,{partyIndex:1}),error=>error instanceof VehiclePartyError&&!error.hasNext);
+  }
+});
+
+test('T60V temporary barcode drafts remove the display year and use plate expiry for a blank decal date',()=>{
+  const raw=vehicleReport.replace('ABC PRIVATE PASSENGER','T60V TEMPORARY PLATE-VEHICLE').replace('TEST123','TMP1234A 2026').replace('06/20/2030','');
+  const draft=reportBarcodeDraft(raw,{error:'Synthetic edit flow'});
+  const fields=Object.fromEntries(draft.draftFields.map(field=>Array.isArray(field)?field:[field.key,field.value]));
+  assert.equal(fields.RAM,'TMP1234A');assert.equal(fields.RBT,fields.RAG);
+});
+test('selected registrant barcode reads a short lessee address without appending it to the name',()=>{
+  for(const label of ['Lessee Address','Registrant Address']) {
+    const raw=vehicleReport.replace('Last Transaction:', `Registrant/Lessee Number: 2222 Registrant/Lessee Name: SYNTHETIC LESSEE LLC ${label}: 200 LEASE ROAD, FLORENCE SC 29501 Last Transaction:`);
+    const fields=registrationFields(vehicleBarcode(raw,{partyIndex:1}).payload);
+    assert.equal(fields.BBC,'SYNTHETIC LESSEE LLC');assert.equal(fields.RBI,'200 LEASE ROAD');assert.equal(fields.RBK,'FLORENCE');
   }
 });
