@@ -1,6 +1,6 @@
 # SC DMV Hotkeys
 
-A Chromium Manifest V3 extension for authorized SCDMV member searches, PDF follow-ups, status alerts, and PDF417 data-entry barcodes. Current version: **1.8.35**.
+A Chromium Manifest V3 extension for authorized SCDMV member searches, PDF follow-ups, status alerts, and PDF417 data-entry barcodes. Current version: **1.8.36**.
 
 ## Install and update
 
@@ -19,7 +19,9 @@ The packaged extension needs no build or npm installation. PDF.js and the barcod
 
 In Settings, enable **Plate & license status alerts**, then **Run record searches in the background** immediately below it. Searches use a separate regular Chrome window with an active query tab. It starts blank; the extension checks that it is minimized before opening any DMV page. If Chrome ignores the requested initial state, the extension makes one minimize call on this new helper and checks the state again. If minimization fails, it closes the owned blank tab and stops the query. If you manually restore this helper, it stays restored while the search continues. Existing browser windows and tabs are left alone during query navigation.
 
-Plate, DL, customer and same-address searches use the hidden window, including customer searches launched through Collect, Next, Previous or Recent history. Plate, DL and customer reports open in an inactive tab and show their status popup. Same-address searches have no status popup, so their completed results tab is selected and its browser window is restored/focused after report capture and history recording. **SCUTTIES always keeps its normal foreground workflow.** Local report tools such as barcodes do not navigate DMV pages.
+Plate, DL, customer and same-address searches use the hidden window, including customer searches launched through Collect, Next, Previous or Recent history. Plate, DL and customer results show their status popup without selecting the results tab or focusing the browser. Same-address searches have no status popup, so their completed results tab is selected and its browser window is restored/focused after report capture and history recording. **SCUTTIES always keeps its normal foreground workflow.** Local report tools such as barcodes do not navigate DMV pages.
+
+Hidden queries reuse the newest tracked results tab in the destination browser window, replacing its prior report with the newly captured PDF. A new results tab opens if that viewer was closed, moved elsewhere or navigated away. Reuse preserves the selected tab; same-address completion still intentionally focuses its results. Existing duplicate tabs are left for you to close as needed.
 
 Parsing sends the report for status analysis before visible PDF rendering, so the status popup does not need you to select the results tab. Optional photo extraction also runs without display animation frames. PDF painting may wait until you view the tab; printing retains the captured original bytes, and the viewer honors the PDF color preference. Keep a normal browser window open, even if minimized. Settings changes apply to the next search.
 

@@ -3,6 +3,19 @@
 import {LOGIN, ROOT, attachmentUrl} from './core.js';
 import {search, evaluate, focusTab} from './automation.js';
 import {guardedApi} from './run.js';
+import {darkResultSource} from './pdf-routing.js';
+
+/** Reuse only tracked query viewers in this destination window. A user-navigated
+ * tab, native print tab or different window must never be replaced or moved. */
+export function reusableBackgroundResult(tabs,windowId,readerUrl,{pdfCreated={},pdfSources={}}={},sourceId) {
+  return tabs.filter(tab=>{
+    if(tab.windowId!==windowId||tab.pendingUrl&&tab.pendingUrl!==tab.url)return false;
+    const source=darkResultSource(tab.url,readerUrl);
+    if(!source||source!==pdfSources[tab.id]||!Number.isFinite(pdfCreated[tab.id]))return false;
+    const params=new URL(tab.url).searchParams;
+    return params.get('query')==='1'&&/^[a-f0-9-]{36}$/i.test(params.get('id')||'');
+  }).sort((a,b)=>pdfCreated[b.id]-pdfCreated[a.id]||Number(b.id===sourceId)-Number(a.id===sourceId)||b.id-a.id)[0];
+}
 
 export function backgroundMethod(kind, settings) {
   return settings.alertsEnabled === true && settings.backgroundStatusSearch === true && ['plate','license','customer','address'].includes(kind)

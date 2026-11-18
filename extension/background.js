@@ -13,7 +13,7 @@ import {safeDriverIdentity, driverName} from './driver-identity.js';
 import {recordStatus, unavailableAlert} from './status-alerts.js';
 import {initializeAlertPreferences, saveAlertPreferences, restoreAlertPreferences} from './alert-settings.js';
 import {AudioAlerts, availableVoices} from './audio-alerts.js';
-import {backgroundMethod, backgroundSearch} from './background-search.js';
+import {backgroundMethod, backgroundSearch, reusableBackgroundResult} from './background-search.js';
 import {configureDmvTheme, initDmvTheme, refreshDmvThemeTabs, isDmvThemePage} from './dmv-theme-settings.js';
 import {darkResultSource, setPdfRouting, isNativePrintUrl} from './pdf-routing.js';
 import {reportBarcode, reportBarcodeDraft, VehiclePartyError} from './barcode-data.js';
@@ -377,21 +377,32 @@ async function runSearch(kind, value, ctx, advance) {
     });
   }
 }
-/** Publish an immutable, job-bound report in an inactive tab in the normal browser.
- * No old attachment URL is fetched on reload. The reader retains the bytes for Print. */
+/** Reuse an owned results viewer without changing selection, or create an inactive
+ * tab. Every publication owns fresh immutable bytes and a new reader job. */
 async function publishBackgroundReport({bytes,report,windowId},ctx) {
   const api=guardedApi(chrome,ctx.run),id=crypto.randomUUID();
   // Read preferences before creating a tab so cancellation during storage access
   // cannot strand a blank results tab without a registered capture/cleanup path.
-  const [settings,{pdfDarkMode}]=await Promise.all([api.storage.session.get('showDriverIdentity'),api.storage.local.get('pdfDarkMode')]);
-  let tab;
-  await ctx.run.step(async()=>{
-    tab=await chrome.tabs.create({windowId,active:false,url:'about:blank'});
+  const [settings,{pdfDarkMode},tabs]=await Promise.all([api.storage.session.get(['showDriverIdentity','pdfCreated','pdfSources']),api.storage.local.get('pdfDarkMode'),api.tabs.query({windowId})]);
+  const readerUrl=chrome.runtime.getURL('reader.html');
+  let tab=reusableBackgroundResult(tabs,windowId,readerUrl,settings,ctx.sourceId),created=false;
+  if(tab) {
+    // Recheck after selection in case the user closed, moved or navigated this tab.
+    const current=await api.tabs.get(tab.id).catch(()=>null);ctx.run.check();
+    tab=current&&reusableBackgroundResult([current],windowId,readerUrl,settings,ctx.sourceId);
+  }
+  if(tab) {
+    captures.get(tab.id)?.run.cancel();
+    // Serialize invalidation behind any old snapshot write before starting a new job.
+    await ctx.run.step(()=>track(async()=>{ctx.run.check();await chrome.storage.session.remove(`pdf:${tab.id}`);ctx.run.check();}));
+  } else await ctx.run.step(async()=>{
+    tab=await chrome.tabs.create({windowId,active:false,url:'about:blank'});created=true;
     if(ctx.run.signal.aborted)await chrome.tabs.remove(tab.id).catch(()=>{});
   });
+  const expectedUrl=chrome.runtime.getURL(`reader.html?pdf=1&query=1&id=${id}&dark=${pdfDarkMode===true?'1':'0'}#${report.sourceUrl}`);
   const done=Promise.withResolvers();done.promise.catch(()=>{});
   const includeDriverIdentity=settings.showDriverIdentity===true;
-  const reader={...done,base64:bytes,url:report.sourceUrl,tabId:tab.id,pdfId:tab.id,includeDriverIdentity,oneShot:true};
+  const reader={...done,base64:bytes,url:report.sourceUrl,tabId:tab.id,pdfId:tab.id,includeDriverIdentity,oneShot:true,expectedUrl};
   readers.set(id,reader);
   const capture={run:new SearchRun(),sameTab:true};
   capture.run.signal.addEventListener('abort',()=>chrome.runtime.sendMessage({target:'pdf-reader',type:'reader-cancel',id}).catch(()=>{}),{once:true});
@@ -401,15 +412,19 @@ async function publishBackgroundReport({bytes,report,windowId},ctx) {
     try {
       const text=await capture.run.step(()=>done.promise);
       if(!text.trim())throw new Error('This PDF has no extractable text.');
-      await guardedApi(chrome,capture.run).storage.session.set({[`pdf:${tab.id}`]:{text,...(reader.driverIdentity?{driverIdentity:reader.driverIdentity}:{}),capturedAt:Date.now(),documentId:reader.documentId}});
+      await capture.run.step(()=>track(async()=>{
+        capture.run.check();
+        await chrome.storage.session.set({[`pdf:${tab.id}`]:{text,...(reader.driverIdentity?{driverIdentity:reader.driverIdentity}:{}),capturedAt:Date.now(),documentId:reader.documentId}});
+        capture.run.check();
+      }));
       if(reader.viewerError)await guardedApi(chrome,capture.run).storage.session.set({status:`PDF view unavailable: ${reader.viewerError}`});
     } finally {clearTimeout(timer);ctx.run.signal.removeEventListener('abort',abort);readers.delete(id);if(captures.get(tab.id)===capture)captures.delete(tab.id);}
   })();
   capture.promise.catch(()=>{});captures.set(tab.id,capture);
   try {
-    await api.tabs.update(tab.id,{url:chrome.runtime.getURL(`reader.html?pdf=1&query=1&id=${id}&dark=${pdfDarkMode===true?'1':'0'}#${report.sourceUrl}`)});
-  } catch(error) {capture.run.cancel();await chrome.tabs.remove(tab.id).catch(()=>{});throw error;}
-  return {...report,tabId:tab.id,portalId:undefined,capture:capture.promise};
+    await api.tabs.update(tab.id,{url:expectedUrl});
+  } catch(error) {capture.run.cancel();if(created)await chrome.tabs.remove(tab.id).catch(()=>{});throw error;}
+  return {...report,tabId:tab.id,portalId:undefined,reused:!created,capture:capture.promise};
 }
 /** Recheck settings after extraction so an alert disabled during parsing stays disabled. */
 async function showRecordStatus(kind, value, tabId, captured, ctx) {
@@ -645,7 +660,9 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
       // Reader requests are bound to the extraction job and its tab/document identity.
       case 'reader-start': {
         const reader = readers.get(message.id);
-        if (!reader || reader.tabId != null && sender.tab?.id !== reader.tabId || reader.documentId && reader.documentId !== sender.documentId) throw new Error('Unknown PDF reader.');
+        if (!reader || reader.tabId != null && sender.tab?.id !== reader.tabId
+          || reader.documentId && reader.documentId !== sender.documentId
+          || reader.expectedUrl && sender.url !== reader.expectedUrl) throw new Error('Unknown PDF reader.');
         reader.tabId = sender.tab.id;
         if(reader.oneShot) {
           captures.get(sender.tab.id)?.run.check();
@@ -659,7 +676,10 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
       case 'pdf-native-print': return openNativePrint(sender,message.url,message.text);
       case 'reader-result': {
         const reader = readers.get(message.id);
-        if (!reader || sender.tab?.id !== reader.tabId || reader.documentId && reader.documentId !== sender.documentId) throw new Error('Unknown PDF reader.');
+        if (!reader || sender.tab?.id !== reader.tabId
+          || reader.documentId && reader.documentId !== sender.documentId
+          || reader.expectedUrl && sender.url !== reader.expectedUrl
+          || reader.oneShot && !reader.started) throw new Error('Unknown PDF reader.');
         reader.driverIdentity = reader.includeDriverIdentity ? safeDriverIdentity(message.driverIdentity) : undefined;
         reader.viewReady = message.viewReady === true; reader.viewerError = message.viewerError;
         if (message.error) reader.reject(new Error(message.error)); else reader.resolve(message.text);
