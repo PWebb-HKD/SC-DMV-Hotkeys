@@ -20,6 +20,14 @@ Default to latest main, preserve explicitly required unmerged dependencies, sync
 
 When the user says **Merge TB**, read and follow [.agents/skills/merge-tb/SKILL.md](.agents/skills/merge-tb/SKILL.md). Merge the current test branch into main, verify and push main successfully, then delete the merged test branch locally and remotely. If multiple test branches exist, ask which one to merge and delete before proceeding unless the user already explicitly selected it. Creating or discussing this skill does not invoke a merge.
 
+## v1.8.31 Restart After Discarded Background Experiments — 2026-11-17
+
+- The user rejected both background-search implementations on fix/v1.8.31-patch-test (final tip 29fa449, version 1.8.33), explicitly requested deletion of that unmerged branch, and requested a new test branch under version 1.8.31.
+- Created fix/v1.8.31-background-retry directly from main 19c7cdb (version 1.8.30). Only synchronized release version files and this context entry differ from main; the abandoned background-search setting, focus policies, state-enforcement guard, and experimental tests are not included. Main remains unchanged.
+- The forced minimization/tab-restoration guard fought manual browser control, while the later passive approach still failed native user testing. Treat both as discarded approaches, not verified fixes. Do not resurrect them without a new explicit request; a different implementation has not yet been specified.
+- Reset release files to 1.8.31 at the user's explicit request. This supersedes the usual increment for this restart. Future changes should follow the current versioning preference unless the user directs otherwise.
+- Verified npm run check, git diff --check, and equality of application/test/tool sources with main. Application tests were not rerun for this version-only fresh branch preparation.
+
 ## v1.8.30 Merge — 2026-11-17
 
 - The user invoked Merge TB. The sole current test branch, fix/v1.8.28-patch-test (1c99b0d), merged into main without conflicts in merge commit 079868d. Synchronized release files declare version 1.8.30.
