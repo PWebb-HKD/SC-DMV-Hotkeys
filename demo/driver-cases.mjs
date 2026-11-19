@@ -12,7 +12,7 @@ const definitions=[
   ['DRIVER010','','10000018','Not licensed','A customer without a driver license number.','unlicensed','REMY'],
   ['DRIVER011','100000119','10000019','Status unavailable','An unreadable status must not become an assumed valid result.','unavailable','PARKER']
 ];
-export const DRIVER_CASES=Object.freeze(definitions.map(([id,license,customer,title,description,kind,first])=>Object.freeze({id,license,customer,title,description,kind,first,recordType:'license'})));
+export const DRIVER_CASES=Object.freeze(definitions.map(([id,license,customer,title,description,kind,first])=>Object.freeze({id,license,customer,title,description,kind,first,recordType:'license',...(id==='DRIVER001'?{photo:'portrait'}:['DRIVER009','DRIVER010'].includes(id)?{photo:'placeholder'}:{})})));
 export function driverCase(id){return DRIVER_CASES.find(record=>record.id===id);}
 function period(kind,reason,{ticket='',end='INDEFINITE',met='INDEFINITE',causal='01/15/2024',iid='N'}={}){
   const label=kind==='REVO'?'Revocation':'Suspension';

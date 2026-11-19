@@ -2,6 +2,7 @@
 import {normalize,ownerNumbers} from '/extension/core.js';
 import {extractDemoPdf} from './report-tools.js';
 import {setupScutties} from './scutties.js';
+import {setupScenarios,expireDemoSession,startDemoSearch,prepareDemoResult} from './scenarios.js';
 const page=document.body.dataset.demoPage,$=id=>document.getElementById(id),params=new URL(location.href).searchParams;
 const error=message=>{const target=$('demo-error');target.textContent=message;target.closest('[role="alert"]').hidden=false;};
 const reset=()=>{for(const key of Object.keys(sessionStorage))if(key.startsWith('scdmv-demo-'))sessionStorage.removeItem(key);};
@@ -11,6 +12,8 @@ async function setup(){
   $('reset-demo').addEventListener('click',reset);
   $('demo-logoff')?.addEventListener('click',reset);
   if(!['home','login'].includes(page)&&sessionStorage.getItem('scdmv-demo-auth')!=='true'){location.replace(P.login);return;}
+  $('expire-demo')?.addEventListener('click',event=>{event.preventDefault();expireDemoSession(P);});
+  setupScenarios();
   if(page==='scutties-handoff'){
     const sample=params.get('sample');
     // Simulated transition only: no actual sign-in, tokens or credentials are exchanged.
@@ -23,6 +26,7 @@ async function setup(){
     location.assign(P.driverResult+'?case='+record.id+'&via=customer'+(queued?'&queue=1':''));
   };
   if(page==='login'){
+    if(params.get('expired')==='1')error('Your demonstration session has expired. Sign in with demo / demo, then run the search again.');
     $('form1').addEventListener('submit',event=>{
       event.preventDefault();const user=$('ContentPlaceHolder1_userNameText'),password=$('ContentPlaceHolder1_passwordText');
       const accepted=user.value==='demo'&&password.value==='demo';password.value='';
@@ -54,8 +58,7 @@ async function setup(){
           destination=P.driverResult;key='driver';
         }
         if(!record){error('No demonstration record was found. Use one of the listed fictional numbers.');return;}
-        sessionStorage.setItem('scdmv-demo-'+key,record.id);
-        location.assign(destination+'?case='+record.id);
+        startDemoSearch({P,record,destination,resultKey:key});
       } catch(problem){error(problem.message);}
     });
   }
@@ -65,15 +68,24 @@ async function setup(){
   const id=params.has('case')?params.get('case'):sessionStorage.getItem('scdmv-demo-'+key);
   const record=catalog.find(c=>c.id===id&&c.recordType===type);
   if(!record){$('result-kind').closest('.card').hidden=true;document.querySelector('h2').textContent='Choose a valid demonstration record.';error('No valid demonstration result was selected. Return to the search form.');return;}
+  const previous=type==='plate'?P.search:type==='license'?P.driverSearch:P.addressSearch;
+  if(['slow','timeout','expire-results'].includes(params.get('scenario')))sessionStorage.removeItem('scdmv-demo-'+key);
+  if(!await prepareDemoResult({P,scenario:params.get('scenario'),previous,error}))return;
   sessionStorage.setItem('scdmv-demo-'+key,record.id);
+  $('result-card').hidden=false;
   $('result-kind').textContent=record.title;$('result-plate').textContent=record.plate||record.license||'Customer '+record.customer;
   $('result-description').textContent=record.description;$('ContentPlaceHolder1_dlNbrBox_DisplayOnly').textContent=record.plate||record.license||record.customer;
-  const pdf=()=>window.open(P.pdf+'?case='+record.id,'scdmv-demo-report');
+  const failure=params.get('scenario')==='report-failure'?'&failure=unavailable':'';
+  if(failure)error('Demonstration PDF-service failure is enabled for this result. Open PDF or a preview to see the failure; return to search to retry normally.');
+  const identity=$('demo-show-identity');
+  if(identity){identity.checked=sessionStorage.getItem('scdmv-demo-show-identity')==='true';identity.onchange=()=>sessionStorage.setItem('scdmv-demo-show-identity',String(identity.checked));}
+  const pdf=()=>window.open(P.pdf+'?case='+record.id+failure,'scdmv-demo-report');
   $('downloadButton').onclick=pdf;$('ContentPlaceHolder1_btnPrint').onclick=pdf;
-  for(const action of ['status','barcode'])if($('preview-'+action))$('preview-'+action).onclick=()=>window.open('/extension/'+(action==='status'?'panel':'barcode')+'.html?id=demo&demo='+record.id,'scdmv-demo-'+action,'popup,width='+(action==='status'?650:1000)+',height=800');
+  for(const action of ['status','barcode'])if($('preview-'+action))$('preview-'+action).onclick=()=>window.open('/extension/'+(action==='status'?'panel':'barcode')+'.html?id=demo&demo='+record.id+failure+(action==='status'&&identity?.checked?'&identity=1':''),'scdmv-demo-'+action,'popup,width='+(action==='status'?650:1000)+',height=800');
   if(type==='residence'){
     const collect=$('collect-customers');collect.disabled=true;
-    const {text}=await extractDemoPdf(record.id),numbers=ownerNumbers(text);
+    if(failure)return;
+    const {text}=await extractDemoPdf(record.id,{reportFailure:!!failure}),numbers=ownerNumbers(text);
     if(!numbers.length||!numbers.every(number=>customer(number)))throw new Error('A residence customer is not represented in the demo catalog.');
     for(const number of numbers){
       const profile=customer(number),row=document.createElement('li'),button=document.createElement('button');

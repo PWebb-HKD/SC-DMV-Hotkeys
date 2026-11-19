@@ -5,6 +5,8 @@ import {startDemoServer} from '../demo/server.mjs';
 import {DEMO_CASES,ADDRESS_CASES,ALL_DEMO_CASES,DEMO_PATHS,vehicleText,recordText} from '../demo/cases.mjs';
 import {DRIVER_CASES,driverText} from '../demo/driver-cases.mjs';
 import {SCUTTIES_CASES} from '../demo/scutties-cases.mjs';
+import {syntheticPdf} from '../demo/pdf.mjs';
+import {SCENARIOS,knownScenario} from '../demo/scenarios.mjs';
 import {plateStatus,licenseStatus} from '../extension/status-alerts.js';
 import {reportBarcode} from '../extension/barcode-data.js';
 import {isPortal,attachmentUrl,ownerNumbers,isResidenceReport} from '../extension/core.js';
@@ -102,4 +104,20 @@ test('SCUTTIES serves only local fictional citations and fresh search/display in
   assert.equal((await fetch(site.url+DEMO_PATHS.pdf+'?case=SCUTTIES001')).status,404);
   assert.equal((await fetch(site.url+'/extension/panel.html?demo=SCUTTIES001')).status,400);
   assert.equal((await fetch(site.url+'/api/scutties',{headers:{Origin:'https://example.test'}})).status,403);
+});
+test('photo fixtures are actual embedded PDF images and preserve explicit synthetic labeling',async()=>{
+  for(const id of ['DRIVER001','DRIVER009','DRIVER010']){
+    const response=await fetch(site.url+DEMO_PATHS.pdf+'?case='+id),bytes=Buffer.from(await response.arrayBuffer());
+    assert.ok(bytes.includes(Buffer.from('/Subtype /Image')));assert.ok(bytes.includes(Buffer.from('/Im1 Do')));assert.ok(bytes.includes(Buffer.from('no real person')));
+    assert.ok(bytes.includes(Buffer.from('DEMONSTRATION - SYNTHETIC DATA')));assert.ok(bytes.includes(Buffer.from('NOT A GOVERNMENT RECORD')));
+  }
+  assert.throws(()=>syntheticPdf(recordText('DRIVER001'),{image:'UNKNOWN'}),/known synthetic image/);
+});
+test('fault controls are bounded simulations and service failures are actual local HTTP errors',async()=>{
+  for(const scenario of SCENARIOS)assert.equal(knownScenario(scenario.id),scenario.id);assert.equal(knownScenario('https://example.test'),'normal');
+  const response=await fetch(site.url+DEMO_PATHS.error);assert.equal(response.status,503);assert.match(await response.text(),/SIMULATED SERVICE ERROR/);
+  const failed=await fetch(site.url+DEMO_PATHS.pdf+'?case=DRIVER001&failure=unavailable');assert.equal(failed.status,503);assert.match(failed.headers.get('content-type'),/text\/plain/);
+  assert.equal((await fetch(site.url+DEMO_PATHS.pdf+'?case=UNKNOWN&failure=unavailable')).status,404);
+  for(const path of [DEMO_PATHS.search,DEMO_PATHS.driverSearch,DEMO_PATHS.addressSearch]){const html=await(await fetch(site.url+path)).text();assert.match(html,/id="demo-scenario"/);assert.match(html,/id="expire-demo"/);}
+  assert.equal((await fetch(site.url+'/demo/scenario-data.js',{headers:{Origin:'https://example.test'}})).status,403);
 });

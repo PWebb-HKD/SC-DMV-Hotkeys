@@ -8,7 +8,8 @@ import {demoPage} from './pages.mjs';
 import {syntheticPdf} from './pdf.mjs';
 import {SCUTTIES_CASES} from './scutties-cases.mjs';
 const extensionRoot=fileURLToPath(new URL('../extension/',import.meta.url));
-const assets=new Map(['portal.js','scutties.js','preview-bridge.js','report-tools.js','style.css'].map(name=>['/demo/'+name,new URL('./public/'+name,import.meta.url)]));
+const assets=new Map(['portal.js','scutties.js','scenarios.js','preview-bridge.js','report-tools.js','style.css'].map(name=>['/demo/'+name,new URL('./public/'+name,import.meta.url)]));
+assets.set('/demo/scenario-data.js',new URL('./scenarios.mjs',import.meta.url));
 const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.mjs':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.png':'image/png','.wasm':'application/wasm'};
 /** Wrap only this HTTP preview, keeping production extension files byte-for-byte unchanged. */
 function previewHtml(source) {
@@ -36,9 +37,10 @@ export async function startDemoServer(port=0) {
       if(path===DEMO_PATHS.pdf){
         const record=demoCase(url.searchParams.get('case'));
         if(!record)return reply(404,'text/plain','Unknown demonstration record.');
-        return reply(200,'application/pdf',syntheticPdf(recordText(record.id)),{'Content-Disposition':`inline; filename="DEMONSTRATION-${record.id}.pdf"`});
+        if(url.searchParams.get('failure')==='unavailable')return reply(503,'text/plain','DEMONSTRATION: The report service is unavailable. Return to the search form and try again.');
+        return reply(200,'application/pdf',syntheticPdf(recordText(record.id),{image:record.photo}),{'Content-Disposition':`inline; filename="DEMONSTRATION-${record.id}.pdf"`});
       }
-      const page=demoPage(path);if(page)return reply(200,types['.html'],page);
+      const page=demoPage(path);if(page)return reply(path===DEMO_PATHS.error?503:200,types['.html'],page);
       if(assets.has(path))return reply(200,types[extname(path)],await readFile(assets.get(path)));
       if(path.startsWith('/extension/')){
         const relative=path.slice('/extension/'.length);

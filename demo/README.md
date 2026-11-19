@@ -38,7 +38,34 @@ DL and customer searches use the **same Page 1 and Page 2**. Enter either number
 | No DL number | 10000018 | Unlicensed customer |
 | 100000119 | 10000019 | Unavailable license status |
 
-The suspended example spans multiple PDF pages, with offense groups kept together. Production status parsing determines active/pending totals, DUI/DUAC ticket deduplication, reason order, IID warnings and qualifier text. Expand reason groups to see dates/tickets and exercise the normal popup timeout resets. These records contain no real person, portrait or uploaded driving-record data.
+The suspended example spans multiple PDF pages, with offense groups kept together. Production status parsing determines active/pending totals, DUI/DUAC ticket deduplication, reason order, IID warnings and qualifier text. Expand reason groups to see dates/tickets and exercise the normal popup timeout resets. These records contain no real person, photograph or uploaded driving-record data.
+
+### Driver photo and name previews
+
+On a driver/customer results page, enable **Show driver photo and name in status preview**, then open **Preview status alert**. This separate demo preference defaults off and stays in this tab's session. It does not change the installed extension's setting.
+
+- **100000101 / customer 10000001 (Avery)** embeds a procedurally drawn fictional portrait in the PDF. The actual production extractor reads that image and name for the alert.
+- **100000117 / customer 10000017 (Drew)** and **customer 10000018 (Remy)** embed a synthetic standard-layout no-photo placeholder. The production detector suppresses its image; the alert retains the name and says No photo available.
+- Other profiles contain no image. With the preference enabled, the alert retains the name and says Photo unavailable.
+
+The PDF writer embeds a real RGB image XObject in the first-page header, separated from selectable report text. All images are generated locally without image libraries or private source images. The no-photo fixture recreates the detector's existing non-personal text-mask signature; this validates that known signature and the full extraction/rendering path, rather than establishing detection accuracy for unrelated placeholder designs.
+
+## Session expiration and failed-search testing
+
+On plate, DL/customer and same-residence search forms, expand **Demo test controls** and choose the next outcome before submitting a known demo number. Invalid/not-found inputs do not consume the selection. A valid form submission consumes it once, so the next search defaults to Normal.
+
+| Outcome | Behavior |
+| --- | --- |
+| Session expires before the search | Clears this tab's demo login/record/queue selections and returns to login |
+| Session expires while results load | Visits a waiting results page, then returns to login without a completed record |
+| Transaction fails | Opens the local ErrorPage.aspx with HTTP 503 and the normal error-message interface |
+| Delayed results | Waits two seconds with PDF/preview actions hidden, then shows the result |
+| Results time out | Waits three seconds, then shows a timeout with a return-to-search link; no PDF or queue collection runs |
+| PDF service unavailable | The result page loads, but its PDF endpoint returns HTTP 503 and status/barcode previews report the extraction failure |
+
+**Expire demo session** in the header also exercises a manual expiration, including from SCUTTIES. Sign back in with demo/demo and submit again; searches are not automatically resubmitted. Expiration clears only this tab's authentication and record/queue/fault selections, retaining its photo-preview preference. Reset demo clears the entire scdmv-demo- namespace. Other open tabs have separate demo session state.
+
+These failures are explicit, bounded fixtures, not reproductions of an observed live outage. Delay/timeout timing is fixed locally and does not change production extension timeouts. Cancel / return to search leaves no newly completed record; failed or pending searches do not advance an existing customer queue. A failed PDF cannot reuse a previous alert or portrait. Record fault controls do not intercept the separate SCUTTIES matching workflow; its header expiration action remains available.
 
 ## Customers at the same residence
 
@@ -52,7 +79,7 @@ Open PDF serves a genuine, selectable-text PDF at ViewAttachment.aspx. Chrome pr
 
 Status and barcode previews use bundled production PDF.js to extract the generated PDF, followed by existing production parsers and panel/barcode controllers. An HTTP-only adapter supplies mock worker messages to those views. Barcode editing and popup timers work. Residence reports have no license-status or barcode preview. The adapter lives outside extension/ and is never loaded by the installed extension.
 
-This prototype does not demonstrate installed-extension permissions, global hotkeys, native background-window behavior, vault/blacklist storage or remote DMV connectivity. Photos and audio are outside this iteration. The installed extension continues to permit automation only on SCDMV; connecting a separate, clearly labeled demo environment with isolated state remains a later integration step. Reviewers should eventually receive a launcher that does not require setting up a local server.
+This prototype does not demonstrate installed-extension permissions, global hotkeys, native background-window behavior, vault/blacklist storage or remote DMV connectivity. Audio is outside this iteration. The installed extension continues to permit automation only on SCDMV; connecting a separate, clearly labeled demo environment with isolated state remains a later integration step. Reviewers should eventually receive a launcher that does not require setting up a local server.
 
 Raw HTML captures remain outside Git. [DOM-CONTRACT.md](DOM-CONTRACT.md) records the retained selector interface and exclusions. New samples supplied for driver/customer and residence pages were used as reference data only; their scripts, identifiers, hidden tokens and private display values are not served or committed.
 
@@ -75,7 +102,8 @@ The captured search puts Search first and Show SAVED Citations second. The curre
 ## Checks
 
 - `node --test tests/demo-portal.test.js`: local serving, scenario parsing and request/file boundaries.
-- `CHROME_PATH=/usr/bin/chromium npm run test:demo`: all three Chromium suites, including vehicle/driver PDFs, production status/barcode views, shared input validation, owner follow-ups, the residence queue and SCUTTIES.
+- `CHROME_PATH=/usr/bin/chromium npm run test:demo`: all four Chromium suites, including vehicle/driver PDFs, production status/barcode views, shared input validation, owner follow-ups, the residence queue, SCUTTIES, photo/placeholder extraction and recovery scenarios.
 - `CHROME_PATH=/usr/bin/chromium node tests/demo-scutties-browser.mjs`: focused SCUTTIES handoff, calendar validation, citations/details, restoration, mobile layout and local-only request checks.
+- `CHROME_PATH=/usr/bin/chromium node tests/demo-recovery-browser.mjs`: focused real photo/placeholder PDF extraction, optional identity rendering, session expiration, pending/cancelled/timed-out searches, HTTP failures and successful retries.
 
-Browser checks require the same development Playwright/Chromium setup as the existing project tests. The server itself needs only Node. Screenshots and synthetic barcode payloads stay in ignored test-results/demo, test-results/demo-records and test-results/demo-scutties directories.
+Browser checks require the same development Playwright/Chromium setup as the existing project tests. The server itself needs only Node. Screenshots and synthetic barcode payloads stay in ignored test-results/demo, test-results/demo-records, test-results/demo-scutties and test-results/demo-recovery directories.

@@ -1,5 +1,7 @@
 /** Dependency-free, selectable-text synthetic PDFs, with watermarking on every page. */
-export function syntheticPdf(text) {
+import {deflateSync} from 'node:zlib';
+import {demoImage} from './images.mjs';
+export function syntheticPdf(text,{image}={}) {
   if(!String(text).split('\n').slice(0,2).includes('DEMONSTRATION - SYNTHETIC DATA'))throw new Error('A demonstration label is required.');
   const escape=value=>value.replace(/[^\x20-\x7e]/g,'?').replace(/[\\()]/g,'\\$&');
   const wrap=line=>line.match(/.{1,88}(?:\s|$)|\S{1,88}/g)?.map(s=>s.trim())||[''];
@@ -8,19 +10,26 @@ export function syntheticPdf(text) {
   // Keep an offense header with its own dates rather than splitting that group across pages.
   const groups=[];
   for(const line of body){if(/^(?:SUSP|REVO|VIOL):/.test(line)||!groups.length)groups.push([]);groups.at(-1).push(...wrap(line));}
-  const pages=[[]],limit=46;
+  const pages=[[]],limit=()=>image&&pages.length===1?33:46;
   for(const group of groups){
-    if(pages.at(-1).length&&group.length+pages.at(-1).length>limit)pages.push([]);
-    for(const line of group){if(pages.at(-1).length>=limit)pages.push([]);pages.at(-1).push(line);}
+    if(pages.at(-1).length&&group.length+pages.at(-1).length>limit())pages.push([]);
+    for(const line of group){if(pages.at(-1).length>=limit())pages.push([]);pages.at(-1).push(line);}
   }
   const objects=['<< /Type /Catalog /Pages 2 0 R >>','', '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>'];
+  if(image){
+    const raster=demoImage(image),encoded=deflateSync(raster.data).toString('hex')+'>';
+    objects.push(`<< /Type /XObject /Subtype /Image /Width ${raster.width} /Height ${raster.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter [/ASCIIHexDecode /FlateDecode] /Length ${Buffer.byteLength(encoded)} >>\nstream\n${encoded}\nendstream`);
+  }
   const kids=[];
   for(const [index,lines] of pages.entries()){
     const pageId=objects.length+1,streamId=pageId+1;kids.push(`${pageId} 0 R`);
-    const commands=['BT','/F1 10 Tf','14 TL','40 752 Td',`(${escape(title)}) Tj`,'T*','(DEMONSTRATION - SYNTHETIC DATA) Tj','T*','T*',
+    const withImage=image&&index===0;
+    const commands=['BT','/F1 10 Tf','14 TL','40 752 Td',`(${escape(title)}) Tj`,'T*','(DEMONSTRATION - SYNTHETIC DATA) Tj','ET',
+      ...(withImage?['q 144 0 0 144 428 590 cm /Im1 Do Q','BT /F1 9 Tf 40 680 Td',`(Synthetic ${image==='portrait'?'illustrated portrait':'no-photo placeholder'} - no real person) Tj`,'ET']:[]),
+      'BT /F1 10 Tf 14 TL',`40 ${withImage?560:710} Td`,
       ...lines.flatMap((line,n)=>[...(n?['T*']:[]),`(${escape(line)}) Tj`]),'ET',
       'BT /F1 9 Tf 40 30 Td',`(DEMONSTRATION ONLY - NOT A GOVERNMENT RECORD - Page ${index+1} of ${pages.length}) Tj`,'ET'].join('\n');
-    objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents ${streamId} 0 R >>`,
+    objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> ${withImage?'/XObject << /Im1 4 0 R >>':''} >> /Contents ${streamId} 0 R >>`,
       `<< /Length ${Buffer.byteLength(commands)} >>\nstream\n${commands}\nendstream`);
   }
   objects[1]=`<< /Type /Pages /Kids [${kids.join(' ')}] /Count ${pages.length} >>`;

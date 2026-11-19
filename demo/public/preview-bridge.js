@@ -4,10 +4,12 @@
   async function load(){
     const catalog=await (await fetch('/api/cases')).json(),record=catalog.find(c=>c.id===id);
     if(!record||record.recordType==='residence')throw new Error('Choose a predefined plate or driver demonstration record.');
-    const {extractDemoPdf}=await import('./report-tools.js'),{text}=await extractDemoPdf(record.id);
+    const params=new URL(location.href).searchParams,includeIdentity=location.pathname.endsWith('/panel.html')&&record.recordType==='license'&&params.get('identity')==='1';
+    const {extractDemoPdf}=await import('./report-tools.js'),{text,driverIdentity}=await extractDemoPdf(record.id,{includeIdentity,reportFailure:params.get('failure')==='unavailable'});
     if(location.pathname.endsWith('/panel.html')){
       const {recordStatus}=await import('/extension/status-alerts.js');
       const alert={...recordStatus(record.recordType==='plate'?'plate':'license',text),subject:'DEMONSTRATION · '+(record.plate||record.license||'Customer '+record.customer)};
+      if(driverIdentity)alert.driverIdentity=driverIdentity;
       return {record,alert,data:alert};
     }
     const {reportBarcode}=await import('/extension/barcode-data.js');return {record,data:reportBarcode(text)};
