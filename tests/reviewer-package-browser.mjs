@@ -13,6 +13,7 @@ execFileSync('python3',['-c',`import sys,zipfile
 with zipfile.ZipFile(sys.argv[1]) as z:
  assert z.testzip() is None
  z.extractall(sys.argv[2])`,archive.path,temporary]);
+const version=JSON.parse(await readFile(join(temporary,'manifest.json'),'utf8')).version;
 const f=await demoExtension({runtimeRoot:temporary,fresh:true}),frames=[];
 await mkdir(join(output,'walkthrough-frames'),{recursive:true});
 const wait=async fn=>{const end=Date.now()+25000;while(Date.now()<end){const value=await fn();if(value)return value;await new Promise(r=>setTimeout(r,30));}throw new Error('Fresh package check timed out: '+f.session['demo:status']);};
@@ -63,7 +64,7 @@ try{
       await page.locator('img').evaluate((el,src)=>el.src=src,'data:image/png;base64,'+data);await page.locator('footer').evaluate((el,text)=>el.textContent=text,caption);
       await page.locator('img').evaluate(el=>el.decode());await page.screenshot({path:join(videoFrames,`${String(i).padStart(2,'0')}.png`)});
     }
-    execFileSync('ffmpeg',['-y','-framerate','1/6','-i',join(videoFrames,'%02d.png'),'-c:v','libx264','-r','24','-pix_fmt','yuv420p','-movflags','+faststart',join(output,'SC-DMV-Hotkeys-1.8.43-demo-walkthrough.mp4')],{stdio:'pipe'});
+    execFileSync('ffmpeg',['-y','-framerate','1/6','-i',join(videoFrames,'%02d.png'),'-c:v','libx264','-r','24','-pix_fmt','yuv420p','-movflags','+faststart',join(output,`SC-DMV-Hotkeys-${version}-demo-walkthrough.mp4`)],{stdio:'pipe'});
     await writeFile(join(output,'walkthrough-captions.txt'),frames.map((frame,i)=>`${i*6}s: ${frame.caption}`).join('\n')+'\n');
     console.log('Created 60-second captioned synthetic UI walkthrough.');
   }

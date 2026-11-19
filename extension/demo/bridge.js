@@ -13,10 +13,18 @@ if(location.href.startsWith(root+'SCTRNS/')){
     }
     return originalOpen.call(window,value,name,features);
   };
-  const port=chrome.runtime.connect({name:'demo-page'});
-  port.onMessage.addListener(async message=>{
-    try{const value=await pageOperation(message.op,{...message.args,demo:true,demoRoot:root});port.postMessage({id:message.id,ok:true,value});}
-    catch(error){try{port.postMessage({id:message.id,ok:false,error:error.message});}catch{}}
+  let port;
+  const connect=()=>{
+    port?.disconnect();const active=chrome.runtime.connect({name:'demo-page'});port=active;
+    active.onMessage.addListener(async message=>{
+      try{const value=await pageOperation(message.op,{...message.args,demo:true,demoRoot:root});active.postMessage({id:message.id,ok:true,value});}
+      catch(error){try{active.postMessage({id:message.id,ok:false,error:error.message});}catch{}}
+    });
+  };
+  connect();
+  chrome.runtime.onMessage.addListener((message,sender)=>{
+    if(message.target!=='demo-page'||message.type!=='reconnect'||sender.id!==chrome.runtime.id)return;
+    chrome.tabs.getCurrent().then(tab=>{if(tab?.id===message.tabId)connect();}).catch(()=>{});
   });
   if(Number(sessionStorage.getItem('__scDmvBackgroundReport'))>Date.now())pageOperation('startBackgroundReport',{demo:true,demoRoot:root,persistent:true});
 }

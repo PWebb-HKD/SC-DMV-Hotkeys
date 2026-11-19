@@ -1,4 +1,4 @@
-# Current permission audit — 1.8.43
+# Current permission audit — 1.8.44
 
 Audit scope: current first-party code and intended live/demo workflows, including retired features. This is a code/workflow review, not a Web Store approval or a claim that future redesigns could never reduce access further. `tools/audit-permissions.mjs` is a packaging gate and writes the machine-readable rationale before creating a ZIP.
 

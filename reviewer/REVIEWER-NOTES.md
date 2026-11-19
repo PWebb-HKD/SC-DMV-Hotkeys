@@ -1,4 +1,4 @@
-# Reviewer access notes — SC DMV Hotkeys 1.8.43
+# Reviewer access notes — SC DMV Hotkeys 1.8.44
 
 Suggested text for the Chrome Web Store review instructions:
 
@@ -8,7 +8,7 @@ The runtime ZIP is the file ending in `-webstore.zip`, with manifest.json at its
 
 ## What the demo represents
 
-The fixture preserves search selectors and transaction transitions without live credentials/tokens or private driver data. Shared automation uses an owned port for packaged pages, because injecting scripts into extension pages is not required. Live pages continue to use the scripting API. Synthetic report bytes are real selectable-text PDFs; photo extraction, placeholder suppression and barcode generation use the normal parsers/controllers. The same queue and cancellation rules apply. Demo sessions, queues, report caches and blacklist entries do not use the live vault.
+Version 1.8.44 verifies demo documents through Chrome runtime contexts, including reconnecting an existing page on demand after worker restart. The fixture preserves search selectors and transaction transitions without live credentials/tokens or private driver data. Shared automation uses an owned port for packaged pages, because injecting scripts into extension pages is not required. Live pages continue to use the scripting API. Synthetic report bytes are real selectable-text PDFs with aligned record fields, section rules, credential tables and intact offense groups; photo extraction, placeholder suppression and barcode generation use the normal parsers/controllers. The same queue and cancellation rules apply. Demo sessions, queues, report caches and blacklist entries do not use the live vault.
 
 The normal website-preview adapter and Node development server are not included in the runtime. The generated portal and catalogs/PDFs are installed with the extension. Packaged service failures are explicit local simulations, including a deliberately incomplete synthetic PDF. There are no government graphics or real records in the practice pages; the extension retains its existing application branding.
 

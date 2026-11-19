@@ -23,13 +23,23 @@ export function connectDemoPage(port){
 export async function demoOperation(tabId,op,args={},run){
   if(!operations.has(op))throw new Error('Unsupported demo operation.');
   const root=run?.environment||demoEnvironment(),end=Date.now()+10000;
-  let entry;
+  let entry,requestedDocument;
   while(Date.now()<end){
     run?.check();entry=documents.get(tabId);
-    if(entry){
-      const [tab,frame]=await Promise.all([chrome.tabs.get(tabId),chrome.webNavigation.getFrame({tabId,frameId:0})]);
-      if(tab.url===entry.url&&!tab.pendingUrl&&frame?.documentId===entry.documentId)break;entry=null;
+    // webNavigation excludes chrome-extension documents in normal Chrome builds.
+    // Runtime contexts identify our own current document without another host grant.
+    const [tab,contexts]=await Promise.all([chrome.tabs.get(tabId),chrome.runtime.getContexts({tabIds:[tabId]})]);
+    const current=contexts.find(context=>context.tabId===tabId&&context.frameId===0&&context.documentUrl===tab.url&&context.documentUrl?.startsWith(root.member));
+    if(!tab.pendingUrl&&current){
+      if(entry&&entry.url===current.documentUrl&&entry.documentId===current.documentId)break;
+      // An idle worker can lose its port map while the practice tab remains open.
+      // Reconnect on demand, rather than keeping the worker alive while idle.
+      if(requestedDocument!==current.documentId){
+        requestedDocument=current.documentId;
+        await chrome.runtime.sendMessage({target:'demo-page',type:'reconnect',tabId}).catch(()=>{});
+      }
     }
+    entry=null;
     await new Promise(resolve=>setTimeout(resolve,50));
   }
   run?.check();if(!entry)throw new Error('The packaged demo page is not ready. Open the practice portal and try again.');

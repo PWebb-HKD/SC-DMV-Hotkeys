@@ -1,6 +1,6 @@
 # SC DMV Hotkeys
 
-A Chromium Manifest V3 extension for authorized SCDMV member searches, PDF follow-ups, status alerts, and PDF417 data-entry barcodes. Current version: **1.8.43**.
+A Chromium Manifest V3 extension for authorized SCDMV member searches, PDF follow-ups, status alerts, and PDF417 data-entry barcodes. Current version: **1.8.44**.
 
 ## Install and update
 
@@ -144,6 +144,5 @@ CHROME_PATH=/usr/bin/chromium PYTHON=python3 node tests/barcode-browser.mjs
 
 The barcode decoder test also requires Python `zxing-cpp` and Pillow. Optional local extraction checks accept `--residence-pdf /path/to/report.pdf`, `--customer-pdf /path/to/report.pdf`, and `--barcode-pdf /path/to/report.pdf` on `tests/browser.mjs`. They do not print identifiers. Generated outputs go to ignored test directories; never commit private reports, credentials, or extracted personal data.
 
-## License and ownership
 
-This extension is licensed on a perpetual basis. All rights to SC DMV Hotkeys belong to Preston Webb. All rights reserved. Third-party components retain their respective licenses, including the bundled PDF.js Apache-2.0 license.
+Bundled third-party components retain their respective licenses; their notices remain under extension/vendor/.

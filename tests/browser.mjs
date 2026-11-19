@@ -663,7 +663,7 @@ try {
     await page.locator('#alertsToggle').uncheck();
     assert.equal(await page.evaluate(()=>window.sessionAlerts),false);await page.close();
   });
-  await tests('About shows actual browser shortcuts, descriptions, setup instructions, and perpetual ownership notice', async () => {
+  await tests('About shows actual browser shortcuts and setup instructions without extension licensing terms', async () => {
     const page=await ui.newPage(); await page.goto(`${base}/popup.html`);
     await page.locator('#history tr').first().waitFor();
     assert.equal(await page.locator('h1').textContent(),'SC DMV Hotkeys');
@@ -680,7 +680,8 @@ try {
     assert.equal(await page.locator('#bindings, #saveKeys, #reconnect, #installCommand, #forget').count(),0);
     for(const row of await page.locator('.shortcut-entry').all()) assert.ok((await row.locator('p').textContent()).length>20);
     assert.match(await page.locator('.about-instructions').textContent(),/In Chrome.*Global/);
-    assert.match(await page.locator('.about-license').textContent(),/perpetual basis.*Preston Webb/s);
+    assert.equal(await page.locator('.about-license').count(),0);
+    assert.doesNotMatch(await page.locator('#aboutView').textContent(),/perpetual basis|License & ownership/);
     assert.equal(await page.locator('#aboutView #browserShortcuts').count(),0);
     assert.equal(await page.locator('#settingsView #blacklistForm').count(),0);
     assert.equal(await page.locator('#blacklistView').isVisible(),false);

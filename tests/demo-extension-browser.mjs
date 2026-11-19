@@ -28,6 +28,10 @@ try{
     assert.equal(f.storageReads.slice(at).some(r=>r.scope==='local'&&r.keys.includes('vault')),false);
     await status.page.screenshot({path:join(screenshots,'driver-alert.png'),fullPage:true});assert.ok(f.session['demo:pdfCreated']);assert.equal(f.session.history[0].id,'live-old');
   });
+  await check('an existing demo page reconnects on demand after the worker loses its port map',async()=>{
+    f.disconnectDemoPorts();const status=await number('license','100000102');
+    assert.equal(await status.page.locator('h2.record-status-title').textContent(),'LICENSE EXPIRED');
+  });
   await check('a late settings snapshot cannot undo a newer status-alert toggle',async()=>{
     f.holdNextState();await f.chrome.storage.session.set({'demo:status':'Demo settings race fixture'});await wait(()=>f.hasHeldState());
     const delivered=await f.page.evaluate(()=>window.fixtureStateDelivered||0);await f.send({type:'alerts',enabled:false});

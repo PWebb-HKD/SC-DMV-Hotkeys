@@ -4,10 +4,10 @@ import assert from 'node:assert/strict';
 import {connectDemoPage,demoOperation} from '../extension/demo-pages.js';
 import {demoEnvironment} from '../extension/environment.js';
 const event=()=>({listeners:[],addListener(fn){this.listeners.push(fn);}});
-test('packaged bridge rejects foreign senders and cannot target a replaced same-URL document',async()=>{
+test('packaged bridge uses owned runtime contexts without webNavigation and rejects replaced same-URL documents',async()=>{
   const previous=globalThis.chrome,root='chrome-extension://'+'a'.repeat(32)+'/',url=root+'demo/SCTRNS/Member/logon.html';
   let documentId='old-document',sent=0;
-  globalThis.chrome={runtime:{id:'a'.repeat(32),getURL:path=>root+path},tabs:{get:async()=>({id:875,url})},webNavigation:{getFrame:async()=>({documentId})}};
+  globalThis.chrome={runtime:{id:'a'.repeat(32),getURL:path=>root+path,sendMessage:async()=>{},getContexts:async()=>[{tabId:875,frameId:0,documentId,documentUrl:url}]},tabs:{get:async()=>({id:875,url})},webNavigation:{getFrame:async()=>{throw new Error('Own extension pages are excluded from webNavigation.');}}};
   const make=sender=>{
     const port={name:'demo-page',sender,onMessage:event(),onDisconnect:event(),disconnected:false,
       disconnect(){this.disconnected=true;for(const fn of this.onDisconnect.listeners)fn();},

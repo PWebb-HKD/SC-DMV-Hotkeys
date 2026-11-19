@@ -4,62 +4,95 @@
 << /Type /Catalog /Pages 2 0 R >>
 endobj
 2 0 obj
-<< /Type /Pages /Kids [4 0 R] /Count 1 >>
+<< /Type /Pages /Kids [6 0 R] /Count 1 >>
 endobj
 3 0 obj
-<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+<< /Type /Font /Subtype /Type1 /BaseFont /Courier /Encoding /WinAnsiEncoding >>
 endobj
 4 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >>  >> /Contents 5 0 R >>
+<< /Type /Font /Subtype /Type1 /BaseFont /Courier-Bold /Encoding /WinAnsiEncoding >>
 endobj
 5 0 obj
-<< /Length 786 >>
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>
+endobj
+6 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R /F2 4 0 R /F3 5 0 R >>  >> /Contents 7 0 R >>
+endobj
+7 0 obj
+<< /Length 2725 >>
 stream
-BT
-/F1 10 Tf
-14 TL
-40 752 Td
-(Vehicle Record) Tj
-T*
-(DEMONSTRATION - SYNTHETIC DATA) Tj
-ET
-BT /F1 10 Tf 14 TL
-40 710 Td
-(VIN: 1DEMA12345X000001 Year: 2024 Make: HOND Model: DEMO Body: SD) Tj
-T*
-(Empty Weight: 3000 Title Number: 100000001 Status: ACTIVE Issue Date: 01/01/2024 Dup: N) Tj
-T*
-(Owner Number: 10000001 Owner Name: EXAMPLE, AVERY) Tj
-T*
-(Owner Address: 100 DEMONSTRATION RD COLUMBIA SC 29201) Tj
-T*
-(Last Transaction: RENEWAL) Tj
-T*
-(Plate Number: DEMO001 Plate Class: ABC PRIVATE PASSENGER) Tj
-T*
-(Vehicle Type: PC Date of Issue: 01/01/2024) Tj
-T*
-(Plate Exp Date: 12/31/2099 Decal Exp Date: 12/31/2099) Tj
-T*
-(Decal Number:) Tj
-T*
-(Enforcement Description:  Enforcement Statute:) Tj
-ET
-BT /F1 9 Tf 40 30 Td
-(DEMONSTRATION ONLY - NOT A GOVERNMENT RECORD - Page 1 of 1) Tj
-ET
+BT /F3 17 Tf 239.36 752 Td (Vehicle Record) Tj ET
+BT /F2 9 Tf 230.39999999999998 733 Td (DEMONSTRATION - SYNTHETIC DATA) Tj ET
+0 G 1 w 40 715 m 572 715 l S
+BT /F2 10 Tf 40 696 Td (Vehicle information) Tj ET
+0 G 0.5 w 40 690 m 572 690 l S
+BT /F2 8.7 Tf 40 670 Td (VIN:) Tj ET
+BT /F1 8.7 Tf 66.1 670 Td (1DEMA12345X000001) Tj ET
+BT /F2 8.7 Tf 258 670 Td (Year:) Tj ET
+BT /F1 8.7 Tf 289.32 670 Td (2024) Tj ET
+BT /F2 8.7 Tf 321 670 Td (Make:) Tj ET
+BT /F1 8.7 Tf 352.32 670 Td (HOND) Tj ET
+BT /F2 8.7 Tf 390 670 Td (Model:) Tj ET
+BT /F1 8.7 Tf 426.53999999999996 670 Td (DEMO) Tj ET
+BT /F2 8.7 Tf 484 670 Td (Body:) Tj ET
+BT /F1 8.7 Tf 515.32 670 Td (SD) Tj ET
+BT /F2 8.7 Tf 40 654 Td (Empty Weight:) Tj ET
+BT /F1 8.7 Tf 113.07999999999998 654 Td (3000) Tj ET
+BT /F2 8.7 Tf 306 654 Td (Title Number:) Tj ET
+BT /F1 8.7 Tf 379.08 654 Td (100000001) Tj ET
+BT /F2 8.7 Tf 40 641 Td (Status:) Tj ET
+BT /F1 8.7 Tf 81.75999999999999 641 Td (ACTIVE) Tj ET
+BT /F2 8.7 Tf 306 641 Td (Issue Date:) Tj ET
+BT /F1 8.7 Tf 368.64 641 Td (01/01/2024) Tj ET
+BT /F2 8.7 Tf 40 628 Td (Dup:) Tj ET
+BT /F1 8.7 Tf 66.1 628 Td (N) Tj ET
+BT /F2 10 Tf 40 612 Td (Registered owners) Tj ET
+0 G 0.5 w 40 606 m 572 606 l S
+BT /F2 8.7 Tf 40 586 Td (Owner Number:) Tj ET
+BT /F1 8.7 Tf 113.07999999999998 586 Td (10000001) Tj ET
+BT /F2 8.7 Tf 40 573 Td (Owner Name:) Tj ET
+BT /F1 8.7 Tf 102.63999999999999 573 Td (EXAMPLE, AVERY) Tj ET
+BT /F2 8.7 Tf 40 557 Td (Owner Address:) Tj ET
+BT /F1 8.7 Tf 118.3 557 Td (100 DEMONSTRATION RD COLUMBIA SC 29201) Tj ET
+BT /F2 8.7 Tf 40 541 Td (Last Transaction:) Tj ET
+BT /F1 8.7 Tf 133.95999999999998 541 Td (RENEWAL) Tj ET
+BT /F2 10 Tf 40 525 Td (Registration) Tj ET
+0 G 0.5 w 40 519 m 572 519 l S
+BT /F2 8.7 Tf 40 499 Td (Plate Number:) Tj ET
+BT /F1 8.7 Tf 113.07999999999998 499 Td (DEMO001) Tj ET
+BT /F2 8.7 Tf 306 499 Td (Plate Class:) Tj ET
+BT /F1 8.7 Tf 373.86 499 Td (ABC PRIVATE PASSENGER) Tj ET
+BT /F2 8.7 Tf 40 483 Td (Vehicle Type:) Tj ET
+BT /F1 8.7 Tf 113.07999999999998 483 Td (PC) Tj ET
+BT /F2 8.7 Tf 306 483 Td (Date of Issue:) Tj ET
+BT /F1 8.7 Tf 384.3 483 Td (01/01/2024) Tj ET
+BT /F2 8.7 Tf 40 467 Td (Plate Exp Date:) Tj ET
+BT /F1 8.7 Tf 123.52 467 Td (12/31/2099) Tj ET
+BT /F2 8.7 Tf 306 467 Td (Decal Exp Date:) Tj ET
+BT /F1 8.7 Tf 389.52 467 Td (12/31/2099) Tj ET
+BT /F2 8.7 Tf 40 451 Td (Decal Number:) Tj ET
+BT /F1 8.7 Tf 113.07999999999998 451 Td () Tj ET
+BT /F2 8.7 Tf 40 435 Td (Enforcement Description:) Tj ET
+BT /F1 8.7 Tf 170.49999999999997 435 Td () Tj ET
+BT /F2 8.7 Tf 306 435 Td (Enforcement Statute:) Tj ET
+BT /F1 8.7 Tf 415.62 435 Td () Tj ET
+0 G 0.5 w 40 47 m 572 47 l S
+BT /F1 8 Tf 40 33 Td (DEMONSTRATION ONLY - NOT A GOVERNMENT RECORD) Tj ET
+BT /F1 8 Tf 496 33 Td (Page 1 of 1) Tj ET
 endstream
 endobj
 xref
-0 6
+0 8
 0000000000 65535 f 
 0000000015 00000 n 
 0000000064 00000 n 
 0000000121 00000 n 
-0000000191 00000 n 
-0000000318 00000 n 
+0000000216 00000 n 
+0000000316 00000 n 
+0000000418 00000 n 
+0000000565 00000 n 
 trailer
-<< /Size 6 /Root 1 0 R >>
+<< /Size 8 /Root 1 0 R >>
 startxref
-1155
+3342
 %%EOF

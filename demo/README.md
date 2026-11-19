@@ -8,7 +8,7 @@ The server binds only to 127.0.0.1, makes no outbound requests, accepts no POST 
 
 ## Use the installed extension in Demo Mode
 
-Extension version **1.8.43** includes the practice site and reports. Replace/reload the extension folder for this revision. No server, Node installation or optional host permission is needed for installed Demo Mode.
+Extension version **1.8.44** includes the practice site and reports. Replace/reload the extension folder for this revision. No server, Node installation or optional host permission is needed for installed Demo Mode.
 
 1. Open the extension's **Settings → Practice environment** and enable **Demo Mode**.
 2. Select **Reviewer & demo guide** for sample commands and expected results, or **Open practice portal**.
@@ -89,6 +89,8 @@ Use DL **100000101** or **100000102**. The searched person is first in the synth
 Individual names open customer results. **Collect customers and run next** retains all three numbers and starts with the second. The customer results page shows Previous/Next controls, without wrapping, and Clear queue. This is a local demo queue, separate from the installed extension's queue and blacklist.
 
 ## PDFs and previews
+
+Generated reports use a record-style layout based on the supplied examples: centered titles, monospaced aligned fields, bold labels, ruled sections, credential tables and intact offense groups. Driver images are centered in the first-page header. Page numbers and synthetic/non-government labels remain on every page. Only fictional values and procedural images are used. `npm run test:demo-pdf-layout` checks all 19 PDFs for clipping, column alignment, complete offense groups and unchanged status/barcode/customer parsing.
 
 In the HTTP preview, Open PDF serves a genuine, selectable-text PDF at ViewAttachment.aspx and Chrome provides its native viewer. In installed Demo Mode, the extension opens its bundled viewer in light or dark colors. Chrome's internal viewer shadow DOM is not copied. Every page is labeled **DEMONSTRATION - SYNTHETIC DATA** and **NOT A GOVERNMENT RECORD**. Report titles precede the watermark so residence classification can recognize its heading. PDFs are generated locally without dependencies and are not cached by the mock server.
 

@@ -13,8 +13,8 @@ export async function demoExtension({runtimeRoot=fileURLToPath(new URL('../../ex
   const session=fresh?{}:{history:[{id:'live-old',kind:'plate',value:'LIVE123',at:1}],queue:{values:['87654321'],index:1},credentials:{user:'LIVE-ONLY-USER',password:'LIVE-ONLY-PASSWORD'}},local=fresh?{}:{vault:{salt:'LIVE-VAULT',iv:'LIVE-IV',ciphertext:'LIVE-CIPHERTEXT'}};
   const requests=[],errors=[],operations=[],storageReads=[],ports=new Map();let sequence=1,windowSequence=2,focusedWindow=1,permission=false,permitRequest=true,rules=[],registered=[],holdReader=false,pendingReader=null,holdState=false,pendingState=null;
   const emit=(e,...args)=>{for(const fn of [...e.listeners])Promise.resolve(fn(...args)).catch(error=>errors.push(error.message));};
-  const storageChanged=event(),runtime={id:'a'.repeat(32),getURL:path=>base+path,onMessage:event(),onConnect:event(),onInstalled:event(),onStartup:event(),sendMessage:async message=>{
-    for(const record of pages.values())if(record.tab.url.startsWith(base))await record.page.evaluate(message=>window.chrome?.runtime.onMessage.listeners.forEach(fn=>fn(message)),message).catch(()=>{});
+  const storageChanged=event(),runtime={id:'a'.repeat(32),getURL:path=>base+path,getContexts:async filter=>[...pages.values()].filter(record=>!record.tab.pendingUrl&&record.tab.url.startsWith(base)&&(!filter.tabIds||filter.tabIds.includes(record.tab.id))&&(!filter.documentIds||filter.documentIds.includes(record.tab.documentId))).map(record=>({contextId:record.tab.documentId,contextType:'TAB',tabId:record.tab.id,frameId:0,windowId:record.tab.windowId,documentId:record.tab.documentId,documentUrl:record.tab.url,documentOrigin:base.slice(0,-1),incognito:false})),onMessage:event(),onConnect:event(),onInstalled:event(),onStartup:event(),sendMessage:async message=>{
+    for(const record of pages.values())if(record.tab.url.startsWith(base))await record.page.evaluate(message=>window.chrome?.runtime.onMessage.listeners.forEach(fn=>fn(message,{id:'a'.repeat(32)})),message).catch(()=>{});
   }};
   const area=(data,scope)=>({setAccessLevel:async()=>{},clear:async()=>{for(const k of Object.keys(data))delete data[k];},get:async keys=>{
     const list=keys==null?Object.keys(data):typeof keys==='string'?[keys]:Array.isArray(keys)?keys:Object.keys(keys);storageReads.push({scope,keys:list});return Object.fromEntries(list.map(k=>[k,structuredClone(data[k])]));
@@ -26,7 +26,7 @@ export async function demoExtension({runtimeRoot=fileURLToPath(new URL('../../ex
   const chrome={runtime,storage:{local:area(local,'local'),session:area(session,'session'),onChanged:storageChanged},
     commands:{onCommand:event(),getAll:async()=>[]},permissions:{contains:async()=>permission,request:async()=>{if(permitRequest)permission=true;return permitRequest;},onRemoved:event()},
     declarativeNetRequest:{updateDynamicRules:async({addRules=[]})=>{rules=addRules;}},
-    webNavigation:{onCommitted:event(),getFrame:async({tabId})=>({documentId:pages.get(tabId)?.tab.documentId})},
+    webNavigation:{onCommitted:event(),getFrame:async({tabId})=>pages.get(tabId)?.tab.url.startsWith(base)?null:{documentId:pages.get(tabId)?.tab.documentId}},
     scripting:{getRegisteredContentScripts:async()=>registered,registerContentScripts:async scripts=>{registered.push(...scripts);},unregisterContentScripts:async({ids})=>{registered=registered.filter(s=>!ids.includes(s.id));},updateContentScripts:async()=>{},insertCSS:async()=>{},removeCSS:async()=>{},executeScript:async request=>{
       if(request.files)return [];
       if(pages.get(request.target.tabId)?.tab.url.startsWith(DEMO.root))throw new Error('Packaged demo must use ports, not script injection.');
@@ -68,7 +68,7 @@ export async function demoExtension({runtimeRoot=fileURLToPath(new URL('../../ex
     page.on('pageerror',error=>errors.push(page.url()+' '+(error.stack||error.message)));page.on('close',()=>{pages.delete(record.tab.id);emit(chrome.tabs.onRemoved,record.tab.id);if(![...pages.values()].some(r=>r.tab.windowId===record.tab.windowId)){windows.delete(record.tab.windowId);emit(chrome.windows.onRemoved,record.tab.windowId);}});
     page.on('request',request=>{if(request.isNavigationRequest())record.navigationPending=true;});
     page.on('framenavigated',frame=>{
-      if(frame!==page.mainFrame())return;const sameDocument=record.tab.url.split('#')[0].split('?')[0]===frame.url().split('#')[0].split('?')[0]&&record.tab.url.startsWith(base+'reader.html')&&!record.navigationPending;record.navigationPending=false;if(sameDocument){record.tab.url=frame.url();return;}for(const port of [...ports.values()])if(port.sender.tab.id===record.tab.id)port.disconnect();record.tab.url=frame.url();delete record.tab.pendingUrl;record.tab.documentId=crypto.randomUUID();record.tab.status='loading';emit(chrome.webNavigation.onCommitted,{tabId:record.tab.id,frameId:0,url:frame.url(),documentId:record.tab.documentId});emit(chrome.tabs.onUpdated,record.tab.id,{url:frame.url(),status:'loading'},{...record.tab});
+      if(frame!==page.mainFrame())return;const sameDocument=record.tab.url.split('#')[0].split('?')[0]===frame.url().split('#')[0].split('?')[0]&&record.tab.url.startsWith(base+'reader.html')&&!record.navigationPending;record.navigationPending=false;if(sameDocument){record.tab.url=frame.url();return;}for(const port of [...ports.values()])if(port.sender.tab.id===record.tab.id)port.disconnect();record.tab.url=frame.url();delete record.tab.pendingUrl;record.tab.documentId=crypto.randomUUID();record.tab.status='loading';if(!frame.url().startsWith(base))emit(chrome.webNavigation.onCommitted,{tabId:record.tab.id,frameId:0,url:frame.url(),documentId:record.tab.documentId});emit(chrome.tabs.onUpdated,record.tab.id,{url:frame.url(),status:'loading'},{...record.tab});
     });
     page.on('domcontentloaded',()=>{record.tab.status='complete';emit(chrome.tabs.onUpdated,record.tab.id,{status:'complete'},{...record.tab});});return record;
   }
@@ -89,6 +89,7 @@ export async function demoExtension({runtimeRoot=fileURLToPath(new URL('../../ex
   });
   await context.exposeBinding('fixtureDemoReply',(_,message)=>{const port=ports.get(message.portId);if(port)emit(port.onMessage,message.value);});
   await context.exposeBinding('fixturePermission',()=>chrome.permissions.request());
+  await context.exposeBinding('fixtureCurrentTab',({page})=>({...register(page).tab}));
   await context.exposeBinding('fixtureCurrentWindow',({page})=>({...windows.get(register(page).tab.windowId)}));
   await context.exposeBinding('fixtureWindowUpdate',(_,args)=>chrome.windows.update(...args));
   await context.exposeBinding('fixtureCreateTab',(_,args)=>chrome.tabs.create(args));
@@ -97,7 +98,7 @@ export async function demoExtension({runtimeRoot=fileURLToPath(new URL('../../ex
     // window.open may initialize the fixture's child document while its URL is still about:blank.
     if(!location.href.startsWith(base)&&location.href!=='about:blank')return;
     const event=()=>({listeners:[],addListener(fn){this.listeners.push(fn);},removeListener(fn){this.listeners=this.listeners.filter(f=>f!==fn);}});
-    window.chrome={runtime:{getURL:path=>base+path,sendMessage:message=>window.fixtureSend(message),connect:()=>({postMessage(){}}),onMessage:event()},storage:{onChanged:event()},permissions:{request:()=>window.fixturePermission()},tabs:{create:args=>window.fixtureCreateTab(args)},windows:{getCurrent:()=>window.fixtureCurrentWindow(),update:(...args)=>window.fixtureWindowUpdate(args),onBoundsChanged:event()}};
+    window.chrome={runtime:{id:'a'.repeat(32),getURL:path=>base+path,sendMessage:message=>window.fixtureSend(message),connect:()=>({postMessage(){}}),onMessage:event()},storage:{onChanged:event()},permissions:{request:()=>window.fixturePermission()},tabs:{getCurrent:()=>window.fixtureCurrentTab(),create:args=>window.fixtureCreateTab(args)},windows:{getCurrent:()=>window.fixtureCurrentWindow(),update:(...args)=>window.fixtureWindowUpdate(args),onBoundsChanged:event()}};
     window.fixtureDemoPorts={};
     window.chrome.runtime.connect=({name})=>{
       if(name!=='demo-page')return {postMessage(){}};
@@ -128,6 +129,7 @@ export async function demoExtension({runtimeRoot=fileURLToPath(new URL('../../ex
   globalThis.chrome=chrome;await import(pathToFileURL(resolve(root,'background.js')).href);await send({type:'state'});
   const page=await context.newPage(),record=register(page);record.tab.active=true;await page.goto(base+'popup.html');
   return {DEMO,browser,context,page,pages,session,local,requests,errors,operations,storageReads,send,chrome,base,
+    disconnectDemoPorts:()=>{for(const port of [...ports.values()])port.disconnect();},
     holdNextReader:()=>{holdReader=true;pendingReader=null;},hasHeldReader:()=>!!pendingReader,releaseReader:()=>pendingReader?.resolve(),
     holdNextState:()=>{holdState=true;pendingState=null;},hasHeldState:()=>!!pendingState,releaseState:()=>pendingState?.resolve(),
     setPermission:allowed=>{permitRequest=allowed;},activate:async tab=>{focusedWindow=tab.windowId;await chrome.tabs.update(tab.id,{active:true});},
