@@ -15,6 +15,8 @@ Match commands case-insensitively. The user may include a task description or br
 
 ## Workflow
 
+The user explicitly exempts demo-site-only development from extension version increments. Retain the current extension release version when the branch is exclusively for that work; the P/F release increments above apply to extension development.
+
 1. Read AGENTS.md and the repository's development guidance. Inspect the current branch, working directory, remotes, local branches, and current remote refs using the existing authenticated Git connection. Preserve unrelated changes and local-only commits. Never reset, overwrite, or automatically commit unrelated work. Use the existing checkout; do not create a worktree unless explicitly requested.
 2. Default to the latest fetched main as the base. If the user explicitly says the new work depends on an unmerged test branch, base it on that branch to preserve its changes. Do not silently carry changes from whichever test branch happens to be checked out. Ask only if dirty files, divergent history, or unclear dependencies prevent a safe branch creation.
 3. Read the actual base version rather than assuming the examples above are current. Check that extension/manifest.json, package.json, package-lock.json (including the root package entry), and README release references agree. Investigate inconsistencies before choosing a new version.
@@ -26,4 +28,4 @@ Match commands case-insensitively. The user may include a task description or br
 
 ## Subsequent changes
 
-The initial P/F prefix chooses the branch's release increment. Each subsequent code or UI revision on that same branch still receives a patch-version increment, with manifest, package, lockfile, and README kept synchronized. A documentation-only update does not require a release bump. Use the separate Merge TB skill only when the user invokes a merge.
+The initial P/F prefix chooses the branch's release increment. Each subsequent extension code or UI revision on that same branch still receives a patch-version increment, with manifest, package, lockfile, and README kept synchronized. Demo-site-only development is an explicit user exception and does not increment the extension release version. A documentation-only update does not require a release bump. Use the separate Merge TB skill only when the user invokes a merge.

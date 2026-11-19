@@ -1,27 +1,32 @@
-/* Local preview only. Serve this adapter solely in the mock site's HTTP views;
- * it never ships inside extension/ and cannot access an installed extension. */
+/* HTTP-only synthetic preview adapter. This file is outside the installed extension. */
 (()=>{
-  const plate=new URL(location.href).searchParams.get('demo');let snapshot;
-  async function load() {
-    if(!/^DEMO00[1-6]$/.test(plate||''))throw new Error('Choose a predefined demonstration record.');
-    const {getDocument,GlobalWorkerOptions}=await import('/extension/vendor/pdf.mjs');
-    GlobalWorkerOptions.workerSrc='/extension/vendor/pdf.worker.mjs';
-    const response=await fetch('/SCTRNS/Member/Transactions/ViewAttachment.aspx?case='+plate);
-    if(!response.ok)throw new Error('The demonstration PDF is unavailable.');
-    const doc=await getDocument({data:new Uint8Array(await response.arrayBuffer()),isEvalSupported:false,disableFontFace:true,useSystemFonts:true,cMapUrl:'/extension/vendor/cmaps/',cMapPacked:true,standardFontDataUrl:'/extension/vendor/standard_fonts/',wasmUrl:'/extension/vendor/wasm/'}).promise;
-    let text='';
-    try {for(let n=1;n<=doc.numPages;n++){const page=await doc.getPage(n);for(const item of (await page.getTextContent()).items)if('str' in item)text+=item.str+(item.hasEOL?'\n':' ');text+='\n';}}
-    finally {await doc.destroy();}
-    if(!text.includes('DEMONSTRATION - SYNTHETIC DATA'))throw new Error('The PDF must contain the synthetic-data label.');
+  const id=new URL(location.href).searchParams.get('demo');let snapshot;
+  async function load(){
+    const catalog=await (await fetch('/api/cases')).json(),record=catalog.find(c=>c.id===id);
+    if(!record||record.recordType==='residence')throw new Error('Choose a predefined plate or driver demonstration record.');
+    const {extractDemoPdf}=await import('./report-tools.js'),{text}=await extractDemoPdf(record.id);
     if(location.pathname.endsWith('/panel.html')){
-      const {plateStatus}=await import('/extension/status-alerts.js');
-      return {...plateStatus(text),subject:'DEMONSTRATION · Plate: '+plate};
+      const {recordStatus}=await import('/extension/status-alerts.js');
+      const alert={...recordStatus(record.recordType==='plate'?'plate':'license',text),subject:'DEMONSTRATION · '+(record.plate||record.license||'Customer '+record.customer)};
+      return {record,alert,data:alert};
     }
-    const {reportBarcode}=await import('/extension/barcode-data.js');return reportBarcode(text);
+    const {reportBarcode}=await import('/extension/barcode-data.js');return {record,data:reportBarcode(text)};
   }
   window.chrome={runtime:{connect:()=>({postMessage(){}}),getURL:path=>new URL('/extension/'+path,location.origin).href,sendMessage:async message=>{
     if(message.type==='stop-audio')return {ok:true,value:true};
-    if(message.type!=='panel-data')return {ok:false,error:'This plate-only prototype does not run customer follow-up searches.'};
-    try {snapshot??=load();return {ok:true,value:await snapshot};}catch(error){return {ok:false,error:error.message};}
+    try {
+      snapshot??=load();const saved=await snapshot;
+      if(message.type==='panel-data')return {ok:true,value:saved.data};
+      if(message.type==='alert-owner-search'){
+        if(message.id!=='demo'||saved.record.recordType!=='plate'||!Number.isInteger(message.ownerIndex)||message.ownerIndex<0)throw new Error('Choose an owner from this demonstration plate alert.');
+        const number=saved.alert.owners?.[message.ownerIndex]?.number;
+        const catalog=await (await fetch('/api/cases')).json(),profile=catalog.find(c=>c.recordType==='license'&&c.customer===number);
+        if(!profile)throw new Error('No fictional driver profile is defined for this customer yet.');
+        const target=window.open('/SCTRNS/Member/Transactions/DrvRec/Page2.aspx?case='+profile.id+'&via=customer','scdmv-demo-customer');
+        if(!target)throw new Error('Allow popups on the local demo site to open this customer record.');
+        setTimeout(()=>window.close(),0);return {ok:true,value:true};
+      }
+      throw new Error('This action is not available in the local demonstration.');
+    } catch(error){return {ok:false,error:error.message};}
   }}};
 })();

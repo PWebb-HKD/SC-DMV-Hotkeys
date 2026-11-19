@@ -128,7 +128,7 @@ Permissions support storage, DMV tab automation, scripting, navigation tracking,
 
 ## Development and validation
 
-The local synthetic practice portal is available with `npm run demo` at `http://127.0.0.1:4173`. Sign in with `demo` / `demo` and use plates DEMO001 through DEMO006. It covers the five-page vehicle workflow, real synthetic PDFs, and previews using the existing status/barcode rendering code. It does not yet connect installed-extension automation to localhost. See [demo/README.md](demo/README.md) for scope, data isolation and checks.
+The local synthetic practice portal is available with `npm run demo` at `http://127.0.0.1:4173`. Sign in with `demo` / `demo` and use the listed plate, DL, customer or same-residence scenarios. It includes real synthetic PDFs, previews using existing status/barcode rendering code, saved-owner customer follow-ups and a local residence queue. It does not yet connect installed-extension automation to localhost. Demo-only changes do not increment extension release versions. See [demo/README.md](demo/README.md) for sample numbers, scope, data isolation and checks.
 
 See [DEVELOPMENT.md](DEVELOPMENT.md) for module responsibilities, workflow/storage contracts, and review decisions. First-party files live in `extension/`, maintenance scripts in `tools/`, and synthetic regression cases in `tests/`. Third-party libraries and their licenses remain in `extension/vendor/`.
 

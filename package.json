@@ -8,7 +8,7 @@
     "check": "node tools/check.mjs",
     "test:dmv-theme": "node tests/dmv-theme-browser.mjs",
     "demo": "node demo/server.mjs",
-    "test:demo": "node tests/demo-browser.mjs"
+    "test:demo": "node tests/demo-browser.mjs && node tests/demo-records-browser.mjs"
   },
   "devDependencies": {
     "darkreader": "4.9.135"

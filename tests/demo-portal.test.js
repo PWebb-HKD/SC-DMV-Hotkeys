@@ -2,10 +2,11 @@ import {test,after} from 'node:test';
 import assert from 'node:assert/strict';
 import {request} from 'node:http';
 import {startDemoServer} from '../demo/server.mjs';
-import {DEMO_CASES,DEMO_PATHS,vehicleText} from '../demo/cases.mjs';
-import {plateStatus} from '../extension/status-alerts.js';
+import {DEMO_CASES,ADDRESS_CASES,ALL_DEMO_CASES,DEMO_PATHS,vehicleText,recordText} from '../demo/cases.mjs';
+import {DRIVER_CASES,driverText} from '../demo/driver-cases.mjs';
+import {plateStatus,licenseStatus} from '../extension/status-alerts.js';
 import {reportBarcode} from '../extension/barcode-data.js';
-import {isPortal,attachmentUrl} from '../extension/core.js';
+import {isPortal,attachmentUrl,ownerNumbers,isResidenceReport} from '../extension/core.js';
 const site=await startDemoServer();after(()=>site.close());
 test('demo serves all five selector-compatible pages with visible synthetic labels and no captured scripts',async()=>{
   const selectors=['ContentPlaceHolder1_loginButton','ContentPlaceHolder1_submitButton','ContentPlaceHolder1_menuContainer','ContentPlaceHolder1_txtPlateNbr','downloadButton'];
@@ -54,4 +55,37 @@ test('preview views reuse production controllers through an explicit local-only 
 });
 test('standalone demo does not weaken production origin recognition',()=>{
   assert.equal(isPortal(site.url+DEMO_PATHS.login),false);assert.equal(attachmentUrl(site.url+DEMO_PATHS.pdf),null);
+});
+test('shared driver/customer form and residence pages preserve supplied control IDs without captured tokens',async()=>{
+  const controls=new Map([
+    [DEMO_PATHS.driverSearch,['ContentPlaceHolder1_dlNumberTextBox','ContentPlaceHolder1_idNumberTextBox','ContentPlaceHolder1_nameSearchButton']],
+    [DEMO_PATHS.addressSearch,['ContentPlaceHolder1_txtDLNumber']],
+    [DEMO_PATHS.driverResult,['downloadButton','ContentPlaceHolder1_btnPrint','ContentPlaceHolder1_dlNbrBox_DisplayOnly']],
+    [DEMO_PATHS.addressResult,['downloadButton','collect-customers']]
+  ]);
+  for(const [path,ids] of controls){const html=await (await fetch(site.url+path)).text();for(const id of ids)assert.ok(html.includes(id));assert.doesNotMatch(html,/__VIEWSTATE|__EVENTVALIDATION|WebResource\.axd/);}
+});
+test('driver scenarios use real status/barcode rules including mixed periods, revocations, TAL and IID',()=>{
+  const titles=['VALID LICENSE','LICENSE EXPIRED','LICENSE SUSPENDED','LICENSE SUSPENDED','LICENSE SUSPENDED','VALID LICENSE','VALID LICENSE','VALID LICENSE','NOT LICENSED ID ONLY','NOT LICENSED','STATUS UNAVAILABLE'];
+  for(const [index,record] of DRIVER_CASES.entries()){
+    const text=driverText(record.id),alert=licenseStatus(text);assert.equal(alert.sections[0].title,titles[index]);assert.equal(reportBarcode(text).kind,'driver');
+    if(record.kind==='suspended'){assert.equal(alert.activeSuspensions,6);assert.equal(alert.pendingReinstatement,2);assert.equal(alert.priorDuiDuac,2);assert.equal(alert.sections[0].columns[0].groups[0].reason,'Habitual Offender');}
+    if(record.kind==='revocation')assert.equal(alert.sections[0].columns[0].groups[0].occurrences[0].revocation,true);
+    if(record.kind==='tal')assert.ok(alert.sections[0].lines.includes('TEMPORARY ALCOHOL LICENSE'));
+    if(record.kind==='iid'){assert.equal(alert.autoCloseMs,90000);assert.equal(alert.iidRequired,true);}
+  }
+});
+test('residence records retain the queried customer first and classify ahead of repeated driver headings',()=>{
+  for(const record of ADDRESS_CASES){
+    const text=recordText(record.id);assert.equal(isResidenceReport(text),true);
+    const expected=record.members.map(id=>DRIVER_CASES.find(profile=>profile.id===id).customer);
+    assert.deepEqual(ownerNumbers(text),expected);assert.equal(expected.length,3);
+    assert.equal(DRIVER_CASES.find(profile=>profile.id===record.members[0]).license,record.license);
+  }
+});
+test('catalog and PDF endpoints allow only the defined synthetic records',async()=>{
+  const catalog=await (await fetch(site.url+'/api/cases')).json();assert.equal(catalog.length,ALL_DEMO_CASES.length);
+  for(const record of ALL_DEMO_CASES){const response=await fetch(site.url+DEMO_PATHS.pdf+'?case='+record.id);assert.equal(response.status,200);assert.equal(response.headers.get('content-type'),'application/pdf');}
+  assert.equal((await fetch(site.url+'/extension/panel.html?demo=ADDRESS001')).status,400);
+  assert.equal((await fetch(site.url+'/extension/barcode.html?demo=UNDEFINED')).status,400);
 });

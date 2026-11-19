@@ -34,7 +34,7 @@ try {
     assert.equal(await page.locator('#ContentPlaceHolder1_passwordText').inputValue(),'');
     await page.locator('#ContentPlaceHolder1_passwordText').fill('demo');await page.locator('#ContentPlaceHolder1_loginButton').click();
     await page.waitForURL(site.url+P.disclaimer);await page.locator('#ContentPlaceHolder1_submitButton').click();await page.waitForURL(site.url+P.menu);
-    assert.equal(await page.locator('#ContentPlaceHolder1_menuContainer a').count(),2);
+    assert.equal(await page.locator('#ContentPlaceHolder1_menuContainer a').count(),4);
   });
   await check('unknown plates show the production-compatible validation area without a result',async()=>{
     await page.goto(site.url+P.search);await page.locator('#ContentPlaceHolder1_txtPlateNbr').fill('DEMO404');await page.locator('#btnFooterNavNext').click();
@@ -44,7 +44,7 @@ try {
   let pdfWindow;
   for(const [index,record] of DEMO_CASES.entries())await check(record.plate+' navigates, opens a real PDF and renders production status/barcode views',async()=>{
     await page.goto(site.url+P.search+'?plate='+record.plate);assert.equal(await page.locator('#ContentPlaceHolder1_txtPlateNbr').inputValue(),record.plate);
-    await page.locator('#btnFooterNavNext').click();await page.waitForURL(site.url+P.result);assert.equal(await page.locator('#result-plate').textContent(),record.plate);
+    await page.locator('#btnFooterNavNext').click();await page.waitForURL(url=>url.pathname===P.result);assert.equal(await page.locator('#result-plate').textContent(),record.plate);
     if(!pdfWindow){const opened=context.waitForEvent('page');await page.locator('#downloadButton').click();pdfWindow=await opened;}
     else await page.locator('#downloadButton').click();
     await pdfWindow.waitForURL(url=>url.pathname===P.pdf&&url.searchParams.get('case')===record.plate);
@@ -60,8 +60,12 @@ try {
     assert.equal(await status.locator('.demo-preview-banner').count(),1);
     if(record.kind==='shared'){const addresses=await status.locator('.record-owner-address').allTextContents();assert.equal(addresses[0],addresses[1]);}
     if(record.kind==='lessee')assert.equal((await status.locator('.record-owner-name').allTextContents())[1],'DEMONSTRATION SERVICES LLC');
-    if(index===0){await status.locator('.record-owner-search').first().click();await status.locator('#error').filter({hasText:'plate-only prototype'}).waitFor();}
-    await status.screenshot({path:join(screenshots,record.plate+'-status.png'),fullPage:true});await status.close();
+    await status.screenshot({path:join(screenshots,record.plate+'-status.png'),fullPage:true});
+    if(index===0){
+      const followed=context.waitForEvent('page');await status.locator('.record-owner-search').first().click();const customer=await followed;
+      await customer.waitForURL(url=>url.pathname===P.driverResult);await customer.locator('#result-plate').filter({hasText:'100000101'}).waitFor();await customer.close();
+    }
+    if(!status.isClosed())await status.close();
     const openedCode=context.waitForEvent('page');await page.locator('#preview-barcode').click();const code=await openedCode;
     await code.locator('#scanArea').waitFor();assert.ok(await code.locator('#barcode').evaluate(canvas=>canvas.width>400));
     const values=await code.locator('#fields input').evaluateAll(inputs=>inputs.map(input=>input.value));assert.ok(values.includes(record.plate));

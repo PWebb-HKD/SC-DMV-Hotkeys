@@ -3,11 +3,11 @@ import {createServer} from 'node:http';
 import {readFile,realpath} from 'node:fs/promises';
 import {extname,resolve,sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {DEMO_CASES,DEMO_PATHS,demoCase,vehicleText} from './cases.mjs';
+import {ALL_DEMO_CASES,DEMO_PATHS,demoCase,recordText} from './cases.mjs';
 import {demoPage} from './pages.mjs';
 import {syntheticPdf} from './pdf.mjs';
 const extensionRoot=fileURLToPath(new URL('../extension/',import.meta.url));
-const assets=new Map(['portal.js','preview-bridge.js','style.css'].map(name=>['/demo/'+name,new URL('./public/'+name,import.meta.url)]));
+const assets=new Map(['portal.js','preview-bridge.js','report-tools.js','style.css'].map(name=>['/demo/'+name,new URL('./public/'+name,import.meta.url)]));
 const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.mjs':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.png':'image/png','.wasm':'application/wasm'};
 /** Wrap only this HTTP preview, keeping production extension files byte-for-byte unchanged. */
 function previewHtml(source) {
@@ -29,11 +29,12 @@ export async function startDemoServer(port=0) {
     if(!['GET','HEAD'].includes(req.method))return reply(405,'text/plain','Only static demonstration requests are supported.',{Allow:'GET, HEAD'});
     try {
       const url=new URL(req.url,`http://${req.headers.host}`),path=decodeURIComponent(url.pathname);
-      if(path==='/api/cases')return reply(200,'application/json',JSON.stringify(DEMO_CASES));
+      if(path==='/api/cases')return reply(200,'application/json',JSON.stringify(ALL_DEMO_CASES));
+      if(path==='/api/paths')return reply(200,'application/json',JSON.stringify(DEMO_PATHS));
       if(path===DEMO_PATHS.pdf){
         const record=demoCase(url.searchParams.get('case'));
         if(!record)return reply(404,'text/plain','Unknown demonstration record.');
-        return reply(200,'application/pdf',syntheticPdf(vehicleText(record.plate)),{'Content-Disposition':`inline; filename="DEMONSTRATION-${record.plate}.pdf"`});
+        return reply(200,'application/pdf',syntheticPdf(recordText(record.id)),{'Content-Disposition':`inline; filename="DEMONSTRATION-${record.id}.pdf"`});
       }
       const page=demoPage(path);if(page)return reply(200,types['.html'],page);
       if(assets.has(path))return reply(200,types[extname(path)],await readFile(assets.get(path)));
@@ -44,7 +45,8 @@ export async function startDemoServer(port=0) {
         if(!file.startsWith(extensionRoot.endsWith(sep)?extensionRoot:extensionRoot+sep))return reply(404,'text/plain','Not found.');
         const body=await readFile(file);
         if(['/extension/panel.html','/extension/barcode.html'].includes(path)){
-          if(!demoCase(url.searchParams.get('demo')))return reply(400,'text/plain','Choose a demonstration record from the practice portal.');
+          const selected=demoCase(url.searchParams.get('demo'));
+          if(!selected||selected.recordType==='residence')return reply(400,'text/plain','Choose a plate or driver demonstration record from the practice portal.');
           return reply(200,types['.html'],previewHtml(body.toString()));
         }
         return reply(200,types[extname(file)]||'application/octet-stream',body);
