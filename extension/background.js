@@ -15,10 +15,11 @@ import {initializeAlertPreferences, saveAlertPreferences, restoreAlertPreference
 import {AudioAlerts, availableVoices} from './audio-alerts.js';
 import {backgroundMethod, backgroundSearch, reusableBackgroundResult} from './background-search.js';
 import {configureDmvTheme, initDmvTheme, refreshDmvThemeTabs, isDmvThemePage} from './dmv-theme-settings.js';
-import {darkResultSource, setPdfRouting, isNativePrintUrl} from './pdf-routing.js';
+import {darkResultSource, setPdfRouting, isNativePrintUrl, PDF_DARK_RULE_ID} from './pdf-routing.js';
 import {reportBarcode, reportBarcodeDraft, VehiclePartyError} from './barcode-data.js';
 import {LIVE,demoEnvironment,environmentApi,environmentOf,reportEnvironment} from './environment.js';
 import {connectDemoPage,demoOperation} from './demo-pages.js';
+import {acceptance,requireAcceptance,openEula,acceptEula} from './consent.js';
 const DEMO=demoEnvironment();
 const sameEnvironment=(a,b)=>a?.id===b?.id&&a?.root===b?.root;
 const audioAlerts = new AudioAlerts();
@@ -44,7 +45,9 @@ const boot = Promise.all([
   // Retire the removed shortcut-pause preference on update or worker startup.
   chrome.storage.session.remove('shortcutsPaused'),
   chrome.storage.local.get(['demoMode','pdfDarkMode']).then(async({demoMode,pdfDarkMode})=>{
-    activeEnvironment=demoMode===true?DEMO:LIVE;await retireDemoHook();await setPdfRouting(pdfDarkMode===true,activeEnvironment);
+    activeEnvironment=demoMode===true?DEMO:LIVE;await retireDemoHook();
+    if(await acceptance())await setPdfRouting(pdfDarkMode===true,activeEnvironment);
+    else await chrome.declarativeNetRequest.updateDynamicRules({removeRuleIds:[PDF_DARK_RULE_ID],addRules:[]});
   }),
   initializeAlertPreferences(),
   configureDmvTheme().catch(error=>chrome.storage.session.set({status:`DMV website dark mode unavailable: ${error.message}`}))
@@ -606,6 +609,8 @@ async function execute(command, value, source, options, run) {
  * Pinned launchers remain independent across search and report commands. */
 async function dispatch(command, options = {}) {
   if (!COMMANDS[command]) throw new Error('Unknown command.');
+  await boot;
+  if(!await acceptance()){await openEula();return;}
   if (resettingUserInfo) await resettingUserInfo;
   if(changingEnvironment)await changingEnvironment;
   if (command === 'help') return openShortcutMenu();
@@ -641,7 +646,7 @@ chrome.windows.onRemoved.addListener(async windowId => {
 // Tab metadata and cache invalidation must be serialized: Chrome may report a URL
 // after creation, or reuse a results tab for a different report at the same URL.
 chrome.tabs.onCreated.addListener(async tab => {
-  await boot;
+  await boot;if(!await acceptance())return;
   await track(async()=>{
     for(const environment of [LIVE,DEMO]){const api=workApi(undefined,environment),{tabCreated={}}=await api.storage.session.get('tabCreated');tabCreated[tab.id]=Date.now();await api.storage.session.set({tabCreated});}
   });
@@ -650,7 +655,7 @@ chrome.tabs.onUpdated.addListener(async(id,change,tab)=>{
   const environment=reportEnvironment(tab.pendingUrl)||reportEnvironment(tab.url);
   if(!environment)return;
   const sourceUrl=reportSource(tab.pendingUrl,environment)||reportSource(tab.url,environment),api=workApi(undefined,environment);
-  if(!sourceUrl)return;await boot;
+  if(!sourceUrl)return;await boot;if(!await acceptance())return;
   await track(async()=>{
     const {pdfCreated={},tabCreated={},pdfSources={}}=await api.storage.session.get(['pdfCreated','tabCreated','pdfSources']);
     if(!pdfCreated[id]&&tabCreated[id]){pdfCreated[id]=tabCreated[id];await api.storage.session.set({pdfCreated});}
@@ -666,7 +671,7 @@ chrome.tabs.onUpdated.addListener(async(id,change,tab)=>{
 });
 // Document IDs, rather than delayed loading events, invalidate a direct reader snapshot.
 chrome.webNavigation.onCommitted.addListener(async details=>{
-  if(details.frameId!==0)return;await boot;
+  if(details.frameId!==0)return;await boot;if(!await acceptance())return;
   await track(async()=>{
     for(const environment of [LIVE,DEMO]){
       const api=workApi(undefined,environment),id=details.tabId,key=`pdf:${id}`,capture=captures.get(id);
@@ -705,8 +710,8 @@ chrome.runtime.onInstalled.addListener(async details => {
   // credentials, history, and unrelated session data. No host is launched.
   await chrome.storage.local.remove('bindings');
   await chrome.storage.session.remove(['nativeStatus', 'nativeErrors']);
-  await refreshDmvThemeTabs();
-  if (details?.reason === 'install') await openShortcutSetup();
+  if(await acceptance())await refreshDmvThemeTabs();
+  else if(details?.reason==='install')await openEula();
 });
 // Only extension-owned views may call this router. Keep the response channel open
 // for async work and use one {ok, value/error} envelope for every request.
@@ -718,6 +723,18 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
   if (sender.id !== chrome.runtime.id || !sender.url?.startsWith(chrome.runtime.getURL(''))) return false;
   (async () => {
     await boot;
+    // Legal review and emergency Stop remain available before any feature is enabled.
+    if(message.type==='eula-open')return openEula();
+    if(message.type==='eula-state')return {accepted:!!await acceptance()};
+    if(message.type==='eula-accept'){
+      const record=await acceptEula(message,sender);
+      const {pdfDarkMode}=await chrome.storage.local.get('pdfDarkMode');
+      await setPdfRouting(pdfDarkMode===true,activeEnvironment);await configureDmvTheme();await refreshDmvThemeTabs();
+      return record;
+    }
+    const accepted=!!await acceptance();
+    if(!accepted&&message.type==='state')return {requiresEula:true};
+    if(!accepted&&!['stop','stop-audio'].includes(message.type))await requireAcceptance();
     const environment=activeEnvironment,api=workApi(undefined,environment);
     if(environment.demo&&['blacklist-setup','blacklist-unlock','clear-saved-user-info','forget-credentials'].includes(message.type))throw new Error('Switch off Demo Mode to manage the live vault.');
     switch (message.type) {
@@ -832,7 +849,7 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
         return true;
       }
       // These snapshots are restricted to extension-owned pages by the router above.
-      case 'state': return {demoMode:environment.demo,demoOrigin:DEMO.root,blacklist: await currentBlacklist(environment), ...await chrome.storage.local.get(environment.demo?['pdfDarkMode','dmvDarkMode','shortcutMenuNoTimeout','shortcutMenuAlwaysOnTop']:['vault','pdfDarkMode','dmvDarkMode','shortcutMenuNoTimeout','shortcutMenuAlwaysOnTop']), ...await api.storage.session.get(['history', 'queue', 'status', 'alertsEnabled', 'backgroundStatusSearch', 'showDriverIdentity', 'speechEnabled', 'repeatSpeech', 'suspendedClipEnabled', 'voiceSource', 'voiceGender', 'voiceName']), voices: await availableVoices().catch(() => []), commands: await chrome.commands.getAll(), extensionId: chrome.runtime.id};
+      case 'state': return {requiresEula:false,demoMode:environment.demo,demoOrigin:DEMO.root,blacklist: await currentBlacklist(environment), ...await chrome.storage.local.get(environment.demo?['pdfDarkMode','dmvDarkMode','shortcutMenuNoTimeout','shortcutMenuAlwaysOnTop']:['vault','pdfDarkMode','dmvDarkMode','shortcutMenuNoTimeout','shortcutMenuAlwaysOnTop']), ...await api.storage.session.get(['history', 'queue', 'status', 'alertsEnabled', 'backgroundStatusSearch', 'showDriverIdentity', 'speechEnabled', 'repeatSpeech', 'suspendedClipEnabled', 'voiceSource', 'voiceGender', 'voiceName']), voices: await availableVoices().catch(() => []), commands: await chrome.commands.getAll(), extensionId: chrome.runtime.id};
       // Appearance updates persist independently of credentials and query state.
       case 'dmv-display-settings': {
         await chrome.storage.local.set({dmvDarkMode:message.enabled===true});await configureDmvTheme();await refreshDmvThemeTabs();return message.enabled===true;

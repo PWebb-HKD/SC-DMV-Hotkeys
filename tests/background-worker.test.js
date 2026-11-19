@@ -5,7 +5,7 @@ import {LOGIN,MEMBER,PDF_URL} from '../extension/core.js';
 import {vehicleReport} from './barcode-fixtures.js';
 import {saveCredentials,addBlacklistEntry} from '../extension/vault.js';
 const event=()=>({listeners:[],addListener(fn){this.listeners.push(fn);},removeListener(){}});
-const session={},local={},calls=[],tabs=new Map([[1,{id:1,windowId:1,url:'https://example.test/',active:true}]]);
+const session={},local={eulaAcceptance:{accepted:true,acceptedAt:1}},calls=[],tabs=new Map([[1,{id:1,windowId:1,url:'https://example.test/',active:true}]]);
 let nextTab=2,nextWindow=10,reportArmed=false,allowCompletedFocus=false,reportBase64='JVBERi1zeW50aGV0aWM=';
 const area=data=>({setAccessLevel:async()=>{},get:async keys=>Object.fromEntries((typeof keys==='string'?[keys]:keys||Object.keys(data)).map(key=>[key,data[key]])),set:async values=>Object.assign(data,values),remove:async keys=>{for(const key of typeof keys==='string'?[keys]:keys)delete data[key];}});
 const runtime={id:'a'.repeat(32),getURL:path=>'chrome-extension://'+'a'.repeat(32)+'/'+path,onMessage:event(),onConnect:event(),onStartup:event(),onInstalled:event(),sendMessage:async message=>{

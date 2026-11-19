@@ -28,6 +28,7 @@ async function walk(root,path=''){
 }
 export async function buildWebstore({output=resolve(project,'output/reviewer'),runtimeRoot=resolve(project,'extension')}={}){
   const audit=await auditPermissions({runtimeRoot});
+  const eula=spawnSync(process.execPath,[resolve(project,'tools/build-eula.mjs'),'--check'],{encoding:'utf8'});if(eula.status)throw new Error(eula.stderr||'Rebuild the bundled EULA first.');
   const generated=spawnSync(process.execPath,[resolve(project,'tools/build-demo.mjs'),'--check'],{encoding:'utf8'});if(generated.status)throw new Error(generated.stderr||'Rebuild the packaged demo first.');
   const allowed=JSON.parse(await readFile(resolve(project,'tools/runtime-files.json'),'utf8')),actual=await walk(runtimeRoot);
   if(JSON.stringify(actual)!==JSON.stringify(allowed))throw new Error('Runtime tree differs from the reviewed file allowlist. Review additions/removals before packaging.');

@@ -5,7 +5,7 @@ import {MEMBER, PDF_URL, isPdf} from '../extension/core.js';
 import {addBlacklistEntry} from '../extension/vault.js';
 import {driverReport, vehicleReport} from './barcode-fixtures.js';
 const event=()=>({listeners:[],addListener(fn){this.listeners.push(fn);},removeListener(fn){this.listeners=this.listeners.filter(x=>x!==fn);}});
-const local={history:[{id:'old-persistent',kind:'plate',value:'OLD123',at:1}]}, session={history:[],lastQuery:Date.now(),portalId:1,pdfCreated:{2:100},'pdf:2':{text:'Owner Number: 00001234\nCustomer Number: 87654321\nOwner Number: 1234'}};
+const local={eulaAcceptance:{accepted:true,acceptedAt:1},history:[{id:'old-persistent',kind:'plate',value:'OLD123',at:1}]}, session={history:[],lastQuery:Date.now(),portalId:1,pdfCreated:{2:100},'pdf:2':{text:'Owner Number: 00001234\nCustomer Number: 87654321\nOwner Number: 1234'}};
 const tabs=new Map([[1,{id:1,url:`${MEMBER}Transactions/DrvRec/Page2.aspx`,status:'complete',windowId:1,active:false}],[2,{id:2,url:PDF_URL,status:'complete',windowId:1,active:true}]]);
 const windows=[], submissions=[], navigations=[], submittedQueries=[];
 let serverFailureStage='', nextId=3, invalid=false, invalidAfterSubmit=false, technicalFailure=false, loginRejected=false, blockSubmitted=false, captureBlocked=false, onResultFocus=null;
@@ -258,15 +258,14 @@ test('barcode command uses the focused report, creates no query, and a new searc
   await input('44000005');await wait(()=>session.history[0].value==='44000005');assert.ok(removedWindows.includes(barcode.id));
 });
 
-test('installation opens setup once; updates retire companion state and preserve history and browser assignments',async()=>{
+test('an accepted installation skips repeat prompts and preserves manual shortcut setup',async()=>{
   const before=windows.length, savedHistory=structuredClone(session.history);
   local.bindings={plate:'Alt+P'}; session.nativeStatus='Connected'; session.nativeErrors=[];
   for(const listener of runtime.onInstalled.listeners)await listener({reason:'install'});
-  assert.equal(windows.length,before+1);assert.match(windows.at(-1).url,/shortcut-setup\.html$/);
-  assert.equal(windows.at(-1).type,'popup');assert.equal(windows.at(-1).focused,true);
+  assert.equal(windows.length,before);
   for(const listener of runtime.onInstalled.listeners)await listener({reason:'update'});
-  assert.equal(windows.length,before+1);assert.equal(local.bindings,undefined);assert.equal(session.nativeStatus,undefined);assert.equal(session.nativeErrors,undefined);assert.deepEqual(session.history,savedHistory);
-  await send({type:'shortcut-setup'});assert.equal(windows.length,before+2);
+  assert.equal(windows.length,before);assert.equal(local.bindings,undefined);assert.equal(session.nativeStatus,undefined);assert.equal(session.nativeErrors,undefined);assert.deepEqual(session.history,savedHistory);
+  await send({type:'shortcut-setup'});assert.equal(windows.length,before+1);
 });
 
 test('speech runs with visual alerts off and startup restores saved audio options',async()=>{
@@ -431,14 +430,14 @@ test('blacklist blocks plate, DL, customer, same-address and history searches be
 });
 test('blocked queued numbers are retained but consumed so Next and Previous remain usable',async()=>{
   session.queue={values:['12345678','70000001'],index:0};
-  let before=submittedQueries.length;
-  await send({type:'run',command:'next'});await wait(blockedPanel);
+  let before=submittedQueries.length,oldPanel=blockedPanel()?.id;
+  await send({type:'run',command:'next'});await wait(()=>blockedPanel()?.id!==oldPanel&&session.queue.index===1);
   assert.equal(session.queue.index,1);assert.deepEqual(session.queue.values,['12345678','70000001']);assert.equal(submittedQueries.length,before);
   await send({type:'run',command:'next'});await wait(()=>session.queue.index===2);assert.equal(submittedQueries.at(-1),'70000001');
-  before=submittedQueries.length;await send({type:'run',command:'previous'});await wait(blockedPanel);
+  before=submittedQueries.length;oldPanel=blockedPanel()?.id;await send({type:'run',command:'previous'});await wait(()=>blockedPanel()?.id!==oldPanel&&session.queue.index===1);
   assert.equal(session.queue.index,1);assert.equal(submittedQueries.length,before);
   session['pdf:2']={text:'Owner Number: 12345678\nOwner Number: 70000001'};for(const tab of tabs.values())tab.active=tab.id===2;
-  await send({type:'run',command:'owners'});await wait(blockedPanel);assert.equal(session.queue.index,1);
+  oldPanel=blockedPanel()?.id;await send({type:'run',command:'owners'});await wait(()=>blockedPanel()&&blockedPanel().id!==oldPanel);assert.equal(session.queue.index,1);
 });
 test('locked vaults require the passphrase even when credentials are cached and a DMV session is fresh',async()=>{
   delete session.unlockedVault;delete session.blacklist;delete session.vaultKey;session.lastQuery=Date.now();
@@ -843,5 +842,5 @@ test('closing a pinned menu leaves the current search prompt usable; private-sta
   for(const listener of chrome.windows.onRemoved.listeners)await listener(win.id);
   assert.ok(session[`panel:${new URL(input.url).searchParams.get('id')}`]);
   await send({type:'run',command:'help'});await wait(()=>panel('shortcut-menu'));id=menuId();win=panel('shortcut-menu');await pinMenu(id,true);
-  await send({type:'clear-saved-user-info',confirmed:true});assert.equal(session[`panel:${id}`],undefined);assert.ok(removedWindows.includes(win.id));
+  await send({type:'clear-saved-user-info',confirmed:true});assert.equal(session[`panel:${id}`],undefined);assert.ok(removedWindows.includes(win.id));assert.equal(local.eulaAcceptance.accepted,true);
 });

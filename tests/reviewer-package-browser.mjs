@@ -26,8 +26,33 @@ const run=async(command,value)=>{
 };
 const report=()=>wait(()=>[...f.pages.values()].findLast(r=>r.tab.url.includes('reader.html')&&f.session['demo:pdf:'+r.tab.id]?.text));
 try{
-  assert.equal(f.local.vault,undefined);assert.equal((await f.state()).demoMode,false);
-  await f.page.locator('#settingsTab').click();await f.page.locator('#demoModeToggle').click();
+  assert.equal(f.local.vault,undefined);assert.deepEqual(await f.state(),{requiresEula:true});
+  assert.deepEqual(f.routingRules(),[]);assert.deepEqual(await f.chrome.scripting.getRegisteredContentScripts(),[]);
+  await f.install();
+  let agreement=await wait(()=>[...f.pages.values()].find(r=>r.tab.url.endsWith('eula.html')));
+  await agreement.page.locator('#eulaDocument h2').nth(12).waitFor();await capture(agreement.page,'First install: review the bundled EULA; features remain locked until you explicitly agree.');assert.equal(await agreement.page.locator('#accept').isDisabled(),true);
+  await assert.rejects(f.send({type:'run',command:'license'}),/Review and accept/);
+  await assert.rejects(f.send({type:'demo-mode',enabled:true}),/Review and accept/);
+  await assert.rejects(f.send({type:'alerts',enabled:true}),/Review and accept/);
+  await assert.rejects(f.send({type:'reader-direct-start'}),/Review and accept/);
+  await assert.rejects(f.send({type:'eula-accept',agreed:true,digest:'forged'}),/Accept the displayed EULA/);
+  await f.chrome.commands.onCommand.listeners[0]('license');assert.equal(f.operations.length,0);assert.equal(f.panel('input'),undefined);
+  assert.equal(await f.page.locator('#historyView').evaluate(el=>el.inert),true);
+  await agreement.page.close();await f.page.locator('#aboutTab').click();await f.page.locator('#reopenEula').click();
+  agreement=await wait(()=>[...f.pages.values()].find(r=>r.tab.url.endsWith('eula.html')));await agreement.page.locator('#agree:enabled').waitFor();
+  await agreement.page.locator('#decline').click();await wait(()=>agreement.page.isClosed());assert.equal(f.local.eulaAcceptance,undefined);
+  await f.page.locator('#reopenEula').click();agreement=await wait(()=>[...f.pages.values()].find(r=>r.tab.url.endsWith('eula.html')));
+  await agreement.page.locator('#agree:enabled').waitFor();await agreement.page.locator('#agree').check();await agreement.page.locator('#accept').click();
+  await agreement.page.locator('#agreementStatus').filter({hasText:'EULA accepted'}).waitFor();assert.ok(f.local.eulaAcceptance.acceptedAt>0);
+  const receipt=structuredClone(f.local.eulaAcceptance);await agreement.page.reload();await agreement.page.locator('#agreementStatus').filter({hasText:'EULA accepted'}).waitFor();assert.equal(await agreement.page.locator('#agree').isDisabled(),true);assert.deepEqual(f.local.eulaAcceptance,receipt);
+  for(const listener of f.chrome.runtime.onStartup.listeners)await listener();assert.deepEqual(f.local.eulaAcceptance,receipt);
+  assert.equal((await f.state()).requiresEula,false);await wait(async()=>!await f.page.locator('#historyView').evaluate(el=>el.inert));
+  assert.equal((await f.state()).demoMode,false);
+  console.log('Fresh install: unchecked/closed/declined EULA blocks commands, settings and readers; About reopens it; explicit acceptance enables features.');
+  await f.page.locator('#keybindsTab').click();assert.equal(await f.page.locator('#keybindsView #shortcutSetup').count(),1);assert.equal(await f.page.locator('#settingsView #shortcutSetup').count(),0);
+  for(const id of ['privacyPolicyLink','eulaPublicLink']){await f.page.locator('#aboutTab').click();const before=f.page.url();await f.page.locator('#'+id).click({force:true});assert.equal(f.page.url(),before);}
+
+  await f.page.locator('#settingsTab').click();assert.equal(await f.page.locator('#settingsView > :last-child h2').textContent(),'Practice environment');await f.page.locator('#demoModeToggle').click();
   await f.page.locator('#demoBanner').waitFor();await f.send({type:'alerts',enabled:true});await f.send({type:'driver-identity-settings',enabled:true});
   await f.send({type:'pdf-display-settings',enabled:false});await capture(f.page,'Enable the bundled Demo Mode. No server, extra host grant or live account.');
   await f.send({type:'reviewer-guide'});const guide=await wait(()=>[...f.pages.values()].find(r=>r.tab.url.endsWith('reviewer-guide.html')));
@@ -66,6 +91,6 @@ try{
     }
     execFileSync('ffmpeg',['-y','-framerate','1/6','-i',join(videoFrames,'%02d.png'),'-c:v','libx264','-r','24','-pix_fmt','yuv420p','-movflags','+faststart',join(output,`SC-DMV-Hotkeys-${version}-demo-walkthrough.mp4`)],{stdio:'pipe'});
     await writeFile(join(output,'walkthrough-captions.txt'),frames.map((frame,i)=>`${i*6}s: ${frame.caption}`).join('\n')+'\n');
-    console.log('Created 60-second captioned synthetic UI walkthrough.');
+    console.log(`Created ${frames.length*6}-second captioned synthetic UI walkthrough.`);
   }
 }finally{await f.close();await rm(temporary,{recursive:true,force:true});}

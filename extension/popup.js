@@ -39,7 +39,7 @@ function voiceSourceUI() {
 }
 /** Select one popup view and keep its accessible tab state synchronized. */
 function tab(selected) {
-  for (const name of ['history', 'settings', 'blacklist', 'about']) {
+  for (const name of ['history', 'settings', 'blacklist', 'keybinds', 'about']) {
     $(`${name}View`).hidden = name !== selected;
     $(`${name}Tab`).setAttribute('aria-selected', String(name === selected));
   }
@@ -121,6 +121,10 @@ async function refresh() {
   const generation=++refreshGeneration;
   const data = await send({type: 'state'});
   if(generation!==refreshGeneration)return;
+  const locked=data.requiresEula!==false;
+  $('consentNotice').hidden=!locked;
+  for(const name of ['history','settings','blacklist','keybinds'])$(`${name}View`).inert=locked;
+  if(locked){$('status').textContent='EULA acceptance required';$('history').replaceChildren();return;}
   $('demoModeToggle').checked=data.demoMode===true;$('demoBanner').hidden=data.demoMode!==true;$('openDemo').hidden=data.demoMode!==true;
   renderBlacklist(data.blacklist);
   $('dmvDarkMode').checked = data.dmvDarkMode !== false;
@@ -202,6 +206,8 @@ $('demoModeToggle').onchange=async()=>{
   }catch(error){feedback(error.message);await refresh();}
   finally{input.disabled=false;}
 };
+for(const id of ['reviewEula','reopenEula'])$(id).onclick=()=>send({type:'eula-open'}).catch(error=>feedback(error.message));
+for(const id of ['privacyPolicyLink','eulaPublicLink'])$(id).onclick=event=>event.preventDefault();
 $('openDemo').onclick=()=>send({type:'open-demo'}).catch(error=>feedback(error.message));
 $('openReviewerGuide').onclick=()=>send({type:'reviewer-guide'}).catch(error=>feedback(error.message));
 $('driverIdentityToggle').onchange = async event => {
@@ -226,6 +232,7 @@ $('alertsToggle').onchange = async event => {
   catch (error) { input.checked = !enabled; feedback(error.message); }
   finally { input.disabled = false; statusAlertSettingsUI(); }
 };
+$('keybindsTab').onclick=()=>{tab('keybinds');refresh().catch(error=>feedback(error.message));};
 $('aboutTab').onclick = () => { tab('about'); refresh().catch(error => feedback(error.message)); };
 for (const [id, label] of [['plate', "Plate Search"], ['license', "DL # Search"], ['customer', "Customer # Search"], ['owners', "Get Customer #'s \nfrom current page"], ['previous', 'Previous customer'], ['next', 'Next customer'], ['address', 'Same address'], ['scutties', 'SCUTTIES'], ['barcode', 'Barcode'], ['help', 'Shortcut Menu']]) {
   const button = document.createElement('button'); button.textContent = label;
@@ -246,6 +253,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   // responses started before a toggle changed while demo metadata was loading.
   refreshGeneration++;
   if(area==='local'&&changes.demoMode||area==='session'&&Object.keys(changes).some(key=>key.startsWith('demo:')))refresh().catch(error=>feedback(error.message));
+  if(area==='local'&&changes.eulaAcceptance)refresh().catch(error=>feedback(error.message));
   if (area === 'local' && (changes.vault || changes.pdfDarkMode || changes.dmvDarkMode || changes.shortcutMenuNoTimeout || changes.shortcutMenuAlwaysOnTop) || area === 'session' && (changes.blacklist || changes.unlockedVault)) refresh().catch(error => feedback(error.message));
   if (area === 'session' && changes.history) refresh().catch(error => feedback(error.message));
   if (area === 'session' && changes.status && !$('demoModeToggle').checked) $('status').textContent = changes.status.newValue;

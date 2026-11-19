@@ -1,6 +1,6 @@
 # SC DMV Hotkeys
 
-A Chromium Manifest V3 extension for authorized SCDMV member searches, PDF follow-ups, status alerts, and PDF417 data-entry barcodes. Current version: **1.8.44**.
+A Chromium Manifest V3 extension for authorized SCDMV member searches, PDF follow-ups, status alerts, and PDF417 data-entry barcodes. Current version: **1.8.45**.
 
 ## Install and update
 
@@ -11,7 +11,10 @@ If installation reports `chrome.storage.local.setAccessLevel is not a function` 
 1. Extract the source package to a permanent folder.
 2. Open `chrome://extensions`, enable Developer mode, and choose **Load unpacked**.
 3. Select the `extension` folder, then pin the toolbar action if desired.
-4. Open **Settings → Shortcut setup**. For simple setup, assign only **Open Shortcut Menu** to **Alt+H** and leave the other commands unassigned. Optionally assign individual functions to recommended keys or keys of your choice. Set their scope to **Global** if they must work outside the active browser window.
+4. Review the EULA opened on installation, check the agreement box and accept to enable features. If you close or decline it, reopen it using **About → Open EULA / Review acceptance**.
+5. Open **Keybinds → Set up your shortcuts**. For simple setup, assign only **Open Shortcut Menu** to **Alt+H** and leave the other commands unassigned. Optionally assign individual functions to recommended keys or keys of your choice. Set their scope to **Global** if they must work outside the active browser window.
+
+The About tab has pending privacy-policy and public EULA links until their public GitHub URLs are supplied. The bundled EULA can always be reopened there. Practice environment is the last section of Settings.
 
 The packaged extension needs no build or npm installation. PDF.js and the barcode encoder run locally. For updates, replace files in the same folder and click **Reload** on the extension card. Keeping the folder preserves the extension ID and persistent settings. Run a fresh search after reloading; history, unlocked credentials, queue state, and captured reports belong to the current browser session.
 
@@ -129,6 +132,8 @@ Permissions support storage, DMV tab automation, scripting, navigation tracking,
 ## Development and validation
 
 The synthetic practice portal is bundled with the extension. Enable **Settings → Practice environment → Demo Mode**, then select **Open practice portal** or **Reviewer & demo guide**. No Node installation, server, extra host permission or real account is needed. Normal extension commands use fixed demo/demo credentials, fictional selectable-text PDFs and separate demo history, queue, reports and session-only blacklist. Status/barcode/owner/residence/SCUTTIES workflows share the normal implementation; alert and appearance preferences remain shared. Turning Demo Mode off restores live routing. For manual website development only, `npm run demo` still serves the independent HTTP preview at `http://127.0.0.1:4173`. See [demo/README.md](demo/README.md) for cases and boundaries. Demo-only changes do not increment extension release versions.
+
+After changing the EULA draft, run `npm run build:eula` to regenerate the bundled contract text; the publisher checklist is excluded. Initial acceptance is saved locally with its timestamp and document digest. Future agreement-update handling is deferred.
 
 Build a runtime-only Web Store ZIP with `npm run package:webstore`. The build audits current permissions, checks generated demo assets and enforces a reviewed runtime-file allowlist. Reviewer instructions, native validation steps, permission rationale and privacy/listing drafts are in [reviewer/](reviewer/REVIEWER-NOTES.md). These drafts are preparation materials; no store submission or publication is performed.
 

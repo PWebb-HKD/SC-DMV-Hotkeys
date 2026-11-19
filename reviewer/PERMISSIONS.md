@@ -1,10 +1,10 @@
-# Current permission audit — 1.8.44
+# Current permission audit — 1.8.45
 
 Audit scope: current first-party code and intended live/demo workflows, including retired features. This is a code/workflow review, not a Web Store approval or a claim that future redesigns could never reduce access further. `tools/audit-permissions.mjs` is a packaging gate and writes the machine-readable rationale before creating a ZIP.
 
 | Declaration | Current need and evidence |
 | --- | --- |
-| storage | Preferences, optional encrypted login/blacklist and session-scoped history, queue, report and demo state. vault.js, alert-settings.js, background.js. |
+| storage | Preferences, local EULA acceptance receipt, optional encrypted login/blacklist and session-scoped history, queue, report and demo state. vault.js, alert-settings.js, background.js. |
 | tts | User-enabled local voice announcements and fallback when a bundled recording is unavailable. audio-alerts.js selects voices Chrome reports as local. |
 | offscreen | Packaged voice recordings and the optional suspended clip need AUDIO_PLAYBACK from a service worker. audio-alerts.js creates audio-player.html. The retired offscreen query experiment does not justify this permission; the active audio path does. |
 | scripting | Live DMV form actions, original-report byte capture and user-selected website styling. automation.js, page.js and dmv-theme-settings.js. Packaged demo pages use owned document ports rather than injection. |

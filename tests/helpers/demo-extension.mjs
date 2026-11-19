@@ -10,7 +10,7 @@ const event=()=>({listeners:[],addListener(fn){this.listeners.push(fn);},removeL
 export async function demoExtension({runtimeRoot=fileURLToPath(new URL('../../extension/',import.meta.url)),fresh=false}={}){
   const browser=await chromium.launch({executablePath:process.env.CHROME_PATH||'/usr/bin/chromium',headless:true});
   const context=await browser.newContext({viewport:{width:1100,height:850}}),pages=new Map(),byPage=new WeakMap(),windows=new Map([[1,{id:1,type:'normal',state:'normal',focused:true}]]);
-  const session=fresh?{}:{history:[{id:'live-old',kind:'plate',value:'LIVE123',at:1}],queue:{values:['87654321'],index:1},credentials:{user:'LIVE-ONLY-USER',password:'LIVE-ONLY-PASSWORD'}},local=fresh?{}:{vault:{salt:'LIVE-VAULT',iv:'LIVE-IV',ciphertext:'LIVE-CIPHERTEXT'}};
+  const session=fresh?{}:{history:[{id:'live-old',kind:'plate',value:'LIVE123',at:1}],queue:{values:['87654321'],index:1},credentials:{user:'LIVE-ONLY-USER',password:'LIVE-ONLY-PASSWORD'}},local=fresh?{}:{eulaAcceptance:{accepted:true,acceptedAt:1},vault:{salt:'LIVE-VAULT',iv:'LIVE-IV',ciphertext:'LIVE-CIPHERTEXT'}};
   const requests=[],errors=[],operations=[],storageReads=[],ports=new Map();let sequence=1,windowSequence=2,focusedWindow=1,permission=false,permitRequest=true,rules=[],registered=[],holdReader=false,pendingReader=null,holdState=false,pendingState=null;
   const emit=(e,...args)=>{for(const fn of [...e.listeners])Promise.resolve(fn(...args)).catch(error=>errors.push(error.message));};
   const storageChanged=event(),runtime={id:'a'.repeat(32),getURL:path=>base+path,getContexts:async filter=>[...pages.values()].filter(record=>!record.tab.pendingUrl&&record.tab.url.startsWith(base)&&(!filter.tabIds||filter.tabIds.includes(record.tab.id))&&(!filter.documentIds||filter.documentIds.includes(record.tab.documentId))).map(record=>({contextId:record.tab.documentId,contextType:'TAB',tabId:record.tab.id,frameId:0,windowId:record.tab.windowId,documentId:record.tab.documentId,documentUrl:record.tab.url,documentOrigin:base.slice(0,-1),incognito:false})),onMessage:event(),onConnect:event(),onInstalled:event(),onStartup:event(),sendMessage:async message=>{
@@ -129,6 +129,8 @@ export async function demoExtension({runtimeRoot=fileURLToPath(new URL('../../ex
   globalThis.chrome=chrome;await import(pathToFileURL(resolve(root,'background.js')).href);await send({type:'state'});
   const page=await context.newPage(),record=register(page);record.tab.active=true;await page.goto(base+'popup.html');
   return {DEMO,browser,context,page,pages,session,local,requests,errors,operations,storageReads,send,chrome,base,
+    routingRules:()=>structuredClone(rules),
+    install:async()=>{for(const listener of runtime.onInstalled.listeners)await listener({reason:'install'});},
     disconnectDemoPorts:()=>{for(const port of [...ports.values()])port.disconnect();},
     holdNextReader:()=>{holdReader=true;pendingReader=null;},hasHeldReader:()=>!!pendingReader,releaseReader:()=>pendingReader?.resolve(),
     holdNextState:()=>{holdState=true;pendingState=null;},hasHeldState:()=>!!pendingState,releaseState:()=>pendingState?.resolve(),

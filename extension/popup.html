@@ -13,13 +13,15 @@
     <button id="historyTab" role="tab" aria-selected="true" aria-controls="historyView">Recent searches</button>
     <button id="settingsTab" role="tab" aria-selected="false" aria-controls="settingsView">Settings</button>
     <button id="blacklistTab" role="tab" aria-selected="false" aria-controls="blacklistView">Blacklist</button>
+    <button id="keybindsTab" role="tab" aria-selected="false" aria-controls="keybindsView">Keybinds</button>
     <button id="aboutTab" role="tab" aria-selected="false" aria-controls="aboutView">About</button>
   </nav>
   <main>
     <p id="demoBanner" class="demo-mode-banner" hidden>DEMO MODE — fictional local records. Live DMV data and credentials are separate.</p>
+    <div id="consentNotice" class="consent-notice"><p>Review and accept the EULA to enable extension functions.</p><button id="reviewEula" type="button">Review and accept EULA</button></div>
     <div id="status" class="status" role="status">Ready</div>
     <button id="stopFunction" class="secondary stop-function">Stop current function</button>
-    <section id="historyView" role="tabpanel" aria-labelledby="historyTab">
+    <section id="historyView" role="tabpanel" aria-labelledby="historyTab" inert>
       <div id="quick" class="quick"></div>
       <p class="binding-note">Select a search value to run it again.</p>
       <table><thead><tr><th scope="col">Search type</th><th scope="col">Number / details</th></tr></thead><tbody id="history"></tbody></table>
@@ -27,14 +29,7 @@
       <div class="footer"><small id="queue"></small><button id="clearHistory" class="secondary">Clear history</button></div>
       <button id="clearQueue" class="secondary" hidden>Clear queued and saved customer numbers</button>
     </section>
-    <section id="settingsView" role="tabpanel" aria-labelledby="settingsTab" hidden>
-      <section class="alerts-setting" aria-labelledby="demoModeTitle">
-        <h2 id="demoModeTitle">Practice environment</h2>
-        <label class="alerts-toggle" for="demoModeToggle"><span>Demo Mode<small>Use the synthetic practice site bundled with this extension. No server or additional access permission is needed. Your live DMV login and blacklist are separate.</small></span><span class="switch-control"><input id="demoModeToggle" type="checkbox" role="switch"><span class="switch-track" aria-hidden="true"></span></span></label>
-        <p class="hint">Open the practice portal below to start. Switching environments stops current work. History, queues, reports and demo blacklist entries stay separate; alert and appearance preferences are shared.</p>
-        <button id="openDemo" class="secondary" type="button" hidden>Open practice portal</button>
-        <button id="openReviewerGuide" class="secondary" type="button">Reviewer &amp; demo guide</button>
-      </section>
+    <section id="settingsView" role="tabpanel" aria-labelledby="settingsTab" hidden inert>
     <div class="alerts-setting">
       <label class="alerts-toggle" for="alertsToggle"><span>Plate & license status alerts<small>Enable for status popups displaying the status of a Driver's License or Licens Plate. Popups auto close after 90 seconds and 30 seconds if they are valid.</small></span><span class="switch-control"><input id="alertsToggle" type="checkbox" role="switch" aria-controls="statusAlertSettings"><span class="switch-track" aria-hidden="true"></span></span></label>
       <div id="statusAlertSettings" class="voice-settings status-alert-settings" hidden>
@@ -70,16 +65,15 @@
         <label class="alerts-toggle" for="shortcutMenuAlwaysOnTop"><span>Always on top hotkey menu<small>Use a floating Picture-in-Picture menu above other windows. Select Keep on top in the menu when Chrome requests a click. Also enables no timeout.</small></span><span class="switch-control"><input id="shortcutMenuAlwaysOnTop" type="checkbox" role="switch"><span class="switch-track" aria-hidden="true"></span></span></label>
         <label class="alerts-toggle" for="shortcutMenuNoTimeout"><span>Do not time out the hotkey menu<small>Keep the menu open until you choose an action, close it, or stop the current function.</small></span><span class="switch-control"><input id="shortcutMenuNoTimeout" type="checkbox" role="switch"><span class="switch-track" aria-hidden="true"></span></span></label>
       </section>
-      <div class="section shortcut-settings">
-        <h2>Set up your shortcuts</h2>
-        <p class="about-instructions">For a simple setup, assign only <strong>Open Shortcut Menu</strong> to <strong>Alt+H</strong> and leave other commands unassigned. Optionally assign individual functions to the recommended keys in the setup guide or to keys of your choice. Open the keyboard shortcut settings below and find <strong>SC DMV Hotkeys</strong>. Click the edit icon or shortcut box for each command, then press your preferred key combination using a modifier such as Alt or Ctrl. For each shortcut you assign, change the <strong>Scope</strong> setting from <strong>In Chrome</strong> to <strong>Global</strong> so it works while another application is focused or the browser is minimized. The browser must remain running.</p>
-        <div class="shortcut-setup-links">
-          <a id="browserShortcuts" href="chrome://extensions/shortcuts">Open browser keyboard shortcut settings</a>
-          <button id="shortcutSetup" class="secondary">Open shortcut setup guide</button>
-        </div>
-      </div>
+      <section class="alerts-setting" aria-labelledby="demoModeTitle">
+        <h2 id="demoModeTitle">Practice environment</h2>
+        <label class="alerts-toggle" for="demoModeToggle"><span>Demo Mode<small>Use the synthetic practice site bundled with this extension. No server or additional access permission is needed. Your live DMV login and blacklist are separate.</small></span><span class="switch-control"><input id="demoModeToggle" type="checkbox" role="switch"><span class="switch-track" aria-hidden="true"></span></span></label>
+        <p class="hint">Open the practice portal below to start. Switching environments stops current work. History, queues, reports and demo blacklist entries stay separate; alert and appearance preferences are shared.</p>
+        <button id="openDemo" class="secondary" type="button" hidden>Open practice portal</button>
+        <button id="openReviewerGuide" class="secondary" type="button">Reviewer &amp; demo guide</button>
+      </section>
     </section>
-    <section id="blacklistView" class="blacklist-settings" role="tabpanel" aria-labelledby="blacklistTab" hidden>
+    <section id="blacklistView" class="blacklist-settings" role="tabpanel" aria-labelledby="blacklistTab" hidden inert>
       <h2 id="blacklistTitle">Blacklist</h2>
       <p id="blacklistState" role="status"></p>
       <p class="binding-note">Add every known identifier for each protected person. Matching is by number and category; the extension cannot infer a person's other numbers.</p>
@@ -98,10 +92,27 @@
       </form>
       <p id="blacklistFeedback" role="status"></p>
     </section>
-    <section id="aboutView" role="tabpanel" aria-labelledby="aboutTab" hidden>
+    <section id="keybindsView" role="tabpanel" aria-labelledby="keybindsTab" hidden inert>
       <h2>Your keyboard shortcuts</h2>
       <p class="binding-note">Current assignments from your browser's extension keyboard shortcut settings.</p>
       <div id="shortcutList" class="shortcut-list"></div>
+      <div class="section shortcut-settings">
+        <h2>Set up your shortcuts</h2>
+        <p class="about-instructions">For a simple setup, assign only <strong>Open Shortcut Menu</strong> to <strong>Alt+H</strong> and leave other commands unassigned. Optionally assign individual functions to the recommended keys in the setup guide or to keys of your choice. Open the keyboard shortcut settings below and find <strong>SC DMV Hotkeys</strong>. Click the edit icon or shortcut box for each command, then press your preferred key combination using a modifier such as Alt or Ctrl. For each shortcut you assign, change the <strong>Scope</strong> setting from <strong>In Chrome</strong> to <strong>Global</strong> so it works while another application is focused or the browser is minimized. The browser must remain running.</p>
+        <div class="shortcut-setup-links">
+          <a id="browserShortcuts" href="chrome://extensions/shortcuts">Open browser keyboard shortcut settings</a>
+          <button id="shortcutSetup" class="secondary">Open shortcut setup guide</button>
+        </div>
+      </div>
+
+    </section>
+    <section id="aboutView" role="tabpanel" aria-labelledby="aboutTab" hidden>
+      <h2>About SC DMV Hotkeys</h2>
+      <p>Search tools, report alerts and keyboard shortcuts for authorized SCDMV workflows.</p>
+      <p><a id="privacyPolicyLink" href="#" aria-disabled="true">Privacy policy — public link coming soon</a></p>
+      <p><a id="eulaPublicLink" href="#" aria-disabled="true">EULA — public link coming soon</a></p>
+      <button id="reopenEula" class="secondary" type="button">Open EULA / Review acceptance</button>
+      <p class="binding-note">You can reopen the bundled agreement here if you closed it before accepting.</p>
     </section>
     <p id="feedback" class="error" role="alert"></p>
   </main>

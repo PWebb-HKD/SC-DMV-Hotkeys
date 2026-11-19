@@ -1,6 +1,6 @@
 {
   "name": "scdmv-hotkeys",
-  "version": "1.8.44",
+  "version": "1.8.45",
   "private": true,
   "type": "module",
   "scripts": {
@@ -13,6 +13,7 @@
     "test:demo-extension": "node tests/demo-extension-browser.mjs",
     "test:reviewer-package": "node tests/reviewer-package-browser.mjs",
     "reviewer:walkthrough": "node tests/reviewer-package-browser.mjs --video",
+    "build:eula": "node tools/build-eula.mjs",
     "build:demo": "node tools/build-demo.mjs",
     "audit:permissions": "node tools/audit-permissions.mjs",
     "package:webstore": "node tools/build-webstore.mjs"

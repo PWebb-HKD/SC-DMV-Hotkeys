@@ -4,6 +4,8 @@ import {join} from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 const root = fileURLToPath(new URL('../', import.meta.url));
+const eulaCheck=spawnSync(process.execPath,[join(root,'tools/build-eula.mjs'),'--check'],{encoding:'utf8'});
+if(eulaCheck.status)throw new Error(eulaCheck.stderr);
 const bridgeCheck=spawnSync(process.execPath,[join(root,'tools/build-background-report.mjs'),'--check'],{encoding:'utf8'});
 if(bridgeCheck.status)throw new Error(bridgeCheck.stderr);
 const demoCheck=spawnSync(process.execPath,[join(root,'tools/build-demo.mjs'),'--check'],{encoding:'utf8'});

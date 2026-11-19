@@ -365,7 +365,7 @@ try {
     window.chrome = {
       runtime:{onMessage:{addListener:fn=>window.runtimeListeners.push(fn)},getURL:path=>`${location.origin}/${path}`,connect:()=>({postMessage:()=>{}}),sendMessage:async message=>{
         window.requests.push(message);
-        if(message.type==='state')return {ok:true,value:{shortcutMenuAlwaysOnTop:window.shortcutMenuAlwaysOnTop,shortcutMenuNoTimeout:window.shortcutMenuNoTimeout,dmvDarkMode:window.dmvDarkMode,pdfDarkMode:window.pdfDarkMode,blacklist:window.blacklistData,history:[...window.historyErrors,{kind:'plate',value:'ABC12345',at:Date.now()},{kind:'license',value:'123456789',at:Date.now()}],queue:{values:['123','456'],index:1},commands:window.commandShortcuts,alertsEnabled:window.sessionAlerts,showDriverIdentity:window.showDriverIdentity,...window.backgroundPrefs,...window.audioSettings,voices:[{voiceName:'Microsoft David Desktop',lang:'en-US'},{voiceName:'Microsoft Zira Desktop',lang:'en-US'}]}};
+        if(message.type==='state')return {ok:true,value:{requiresEula:false,shortcutMenuAlwaysOnTop:window.shortcutMenuAlwaysOnTop,shortcutMenuNoTimeout:window.shortcutMenuNoTimeout,dmvDarkMode:window.dmvDarkMode,pdfDarkMode:window.pdfDarkMode,blacklist:window.blacklistData,history:[...window.historyErrors,{kind:'plate',value:'ABC12345',at:Date.now()},{kind:'license',value:'123456789',at:Date.now()}],queue:{values:['123','456'],index:1},commands:window.commandShortcuts,alertsEnabled:window.sessionAlerts,showDriverIdentity:window.showDriverIdentity,...window.backgroundPrefs,...window.audioSettings,voices:[{voiceName:'Microsoft David Desktop',lang:'en-US'},{voiceName:'Microsoft Zira Desktop',lang:'en-US'}]}};
         if(message.type==='background-search-settings'){window.backgroundPrefs={backgroundStatusSearch:message.enabled};return {ok:true,value:true};}
         if(message.type==='driver-identity-settings'){window.showDriverIdentity=message.enabled;return {ok:true,value:true};}
         if(message.type==='blacklist-unlock'){
@@ -571,7 +571,7 @@ try {
     await page.screenshot({path:join(screenshots,'shortcut-setup.png'),fullPage:true});
     await page.locator('#done').click();assert.equal(await page.evaluate(()=>window.setupClosed),true);await page.close();
   });
-  await tests('Stop remains below status and Settings owns alerts and shortcut setup',async()=>{
+  await tests('Stop remains below status, Settings owns alerts and Keybinds owns shortcut setup',async()=>{
     const page=await ui.newPage();await page.addInitScript(()=>{window.close=()=>{window.panelClosed=true;};});
     await page.goto(`${base}/popup.html`);await page.locator('#history tr').first().waitFor();
     assert.equal(await page.locator('#status').evaluate(el=>el.nextElementSibling.id),'stopFunction');
@@ -580,8 +580,9 @@ try {
     await page.locator('#stopFunction').click();assert.equal(await page.locator('#status').textContent(),'Stopped');
     assert.equal(await page.evaluate(()=>window.requests.some(message=>message.type==='stop')),true);
     await page.locator('#settingsTab').click();assert.equal(await page.locator('#alertsToggle').isVisible(),true);
-    assert.equal(await page.locator('#speechToggle').isVisible(),true);assert.equal(await page.locator('#browserShortcuts').isVisible(),true);
-    assert.equal(await page.locator('#aboutView #browserShortcuts').count(),0);
+    assert.equal(await page.locator('#speechToggle').isVisible(),true);assert.equal(await page.locator('#browserShortcuts').isVisible(),false);
+    await page.locator('#keybindsTab').click();assert.equal(await page.locator('#browserShortcuts').isVisible(),true);
+    assert.equal(await page.locator('#settingsView #browserShortcuts').count(),0);
     assert.equal(await page.locator('#settingsView #blacklistForm').count(),0);
     assert.equal(await page.locator('#blacklistView').isVisible(),false);
     await page.getByRole('tab',{name:'Blacklist',exact:true}).click();
@@ -593,7 +594,7 @@ try {
     await page.locator('#settingsTab').click();
     assert.equal(await page.locator('#blacklistView').isVisible(),false);
     await page.screenshot({path:join(screenshots,'settings.png'),fullPage:true});
-    await page.locator('#aboutTab').click();assert.equal(await page.locator('#alertsToggle').isVisible(),false);
+    await page.locator('#keybindsTab').click();assert.equal(await page.locator('#alertsToggle').isVisible(),false);
     await page.locator('#historyTab').click();await page.getByRole('button',{name:'Previous customer',exact:true}).click();
     assert.equal(await page.evaluate(()=>window.requests.at(-1).command),'previous');await page.close();
   });
@@ -616,7 +617,7 @@ try {
     await page.locator('#voiceSettings').waitFor({state:'hidden'});
     await page.locator('#speechToggle').check();
     await page.locator('#voiceSettings').waitFor({state:'visible'});
-    await page.locator('#aboutTab').click();
+    await page.locator('#keybindsTab').click();
     await page.locator('#settingsTab').click();
     assert.equal(await page.locator('#speechToggle').isChecked(),true);assert.equal(await page.locator('#clipToggle').isChecked(),true);
     assert.equal(await page.locator('#repeatSpeechToggle').isChecked(),true);
@@ -657,21 +658,21 @@ try {
     const page=await ui.newPage();await page.goto(`${base}/popup.html`);await page.locator('#history tr').first().waitFor();
     await page.locator('#settingsTab').click();
     assert.equal(await page.locator('#alertsToggle').isChecked(),false);
-    await page.locator('#alertsToggle').check();await page.locator('#aboutTab').click();
+    await page.locator('#alertsToggle').check();await page.locator('#keybindsTab').click();
     assert.equal(await page.locator('#alertsToggle').isChecked(),true);
     await page.locator('#settingsTab').click();
     await page.locator('#alertsToggle').uncheck();
     assert.equal(await page.evaluate(()=>window.sessionAlerts),false);await page.close();
   });
-  await tests('About shows actual browser shortcuts and setup instructions without extension licensing terms', async () => {
+  await tests('Keybinds shows actual browser shortcuts and setup instructions', async () => {
     const page=await ui.newPage(); await page.goto(`${base}/popup.html`);
     await page.locator('#history tr').first().waitFor();
     assert.equal(await page.locator('h1').textContent(),'SC DMV Hotkeys');
     assert.equal(await page.locator('#history tr').count(),2);
     assert.equal(await page.locator('body').evaluate(el=>getComputedStyle(el).backgroundColor),'rgb(24, 26, 27)');
     await page.screenshot({path:join(screenshots,'history.png')});
-    await page.locator('#aboutTab').click();
-    assert.equal(await page.locator('#aboutTab').textContent(),'About');
+    await page.locator('#keybindsTab').click();
+    assert.equal(await page.locator('#keybindsTab').textContent(),'Keybinds');
     assert.equal(await page.locator('.shortcut-entry').count(),11);
     assert.equal(await page.locator('[data-command="selected"]').count(),0);
     assert.equal(await page.locator('[data-command="plate"] kbd').textContent(),'Ctrl+Shift+7');
@@ -682,7 +683,7 @@ try {
     assert.match(await page.locator('.about-instructions').textContent(),/In Chrome.*Global/);
     assert.equal(await page.locator('.about-license').count(),0);
     assert.doesNotMatch(await page.locator('#aboutView').textContent(),/perpetual basis|License & ownership/);
-    assert.equal(await page.locator('#aboutView #browserShortcuts').count(),0);
+    assert.equal(await page.locator('#settingsView #browserShortcuts').count(),0);
     assert.equal(await page.locator('#settingsView #blacklistForm').count(),0);
     assert.equal(await page.locator('#blacklistView').isVisible(),false);
     await page.getByRole('tab',{name:'Blacklist',exact:true}).click();
@@ -693,11 +694,11 @@ try {
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
     await page.locator('#settingsTab').click();
     assert.equal(await page.locator('#blacklistView').isVisible(),false);
-    await page.locator('#settingsTab').click();
+    await page.locator('#keybindsTab').click();
     await page.locator('#browserShortcuts').click();
     assert.deepEqual(await page.evaluate(()=>window.openedTabs),[{url:'chrome://extensions/shortcuts'}]);
     await page.evaluate(()=>{window.commandShortcuts[0].shortcut='Alt+Shift+P';});
-    await page.locator('#historyTab').click();await page.locator('#aboutTab').click();
+    await page.locator('#historyTab').click();await page.locator('#keybindsTab').click();
     await page.waitForFunction(()=>document.querySelector('[data-command="plate"] kbd').textContent==='Alt+Shift+P');
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
     await page.screenshot({path:join(screenshots,'about.png'),fullPage:true});
@@ -1072,7 +1073,7 @@ try {
     assert.ok(await page.evaluate(()=>window.requests.some(r=>r.type==='driver-identity-settings'&&r.enabled===true)));
     await page.locator('#alertsToggle').uncheck();assert.equal(await toggle.isVisible(),false);assert.equal(await toggle.isChecked(),true);
     await page.locator('#alertsToggle').check();assert.equal(await toggle.isVisible(),true);assert.equal(await toggle.isChecked(),true);
-    await page.locator('#aboutTab').click();await page.locator('#settingsTab').click();assert.equal(await toggle.isChecked(),true);
+    await page.locator('#keybindsTab').click();await page.locator('#settingsTab').click();assert.equal(await toggle.isChecked(),true);
     await page.screenshot({path:join(screenshots,'nested-status-settings.png'),fullPage:true});
     await page.evaluate(()=>{window.storageListeners.forEach(fn=>fn({showDriverIdentity:{newValue:false}},'session'));});
     assert.equal(await toggle.isChecked(),false);await page.close();
@@ -1348,7 +1349,7 @@ try {
     await page.locator('#pdfDarkMode').focus();await page.keyboard.press('Space');
     assert.deepEqual(await page.evaluate(()=>window.requests.find(x=>x.type==='pdf-display-settings')),{type:'pdf-display-settings',enabled:true});
     assert.equal(await page.locator('#dmvDarkMode').isChecked(),false);
-    await page.locator('#aboutTab').click();await page.locator('#settingsTab').click();
+    await page.locator('#keybindsTab').click();await page.locator('#settingsTab').click();
     assert.equal(await page.locator('#dmvDarkMode').isChecked(),false);assert.equal(await page.locator('#pdfDarkMode').isChecked(),true);
     assert.equal(await page.evaluate(()=>window.requests.some(x=>x.type==='run')),false);
     await page.screenshot({path:join(screenshots,'settings-wording-v1.8.8.png'),fullPage:true});await page.close();
@@ -1362,7 +1363,7 @@ try {
     assert.equal(await page.locator('#backgroundSearchToggle').isChecked(),false);
     assert.equal(await page.locator('#backgroundSearchMethod').count(),0);
     await page.locator('#backgroundSearchToggle').check();
-    await page.locator('#aboutTab').click();await page.locator('#settingsTab').click();
+    await page.locator('#keybindsTab').click();await page.locator('#settingsTab').click();
     assert.equal(await page.locator('#backgroundSearchToggle').isChecked(),true);
     await page.locator('#alertsToggle').uncheck();assert.equal(await page.locator('#backgroundSearchSettings').isVisible(),false);
     await page.locator('#alertsToggle').check();assert.equal(await page.locator('#backgroundSearchToggle').isChecked(),true);
