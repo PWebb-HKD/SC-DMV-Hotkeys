@@ -11,3 +11,6 @@
 .pdf-viewer #pdfPrintStatus{font-size:12px}.pdf-viewer #pdfPrintStatus:empty{display:none}
 
 .pdf-viewer #pdfPrintStatus.error{flex-basis:100%;font-size:14px;font-weight:600}
+
+/* Original-color results retain the same viewer controls with a light surrounding surface. */
+.pdf-viewer[data-pdf-colors="light"]{background:#e7eaee;color:#17212b}.pdf-viewer[data-pdf-colors="light"] header{background:#e0edf9;color:#17212b}.pdf-viewer[data-pdf-colors="light"] .pdf-note{color:#32485b}.pdf-viewer[data-pdf-colors="light"] .pdf-sheet{background:#fff}.pdf-viewer[data-pdf-colors="light"] .pdf-page-label{background:#ffffffdf;color:#32485b}.pdf-viewer[data-pdf-colors="light"] button{background:#fff;color:#103e6b;border-color:#50718e}

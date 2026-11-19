@@ -1,6 +1,6 @@
-# Local practice portal
+# Synthetic practice portal
 
-Run `npm run demo` from the repository root, or `node server.mjs` from this demo folder, with Node.js 22 or newer. Open `http://127.0.0.1:4173`, sign in with **demo / demo**, and continue to transactions. No npm install or extra runtime dependency is needed. Use `node server.mjs --port 4174` to choose another port.
+For the optional standalone website preview, run `npm run demo` from the repository root, or `node server.mjs` from this demo folder, with Node.js 22 or newer. Open `http://127.0.0.1:4173`, sign in with **demo / demo**, and continue to transactions. No npm install or extra runtime dependency is needed. Use `node server.mjs --port 4174` to choose another port.
 
 To update a running copy, stop it with **Ctrl+C**, replace its demo folder with the latest demo folder from the test branch, then run `node server.mjs` again and refresh Chrome. Demo-only work does not increment the extension release version. There is no extension reload required for this standalone site update.
 
@@ -8,17 +8,16 @@ The server binds only to 127.0.0.1, makes no outbound requests, accepts no POST 
 
 ## Use the installed extension in Demo Mode
 
-Extension version **1.8.42** adds an explicit Demo Mode, off by default. For this update, replace/reload the extension folder as well as updating the demo folder; demo-only updates still do not require an extension reload or version bump.
+Extension version **1.8.43** includes the practice site and reports. Replace/reload the extension folder for this revision. No server, Node installation or optional host permission is needed for installed Demo Mode.
 
-1. Start the server and keep its terminal open. Use **http://127.0.0.1:4173** for extension integration. Other ports and the localhost alias remain available for manual site use but are not extension automation destinations.
-2. Reload the unpacked extension at **chrome://extensions**, then open its **Settings → Practice environment**.
-3. Enable **Demo Mode** and accept Chrome's optional local-host access request. The existing live DMV permission remains unchanged; the demo grant covers 127.0.0.1, while runtime routing/credential checks require port 4173 exactly.
-4. Use **Open practice portal**, normal quick actions, shortcut menu or assigned hotkeys. Run plate DEMO001 or DL 100000101 first. The extension signs in automatically with the fixed demo/demo account; it never asks to unlock the live vault for demo searches.
-5. Enable the extension's normal status, photo/name and voice settings to test automatic alerts. Its background-search setting also applies: record searches use the minimized query window; SCUTTIES stays in the foreground. Manual site Preview buttons remain separate standalone tools and are not required for automatic extension alerts.
+1. Open the extension's **Settings → Practice environment** and enable **Demo Mode**.
+2. Select **Reviewer & demo guide** for sample commands and expected results, or **Open practice portal**.
+3. Use normal quick actions, shortcut menu or assigned hotkeys. Start with plate DEMO001 or DL 100000101. The extension signs in with fixed demo/demo credentials and never unlocks the live vault for demo searches.
+4. Enable normal status alerts and the nested photo/name setting to test automatic alerts. Background searches use the existing minimized query transport; SCUTTIES remains foreground. Standalone Preview buttons are omitted from the packaged site because extension commands provide actual alerts/barcodes.
 
-The extension labels demo input/status/barcode/menu/viewer surfaces. Its demo history, queue, portal hint, report caches/tracking and session-only blacklist use separate demo: storage keys. Live credentials and the encrypted live blacklist are not used or changed; demo blacklist entries can be edited without a vault. Alert/appearance/shortcut preferences remain shared. Switching modes cancels active work, readers, panels and audio, then changes routing without replaying a search. History replay, owner searches, report follow-ups and results-tab reuse remain confined to the selected environment. A focused PDF from the other environment is rejected.
+History, queue, portal hints, report snapshots and session-only demo blacklist use separate demo: storage keys. Live credentials and encrypted blacklist are not read or changed. Alert/appearance/shortcut preferences remain shared. Mode switching cancels ongoing work, readers, panels and audio before changing routing, without replaying a search. Wrong-environment follow-ups are rejected. Switch Demo Mode off to return to live routing; this setting does not publish anything.
 
-To return to the real service, switch **Demo Mode off**. The separate live history/queue and vault remain available. Previously completed tabs can remain open; their presence does not authorize cross-environment follow-ups. Removing the optional demo permission disables Demo Mode. This setting does not publish anything or contact the live DMV while demo searches run.
+`npm run build:demo` regenerates the packaged pages/catalogs/fictional PDFs after demo source changes. Commit the generated output. The HTTP preview remains available for manual development and does not drive the installed extension. Demo-only changes still do not increment release versions.
 
 For controlled failures, turn the extension's background-search setting off and choose **Demo test controls** in its existing demo portal tab before running the next hotkey search. Those fault selections are per website tab; a new hidden query window has its own session and does not inherit another tab's chosen fault. The extension applies its normal queue/error rules; standalone demo queue buttons use the site's separate queue.
 
@@ -91,11 +90,11 @@ Individual names open customer results. **Collect customers and run next** retai
 
 ## PDFs and previews
 
-Open PDF serves a genuine, selectable-text PDF at ViewAttachment.aspx. Chrome provides its native viewer; its shadow DOM is not copied. Every page is labeled **DEMONSTRATION - SYNTHETIC DATA** and **NOT A GOVERNMENT RECORD**. Report titles precede the watermark so residence classification can recognize its heading. PDFs are generated locally without dependencies and are not cached by the mock server.
+In the HTTP preview, Open PDF serves a genuine, selectable-text PDF at ViewAttachment.aspx and Chrome provides its native viewer. In installed Demo Mode, the extension opens its bundled viewer in light or dark colors. Chrome's internal viewer shadow DOM is not copied. Every page is labeled **DEMONSTRATION - SYNTHETIC DATA** and **NOT A GOVERNMENT RECORD**. Report titles precede the watermark so residence classification can recognize its heading. PDFs are generated locally without dependencies and are not cached by the mock server.
 
 Status and barcode previews use bundled production PDF.js to extract the generated PDF, followed by existing production parsers and panel/barcode controllers. An HTTP-only adapter supplies mock worker messages to those views. Barcode editing and popup timers work. Residence reports have no license-status or barcode preview. The adapter lives outside extension/ and is never loaded by the installed extension.
 
-Standalone previews do not exercise installed-extension permissions, global hotkeys, native background-window behavior, audio or vault storage. The extension's explicit Demo Mode exercises its real command/controller pipeline against the local site, using separate demo state. Cloud browser automation uses explicit Chrome API substitutes because enterprise policy blocks installation, so native Windows hotkey/focus/minimize behavior still requires user testing. Reviewers should eventually receive a launcher that does not require setting up a local server.
+Standalone previews do not exercise installed-extension permissions, global hotkeys, native background-window behavior, audio or vault storage. The extension's explicit Demo Mode exercises its real command/controller pipeline against the packaged site, using separate demo state. Cloud browser automation uses explicit Chrome API substitutes because enterprise policy blocks installation, so native Windows hotkey/focus/minimize behavior still requires user testing. The packaged practice launcher and guide now require no local server; see reviewer/ for preparation notes and pending native checks.
 
 Raw HTML captures remain outside Git. [DOM-CONTRACT.md](DOM-CONTRACT.md) records the retained selector interface and exclusions. New samples supplied for driver/customer and residence pages were used as reference data only; their scripts, identifiers, hidden tokens and private display values are not served or committed.
 
@@ -121,6 +120,6 @@ The captured search puts Search first and Show SAVED Citations second. Version 1
 - `CHROME_PATH=/usr/bin/chromium npm run test:demo`: all four Chromium suites, including vehicle/driver PDFs, production status/barcode views, shared input validation, owner follow-ups, the residence queue, SCUTTIES, photo/placeholder extraction and recovery scenarios.
 - `CHROME_PATH=/usr/bin/chromium node tests/demo-scutties-browser.mjs`: focused SCUTTIES handoff, calendar validation, citations/details, restoration, mobile layout and local-only request checks.
 - `CHROME_PATH=/usr/bin/chromium node tests/demo-recovery-browser.mjs`: focused real photo/placeholder PDF extraction, optional identity rendering, session expiration, pending/cancelled/timed-out searches, HTTP failures and successful retries.
-- `CHROME_PATH=/usr/bin/chromium npm run test:demo-extension`: real worker/automation/PDF.js/controllers against this server, using explicit Chrome API substitutes. Native installation/focus/permission-dialog behavior is not established by this harness.
+- `CHROME_PATH=/usr/bin/chromium npm run test:demo-extension`: real worker/automation/PDF.js/controllers against packaged pages/reports, using explicit Chrome API substitutes. Native installation/focus/permission-dialog behavior is not established by this harness.
 
 Browser checks require the same development Playwright/Chromium setup as the existing project tests. The server itself needs only Node. Screenshots and synthetic barcode payloads stay in ignored test-results/demo, test-results/demo-records, test-results/demo-scutties and test-results/demo-recovery directories.

@@ -57,11 +57,11 @@ export async function resultWindow(api, sourceId) {
 
 /** Clean only the owned portal tab; retain moved tabs and unrelated user pages. */
 async function closeHelper(api, windowId, tabId, ctx) {
-  const ROOT=environmentOf(ctx).origin;
+  const environment=environmentOf(ctx);
   const tab=await api.tabs.get(tabId).catch(()=>null);
   const url=tab?.pendingUrl||tab?.url;
-  if(url?.startsWith(`${ROOT}/SCTRNS/`))await evaluate(tabId,'stopBackgroundReport',{},{browserApi:api,environment:environmentOf(ctx)}).catch(()=>{});
-  if(tab?.windowId===windowId&&(url==='about:blank'||url?.startsWith(`${ROOT}/SCTRNS/`)))await api.tabs.remove(tabId).catch(()=>{});
+  if(isPortal(url,environment))await evaluate(tabId,'stopBackgroundReport',{},{browserApi:api,environment:environmentOf(ctx),demoOperation:ctx?.demoOperation}).catch(()=>{});
+  if(tab?.windowId===windowId&&(url==='about:blank'||isPortal(url,environment)))await api.tabs.remove(tabId).catch(()=>{});
 }
 
 /** Serialize the new blank document and the initial login load. tabs.update

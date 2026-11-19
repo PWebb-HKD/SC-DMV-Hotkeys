@@ -10,11 +10,12 @@ import {getDocument, GlobalWorkerOptions} from './vendor/pdf.mjs';
 import {markDemo} from './demo-label.js';
 GlobalWorkerOptions.workerSrc = chrome.runtime.getURL('vendor/pdf.worker.mjs');
 const params = new URL(location.href).searchParams;
+const visibleViewer=params.get('pdf')==='1'||params.get('query')==='1'||params.get('dark')==='1';
 let id = params.get('id'), loadingTask, resultSent = false;
 // Cancellation covers both the job handshake and PDF loading; a late job ID may already be cancelled.
 const controller = new AbortController(), cancelledIds = new Set();
 const printReady=Promise.withResolvers();printReady.promise.catch(()=>{});
-if(params.get('dark')==='1'||params.get('query')==='1')installNativePrint(printReady.promise,controller.signal);
+if(visibleViewer)installNativePrint(printReady.promise,controller.signal);
 chrome.runtime.onMessage.addListener(message => {
   if(message.target !== 'pdf-reader' || message.type !== 'reader-cancel')return;
   if(!id)cancelledIds.add(message.id);
@@ -82,7 +83,7 @@ try {
     // requestAnimationFrame, which may pause in an inactive/minimized tab.
     resultSent = true;
     const acknowledgement = chrome.runtime.sendMessage({type:'reader-result',id,text,...(driverIdentity ? {driverIdentity} : {})});
-    if (params.get('dark') === '1'||params.get('query') === '1') {
+    if (visibleViewer) {
       retainDocument = true;
       // Printing owns the loaded bytes and does not wait for painting or the worker ACK.
       printReady.resolve({doc,text});

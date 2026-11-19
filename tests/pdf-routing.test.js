@@ -2,7 +2,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {PDF_URL, attachmentUrl} from '../extension/core.js';
-import {pdfDarkRule, darkResultSource, isNativePrintUrl} from '../extension/pdf-routing.js';
+import {pdfDarkRule, darkResultSource, isNativePrintUrl, setPdfRouting} from '../extension/pdf-routing.js';
 const reader=`chrome-extension://${'a'.repeat(32)}/reader.html`;
 test('dark routing matches only the DMV PDF endpoint and preserves the entire URL inside the fragment',()=>{
   const rule=pdfDarkRule(reader),pattern=new RegExp(rule.condition.regexFilter,'i');
@@ -23,4 +23,15 @@ test('native print tabs match only their known blob URL or a supported browser w
   assert.equal(isNativePrintUrl('chrome-extension://pdf-viewer/index.html?src='+encodeURIComponent(blob),blob),true);
   assert.equal(isNativePrintUrl('https://unrelated.test/?src='+encodeURIComponent(blob),blob),false);
   assert.equal(isNativePrintUrl(blob+'wrong',blob),false);
+});
+
+test('disabling dark colors retains the bundled light viewer and preserves source ownership',async()=>{
+  const previous=globalThis.chrome;let applied;
+  globalThis.chrome={runtime:{getURL:path=>reader.replace('reader.html',path)},declarativeNetRequest:{updateDynamicRules:async rules=>{applied=rules;}}};
+  try{
+    await setPdfRouting(false);assert.equal(applied.addRules.length,1);
+    const target=applied.addRules[0].action.redirect.regexSubstitution.replace('\\0',PDF_URL);
+    assert.ok(target.includes('?dark=0&pdf=1#'));assert.equal(darkResultSource(target,reader),PDF_URL);
+    await setPdfRouting(true);assert.ok(applied.addRules[0].action.redirect.regexSubstitution.includes('?dark=1&pdf=1#'));
+  }finally{globalThis.chrome=previous;}
 });

@@ -30,7 +30,13 @@ export async function openDarkViewer(doc, signal, initialDark = true) {
   const pages = document.getElementById('pdfPages'), toggle = document.getElementById('pdfColors');
   const progress = document.getElementById('pdfProgress');
   let dark = initialDark, generation = 0, currentTask, pumping = false, stopped = false;
-  toggle.textContent=dark?'Use original PDF colors':'Use dark PDF colors';
+  const updateColors=()=>{
+    document.body.dataset.pdfColors=dark?'dark':'light';
+    document.documentElement.style.colorScheme=dark?'dark':'light';
+    toggle.textContent=dark?'Use original PDF colors':'Use dark PDF colors';
+    document.querySelector('.pdf-note').textContent=dark?'Dark PDF pages; embedded photos keep their original colors.':'Original PDF colors; embedded photos keep their original colors.';
+  };
+  updateColors();
   const first = await doc.getPage(1), initial = first.getViewport({scale:1}); first.cleanup();
   const sheets = Array.from({length:doc.numPages}, (_,index) => {
     const element = document.createElement('section'); element.className = 'pdf-sheet';
@@ -152,7 +158,7 @@ export async function openDarkViewer(doc, signal, initialDark = true) {
   // Invalidate previous color renders and repaint without replacing the immutable source document.
   toggle.onclick=()=>{
     dark=!dark;generation++;currentTask?.cancel();
-    toggle.textContent=dark?'Use original PDF colors':'Use dark PDF colors';
+    updateColors();
     sheets.forEach(sheet=>{sheet.element.querySelector('canvas')?.remove();sheet.ready=false;sheet.element.querySelector('.pdf-page-label').textContent=`Page ${sheet.number}`;});
     status();pump().catch(error=>{progress.textContent=`Unable to render: ${error.message}`;});
   };

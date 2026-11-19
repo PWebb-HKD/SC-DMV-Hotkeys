@@ -5,8 +5,8 @@ import {mkdir} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import {join} from 'node:path';
 import {demoExtension} from './helpers/demo-extension.mjs';
-import {LIVE,DEMO} from '../extension/environment.js';
-const f=await demoExtension(),screenshots=fileURLToPath(new URL('../test-results/demo-extension/',import.meta.url));await mkdir(screenshots,{recursive:true});
+import {LIVE} from '../extension/environment.js';
+const f=await demoExtension(),DEMO=f.DEMO,screenshots=fileURLToPath(new URL('../test-results/demo-extension/',import.meta.url));await mkdir(screenshots,{recursive:true});
 let passed=0;
 const check=async(name,fn)=>{await fn();console.log('PASS '+name);passed++;};
 const wait=async fn=>{const end=Date.now()+20000;while(Date.now()<end){const value=await fn();if(value)return value;await new Promise(r=>setTimeout(r,25));}throw new Error('Demo integration timed out: '+JSON.stringify({status:f.session['demo:status'],panels:Object.values(f.session).filter(v=>v?.type).map(v=>({type:v.type,message:v.message})),operations:f.operations.slice(-10).map(o=>({op:o.op,url:o.url,selector:o.args.selector})),errors:f.errors}));};
@@ -16,11 +16,9 @@ const number=async(command,value)=>{const previous=f.session['demo:history']?.[0
 const report=async(pattern)=>wait(()=>[...f.pages.values()].filter(r=>(r.tab.url.includes('reader.html')&&r.tab.url.includes('#'+DEMO.origin)||r.tab.url.startsWith(DEMO.pdf))&&f.session['demo:pdf:'+r.tab.id]?.text&&(!pattern||pattern.test(f.session['demo:pdf:'+r.tab.id].text))).sort((a,b)=>(f.session['demo:pdfCreated']?.[b.tab.id]||0)-(f.session['demo:pdfCreated']?.[a.tab.id]||0))[0]);
 try{
   const live=structuredClone({history:f.session.history,queue:f.session.queue,credentials:f.session.credentials,vault:f.local.vault});
-  await check('Demo Mode defaults off, permission denial leaves live routing untouched, and explicit opt-in is labeled',async()=>{
+  await check('Demo Mode defaults off and opens the packaged practice environment without host permission',async()=>{
     await f.page.locator('#settingsTab').click();assert.equal(await f.page.locator('#demoModeToggle').isChecked(),false);
-    await assert.rejects(f.send({type:'demo-mode',enabled:true}),/Allow access/);
-    f.setPermission(false);await f.page.locator('#demoModeToggle').click();await f.page.locator('#feedback').filter({hasText:'not granted'}).waitFor();assert.equal((await f.state()).demoMode,false);
-    f.setPermission(true);await f.page.locator('#demoModeToggle').click();await f.page.locator('#demoBanner').waitFor();assert.equal((await f.state()).demoMode,true);assert.equal((await f.state()).vault,undefined);
+    await f.page.locator('#demoModeToggle').click();await f.page.locator('#demoBanner').waitFor();assert.equal((await f.state()).demoMode,true);assert.equal((await f.state()).vault,undefined);
     await f.send({type:'alerts',enabled:true});await f.send({type:'driver-identity-settings',enabled:true});await f.send({type:'pdf-display-settings',enabled:false});
     await f.page.screenshot({path:join(screenshots,'settings.png'),fullPage:true});
   });
@@ -51,7 +49,7 @@ try{
   });
   await check('SCUTTIES uses the extracted identity and clicks Search rather than the adjacent saved-citations action',async()=>{
     await number('license','100000101');const source=await report();await f.activate(source.tab);await f.send({type:'run',command:'scutties'});await wait(()=>f.session['demo:history'][0].kind==='scutties');
-    const scutties=await wait(()=>[...f.pages.values()].find(r=>r.tab.url.startsWith(DEMO.member+'Transactions/SCUTTIES/Search.aspx')));await scutties.page.locator('#scutties-rows tr').nth(2).waitFor();assert.equal(await scutties.page.locator('#scutties-last').inputValue(),'EXAMPLE');
+    const scutties=await wait(()=>[...f.pages.values()].find(r=>r.tab.url.startsWith(DEMO.member+'Transactions/SCUTTIES/Search.html')));await scutties.page.locator('#scutties-rows tr').nth(2).waitFor();assert.equal(await scutties.page.locator('#scutties-last').inputValue(),'EXAMPLE');
     assert.ok(f.operations.some(o=>o.op==='click'&&o.args.selector==='#home button[ng-click="searchCitation()"]'));
   });
   await check('demo blacklist blocks before navigation without unlocking or changing the live vault',async()=>{
@@ -61,12 +59,12 @@ try{
     await f.send({type:'blacklist-remove',kind:'plate',value:'DEMO004',confirmed:true});await assert.rejects(f.send({type:'clear-saved-user-info',confirmed:true}),/Switch off Demo Mode/);
   });
   await check('a simulated technical timeout preserves the extension queue and history until a normal retry succeeds',async()=>{
-    const portal=f.pages.get(f.session['demo:portalId']);await portal.page.goto(DEMO.member+'Transactions/DrvRec/Page1.aspx');await portal.page.locator('.demo-test-controls summary').click();await portal.page.locator('#demo-scenario').selectOption('timeout');
+    const portal=f.pages.get(f.session['demo:portalId']);await portal.page.goto(DEMO.member+'Transactions/DrvRec/Page1.html');await portal.page.locator('.demo-test-controls summary').click();await portal.page.locator('#demo-scenario').selectOption('timeout');
     const queue=structuredClone(f.session['demo:queue']),history=structuredClone(f.session['demo:history']);await f.send({type:'run',command:'next'});const notice=await wait(()=>f.panel('notice'));await notice.page.locator('#message').filter({hasText:'timed out'}).waitFor();assert.deepEqual(f.session['demo:queue'],queue);assert.deepEqual(f.session['demo:history'],history);
     await f.send({type:'run',command:'next'});await wait(()=>f.session['demo:queue'].index===queue.index+1);await alert();
   });
   await check('background transport reuses its own results tab and captures no-photo alerts without focusing it',async()=>{
-    await f.send({type:'background-search-settings',enabled:true});const normal=await f.chrome.tabs.create({url:DEMO.origin+'/',active:true});await f.activate(normal);
+    await f.send({type:'background-search-settings',enabled:true});const normal=await f.chrome.tabs.create({url:DEMO.root+'index.html',active:true});await f.activate(normal);
     let status=await number('license','100000117');assert.equal(await status.page.locator('.record-driver-photo').count(),0);assert.match(await status.page.locator('.record-driver-identity').textContent(),/No photo available/);
     const first=await report(),firstId=first.tab.id,firstDocument=first.tab.documentId;assert.equal(first.tab.active,false);assert.match(first.tab.url,/query=1/);status=await number('license','100000101');await status.page.locator('.record-driver-photo').waitFor();const second=await report();assert.equal(second.tab.id,firstId);assert.notEqual(second.tab.documentId,firstDocument);
   });
@@ -87,10 +85,9 @@ try{
     await f.send({type:'demo-mode',enabled:false});f.releaseReader();await wait(()=>!f.panel('record-alert'));assert.deepEqual(f.session.history,live.history);assert.deepEqual(f.session.credentials,live.credentials);assert.deepEqual(f.local.vault,live.vault);
     await f.send({type:'demo-mode',enabled:true});
   });
-  await check('revoking local-host permission disables Demo Mode and unregisters its postback hook',async()=>{
-    await f.revokePermission();assert.equal((await f.state()).demoMode,false);assert.equal(f.local.demoMode,false);
+  await check('no localhost or live service request is needed and no demo content script is registered',async()=>{
     assert.equal((await f.chrome.scripting.getRegisteredContentScripts()).some(s=>s.id==='demo-background-report'),false);
-    await assert.rejects(f.send({type:'demo-mode',enabled:true}),/Allow access/);assert.deepEqual(f.session.history,live.history);assert.deepEqual(f.errors,[]);
+    assert.ok(f.requests.filter(url=>/^https?:/.test(url)).every(url=>url.startsWith(f.base)));assert.deepEqual(f.errors,[]);
   });
   console.log(`${passed} extension/demo integration browser checks passed with explicit Chrome API substitutes.`);
 }finally{await f.close();}

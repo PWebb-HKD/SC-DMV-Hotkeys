@@ -11,14 +11,14 @@ export function darkResultSource(url, readerUrl, environment=LIVE) {
   } catch { return null; }
 }
 /** Build a main-frame-only redirect rule that preserves the full attachment URL in the viewer fragment. */
-export function pdfDarkRule(readerUrl,environment=LIVE) {
+export function pdfDarkRule(readerUrl,environment=LIVE,dark=true) {
   return {id: PDF_DARK_RULE_ID, priority: 1,
-    action: {type: 'redirect', redirect: {regexSubstitution: `${readerUrl}?dark=1&pdf=1#\\0`}},
+    action: {type: 'redirect', redirect: {regexSubstitution: `${readerUrl}?dark=${dark?'1':'0'}&pdf=1#\\0`}},
     condition: {regexFilter: '^'+environment.origin.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'/SCTRNS/Member/Transactions/ViewAttachment\\.aspx([?].*)?$', isUrlFilterCaseSensitive: false, resourceTypes: ['main_frame']}};
 }
 /** Replace the single owned redirect rule without touching other extension network rules. */
 export async function setPdfRouting(enabled,environment=LIVE) {
-  await chrome.declarativeNetRequest.updateDynamicRules({removeRuleIds: [PDF_DARK_RULE_ID], addRules: enabled ? [pdfDarkRule(chrome.runtime.getURL('reader.html'),environment)] : []});
+  await chrome.declarativeNetRequest.updateDynamicRules({removeRuleIds: [PDF_DARK_RULE_ID], addRules: environment.demo?[]:[pdfDarkRule(chrome.runtime.getURL('reader.html'),environment,enabled)]});
 }
 
 /** Match a known local print PDF, including Chromium's viewer wrappers. */

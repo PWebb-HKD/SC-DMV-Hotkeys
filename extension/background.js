@@ -17,13 +17,16 @@ import {backgroundMethod, backgroundSearch, reusableBackgroundResult} from './ba
 import {configureDmvTheme, initDmvTheme, refreshDmvThemeTabs, isDmvThemePage} from './dmv-theme-settings.js';
 import {darkResultSource, setPdfRouting, isNativePrintUrl} from './pdf-routing.js';
 import {reportBarcode, reportBarcodeDraft, VehiclePartyError} from './barcode-data.js';
-import {LIVE,DEMO,DEMO_PERMISSION,environmentApi,environmentOf,reportEnvironment} from './environment.js';
+import {LIVE,demoEnvironment,environmentApi,environmentOf,reportEnvironment} from './environment.js';
+import {connectDemoPage,demoOperation} from './demo-pages.js';
+const DEMO=demoEnvironment();
+const sameEnvironment=(a,b)=>a?.id===b?.id&&a?.root===b?.root;
 const audioAlerts = new AudioAlerts();
 let activeEnvironment=LIVE,changingEnvironment=null;
 let demoBlacklistWriting=Promise.resolve();
 const workApi=(run,environment=run?.environment||activeEnvironment)=>guardedApi(environmentApi(chrome,environment),run);
 const reportSource=(url,environment=activeEnvironment)=>attachmentUrl(url,0,environment);
-const checkEnvironment=environment=>{if(environment!==activeEnvironment||changingEnvironment)throw new DOMException('Search environment changed.','AbortError');};
+const checkEnvironment=environment=>{if(!sameEnvironment(environment,activeEnvironment)||changingEnvironment)throw new DOMException('Search environment changed.','AbortError');};
 
 // In-memory Maps hold live callbacks. Session storage holds view/report data, not
 // resumable jobs. openingPanel and tracking serialize two independent mutation streams.
@@ -41,24 +44,20 @@ const boot = Promise.all([
   // Retire the removed shortcut-pause preference on update or worker startup.
   chrome.storage.session.remove('shortcutsPaused'),
   chrome.storage.local.get(['demoMode','pdfDarkMode']).then(async({demoMode,pdfDarkMode})=>{
-    const granted=demoMode===true&&await chrome.permissions.contains({origins:[DEMO_PERMISSION]});
-    activeEnvironment=granted?DEMO:LIVE;await configureDemoHooks(granted);await setPdfRouting(pdfDarkMode===true,activeEnvironment);
-    if(demoMode===true&&!granted)await chrome.storage.local.set({demoMode:false});
+    activeEnvironment=demoMode===true?DEMO:LIVE;await retireDemoHook();await setPdfRouting(pdfDarkMode===true,activeEnvironment);
   }),
   initializeAlertPreferences(),
   configureDmvTheme().catch(error=>chrome.storage.session.set({status:`DMV website dark mode unavailable: ${error.message}`}))
 ]);
-/** Register the bundled postback hook only after the user grants narrow loopback access. */
-async function configureDemoHooks(enabled){
+/** Retire the 1.8.42 localhost postback registration on upgrade. Packaged pages own their bridge. */
+async function retireDemoHook(){
   const id='demo-background-report',scripts=await chrome.scripting.getRegisteredContentScripts();
   if(scripts.some(script=>script.id===id))await chrome.scripting.unregisterContentScripts({ids:[id]});
-  if(enabled)await chrome.scripting.registerContentScripts([{id,matches:['http://127.0.0.1/SCTRNS/*'],js:['background-report.js'],runAt:'document_start',allFrames:false,world:'MAIN',persistAcrossSessions:true}]);
 }
 /** Stop the current generation before switching routing; preserve each environment's separate session data. */
 function changeEnvironment(enabled){
   const previous=changingEnvironment||Promise.resolve();
   const task=previous.catch(()=>{}).then(async()=>{
-    if(enabled&&!await chrome.permissions.contains({origins:[DEMO_PERMISSION]}))throw new Error('Allow access to the local demo host before enabling Demo Mode.');
     const target=enabled?DEMO:LIVE;
     if(target===activeEnvironment)return target.demo;
     const run=beginRun();await run.cleanup;await tracking;
@@ -66,10 +65,10 @@ function changeEnvironment(enabled){
     for(const reader of readers.values())reader.reject(new DOMException('Search environment changed.','AbortError'));
     const {pdfDarkMode}=await chrome.storage.local.get('pdfDarkMode');
     try{
-      await configureDemoHooks(enabled);await setPdfRouting(pdfDarkMode===true,target);
+      await retireDemoHook();await setPdfRouting(pdfDarkMode===true,target);
       await chrome.storage.local.set({demoMode:target.demo});
     }catch(error){
-      await configureDemoHooks(activeEnvironment.demo).catch(()=>{});await setPdfRouting(pdfDarkMode===true,activeEnvironment).catch(()=>{});throw error;
+      await setPdfRouting(pdfDarkMode===true,activeEnvironment).catch(()=>{});throw error;
     }
     activeEnvironment=target;
     await workApi().storage.session.set({status:target.demo?'DEMO MODE — synthetic local records only':'Live DMV mode — ready'});
@@ -188,7 +187,7 @@ async function pdfTab(source, run) {
   run?.check();
   const environment=run?.environment||activeEnvironment;
   const sourceEnvironment=reportEnvironment(source?.pendingUrl)||reportEnvironment(source?.url);
-  if(sourceEnvironment&&sourceEnvironment!==environment)throw new Error('This PDF belongs to a different environment. Switch Demo Mode before using this report.');
+  if(sourceEnvironment&&!sameEnvironment(sourceEnvironment,environment))throw new Error('This PDF belongs to a different environment. Switch Demo Mode before using this report.');
   if(source){
     const other=environment.demo?LIVE:DEMO,{pdfViewSources={}}=await workApi(run,other).storage.session.get('pdfViewSources');
     if(typeof pdfViewSources[source.id]==='string'&&(isNativePrintUrl(source.url,pdfViewSources[source.id])||isNativePrintUrl(source.pendingUrl,pdfViewSources[source.id])))throw new Error('This printed PDF belongs to a different environment. Switch Demo Mode before using this report.');
@@ -220,7 +219,7 @@ async function capturePdf(tab, portalId, forceDirect = false, environment=active
     if ((await api.storage.session.get(cacheKey))[cacheKey]?.text) {resolveReady(null);return;}
     const {pdfDarkMode = false} = await api.storage.local.get('pdfDarkMode');
     const includeDriverIdentity = (await api.storage.session.get('showDriverIdentity')).showDriverIdentity === true;
-    capture.sameTab = forceDirect || !!darkResultSource(tab.pendingUrl || tab.url, chrome.runtime.getURL('reader.html'),environment) || (pdfDarkMode && !!portalId);
+    capture.sameTab = forceDirect || !!darkResultSource(tab.pendingUrl || tab.url, chrome.runtime.getURL('reader.html'),environment) || !!portalId;
     const {pdfCreated = {}, pdfSources = {}} = await api.storage.session.get(['pdfCreated', 'pdfSources']);
     if (!pdfCreated[tab.id]) throw new Error('This PDF predates extension tracking. Run its search again so the extension can capture the correct report.');
     const portal = portalId ? await api.tabs.get(portalId).catch(() => null) : null;
@@ -229,7 +228,7 @@ async function capturePdf(tab, portalId, forceDirect = false, environment=active
     let base64 = null;
     const sourceUrl = reportSource(tab.pendingUrl,environment) || reportSource(tab.url,environment) || pdfSources[tab.id] || environment.pdf;
     if (parent) {
-      try { base64 = await evaluate(parent.id, 'fetchPdf', {url: sourceUrl}, {run,environment,browserApi:environmentApi(chrome,environment)}); } catch { run.check(); }
+      try { base64 = await evaluate(parent.id, 'fetchPdf', {url: sourceUrl}, {run,environment,browserApi:environmentApi(chrome,environment),demoOperation}); } catch { run.check(); }
     }
     const id = crypto.randomUUID();
     const promise = new Promise((resolve, reject) => {readers.set(id, {resolve, reject, base64, url: sourceUrl, pdfId: tab.id, environment, run, includeDriverIdentity});});
@@ -300,7 +299,7 @@ async function attachPdfViewer(sender) {
 async function openNativePrint(sender,url,reportText) {
   const environment=activeEnvironment,api=workApi(undefined,environment);
   if(!sender.tab || !sender.url?.startsWith(chrome.runtime.getURL('reader.html')+'?') || sender.frameId!==0) throw new Error('Open the report in the PDF viewer before using Print.');
-  if(reportEnvironment(sender.url)!==activeEnvironment)throw new Error('Switch to the report’s environment before printing.');
+  if(!sameEnvironment(reportEnvironment(sender.url),activeEnvironment))throw new Error('Switch to the report’s environment before printing.');
   const prefix=`blob:${chrome.runtime.getURL('')}`;
   if(typeof url!=='string' || !url.startsWith(prefix) || !/^[a-f0-9-]{36}$/i.test(url.slice(prefix.length))) throw new Error('The original PDF file could not be prepared. Reopen the report and try Print again.');
   // The text comes from the same loaded document that created the immutable Blob.
@@ -361,7 +360,7 @@ async function credentials(tabId, run) {
 /** Supply workflow callbacks without coupling automation.js to panel/storage internals. */
 function context(run) {
   return {
-    run,environment:environmentOf({run}),browserApi:environmentApi(chrome,environmentOf({run})),
+    run,environment:environmentOf({run}),browserApi:environmentApi(chrome,environmentOf({run})),demoOperation,
     status: message => workApi(run).storage.session.set({status: message}).catch(() => {}),
     credentials: tabId => credentials(tabId, run)
   };
@@ -626,6 +625,7 @@ async function dispatch(command, options = {}) {
 // Browser shortcuts and popup buttons share dispatch so both obey cancellation and blacklist gates.
 chrome.commands.onCommand.addListener(command => dispatch(command).catch(e => report(e)));
 chrome.runtime.onConnect.addListener(port => {
+  if(connectDemoPage(port))return;
   if (port.name !== 'panel') return;
   port.onMessage.addListener(() => {}); // Panel heartbeats keep pending interactive flows alive.
 });
@@ -662,7 +662,7 @@ chrome.tabs.onUpdated.addListener(async(id,change,tab)=>{
     }
   });
   const {pdfCreated={}}=await api.storage.session.get('pdfCreated');
-  if(environment===activeEnvironment&&!changingEnvironment&&change.status==='complete'&&pdfCreated[id]&&!darkResultSource(tab.url,chrome.runtime.getURL('reader.html'),environment))await capturePdf(tab,undefined,false,environment).catch(()=>{});
+  if(sameEnvironment(environment,activeEnvironment)&&!changingEnvironment&&change.status==='complete'&&pdfCreated[id]&&!darkResultSource(tab.url,chrome.runtime.getURL('reader.html'),environment))await capturePdf(tab,undefined,false,environment).catch(()=>{});
 });
 // Document IDs, rather than delayed loading events, invalidate a direct reader snapshot.
 chrome.webNavigation.onCommitted.addListener(async details=>{
@@ -692,10 +692,6 @@ chrome.tabs.onRemoved.addListener(async id=>{
 });
 // Restore saved preferences without replaying any previous alert or query.
 chrome.runtime.onStartup.addListener(async () => { audioAlerts.stop(); await boot; await restoreAlertPreferences(); });
-chrome.permissions?.onRemoved?.addListener(async permissions=>{
-  await boot;
-  if(activeEnvironment.demo&&permissions.origins?.includes(DEMO_PERMISSION))await changeEnvironment(false).catch(()=>{});
-});
 /** Reuse the guide window when possible; installation is the only automatic trigger. */
 async function openShortcutSetup() {
   const url = chrome.runtime.getURL('shortcut-setup.html');
@@ -728,7 +724,7 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
       // Reader requests are bound to the extraction job and its tab/document identity.
       case 'reader-start': {
         const reader = readers.get(message.id);
-        if(reader?.environment!==environment||reader?.run?.signal.aborted)throw new Error('Unknown PDF reader or expired search environment.');
+        if(!sameEnvironment(reader?.environment,environment)||reader?.run?.signal.aborted)throw new Error('Unknown PDF reader or expired search environment.');
         if (!reader || reader.tabId != null && sender.tab?.id !== reader.tabId
           || reader.documentId && reader.documentId !== sender.documentId
           || reader.expectedUrl && sender.url !== reader.expectedUrl) throw new Error('Unknown PDF reader.');
@@ -745,7 +741,7 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
       case 'pdf-native-print': return openNativePrint(sender,message.url,message.text);
       case 'reader-result': {
         const reader = readers.get(message.id);
-        if(reader?.environment!==environment||reader?.run?.signal.aborted)throw new Error('Unknown PDF reader or expired search environment.');
+        if(!sameEnvironment(reader?.environment,environment)||reader?.run?.signal.aborted)throw new Error('Unknown PDF reader or expired search environment.');
         if (!reader || sender.tab?.id !== reader.tabId
           || reader.documentId && reader.documentId !== sender.documentId
           || reader.expectedUrl && sender.url !== reader.expectedUrl
@@ -836,7 +832,7 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
         return true;
       }
       // These snapshots are restricted to extension-owned pages by the router above.
-      case 'state': return {demoMode:environment.demo,demoOrigin:DEMO.origin,blacklist: await currentBlacklist(environment), ...await chrome.storage.local.get(environment.demo?['pdfDarkMode','dmvDarkMode','shortcutMenuNoTimeout','shortcutMenuAlwaysOnTop']:['vault','pdfDarkMode','dmvDarkMode','shortcutMenuNoTimeout','shortcutMenuAlwaysOnTop']), ...await api.storage.session.get(['history', 'queue', 'status', 'alertsEnabled', 'backgroundStatusSearch', 'showDriverIdentity', 'speechEnabled', 'repeatSpeech', 'suspendedClipEnabled', 'voiceSource', 'voiceGender', 'voiceName']), voices: await availableVoices().catch(() => []), commands: await chrome.commands.getAll(), extensionId: chrome.runtime.id};
+      case 'state': return {demoMode:environment.demo,demoOrigin:DEMO.root,blacklist: await currentBlacklist(environment), ...await chrome.storage.local.get(environment.demo?['pdfDarkMode','dmvDarkMode','shortcutMenuNoTimeout','shortcutMenuAlwaysOnTop']:['vault','pdfDarkMode','dmvDarkMode','shortcutMenuNoTimeout','shortcutMenuAlwaysOnTop']), ...await api.storage.session.get(['history', 'queue', 'status', 'alertsEnabled', 'backgroundStatusSearch', 'showDriverIdentity', 'speechEnabled', 'repeatSpeech', 'suspendedClipEnabled', 'voiceSource', 'voiceGender', 'voiceName']), voices: await availableVoices().catch(() => []), commands: await chrome.commands.getAll(), extensionId: chrome.runtime.id};
       // Appearance updates persist independently of credentials and query state.
       case 'dmv-display-settings': {
         await chrome.storage.local.set({dmvDarkMode:message.enabled===true});await configureDmvTheme();await refreshDmvThemeTabs();return message.enabled===true;
@@ -854,7 +850,18 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
         return task;
       }
       case 'demo-mode': return changeEnvironment(message.enabled===true);
-      case 'open-demo': {if(!environment.demo)throw new Error('Enable Demo Mode first.');await chrome.tabs.create({url:DEMO.origin+'/',active:true});return true;}
+      case 'reviewer-guide': await chrome.tabs.create({url:chrome.runtime.getURL('reviewer-guide.html'),active:true});return true;
+      case 'demo-report-open': {
+        if(!environment.demo||!sender.url?.startsWith(DEMO.member)||sender.tab?.id==null||sender.frameId!==0)throw new Error('Open this report from the packaged practice portal in Demo Mode.');
+        checkEnvironment(environment);const source=reportSource(message.url,environment);if(!source)throw new Error('Choose a packaged demonstration report.');
+        const {pdfDarkMode}=await chrome.storage.local.get('pdfDarkMode'),reader=chrome.runtime.getURL('reader.html');
+        const url=reader+'?pdf=1&demo=1&dark='+(pdfDarkMode===true?'1':'0')+'#'+source;
+        const tabs=await chrome.tabs.query({windowId:sender.tab.windowId}),existing=tabs.find(tab=>darkResultSource(tab.url,reader,environment)&&new URL(tab.url).searchParams.get('demo')==='1'&&!tab.pendingUrl);
+        checkEnvironment(environment);
+        if(existing)await chrome.tabs.update(existing.id,{url});else await chrome.tabs.create({url,active:false,openerTabId:sender.tab.id,windowId:sender.tab.windowId});
+        return true;
+      }
+      case 'open-demo': {if(!environment.demo)throw new Error('Enable Demo Mode first.');await chrome.tabs.create({url:DEMO.root+'index.html',active:true});return true;}
       case 'pdf-display-settings': await setPdfRouting(message.enabled === true,environment); await chrome.storage.local.set({pdfDarkMode: message.enabled === true}); return message.enabled === true;
       // Reset cancels workflows and drains metadata writes before deleting private session state.
       case 'clear-saved-user-info': {

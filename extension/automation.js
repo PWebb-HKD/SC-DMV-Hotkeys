@@ -7,7 +7,7 @@ import {ERROR_SELECTOR, samePage, isPortal, isPdf, isPortalErrorPage, loginSucce
 import {pageOperation} from './page.js';
 import {guardedApi} from './run.js';
 import {watchResults} from './results.js';
-import {environmentOf} from './environment.js';
+import {environmentOf,memberPage,sameAuthority} from './environment.js';
 
 const LOGOFF = '#ContentPlaceHolder1_menuContainer > div > div:nth-child(1) > div:nth-child(1) > div.panel-body > ul > li:nth-child(1) > a';
 const USER = '#ContentPlaceHolder1_userNameText', PASS = '#ContentPlaceHolder1_passwordText';
@@ -16,7 +16,8 @@ const api = ctx => guardedApi(ctx?.browserApi || chrome, ctx?.run);
 export const delay = (ms, ctx) => ctx?.run ? ctx.run.step(() => new Promise(resolve => setTimeout(resolve, ms))) : new Promise(resolve => setTimeout(resolve, ms));
 /** Run one self-contained DOM operation in the page MAIN world and return its result. */
 export async function evaluate(tabId, op, args = {}, ctx) {
-  const results = await api(ctx).scripting.executeScript({target: {tabId}, world: 'MAIN', func: pageOperation, args: [op, {...args,demo:environmentOf(ctx).demo}]});
+  if(environmentOf(ctx).demo&&ctx?.demoOperation)return ctx.demoOperation(tabId,op,args,ctx.run);
+  const results = await api(ctx).scripting.executeScript({target: {tabId}, world: 'MAIN', func: pageOperation, args: [op, {...args,demo:environmentOf(ctx).demo,demoRoot:environmentOf(ctx).demo?environmentOf(ctx).root:undefined}]});
   if (!results.length) throw new Error('The page could not be accessed.');
   return results[0].result;
 }
@@ -101,10 +102,10 @@ export async function focusTab(tabId, ctx) {
 }
 /** Reuse a portal tab but exclude PDF results, preserving those reports for follow-ups. */
 export async function portalTab(ctx) {
-  const environment=environmentOf(ctx),ROOT=environment.origin,LOGIN=environment.login;
+  const environment=environmentOf(ctx),LOGIN=environment.login;
   if (ctx?.queryTask) return api(ctx).tabs.get(ctx.queryTask.tabId);
   const {portalId} = await api(ctx).storage.session.get('portalId');
-  const tabs = (await api(ctx).tabs.query({url: `${ROOT}/*`})).filter(t => isPortal(t.url,environment));
+  const tabs = (await api(ctx).tabs.query({url: `${environment.origin}/*`})).filter(t => isPortal(t.url,environment));
   const target = tabs.find(t => t.id === portalId) || tabs.find(t => t.active) || tabs.sort((a,b) => (b.lastAccessed || 0) - (a.lastAccessed || 0))[0] || await api(ctx).tabs.create({url: LOGIN, active: false});
   await api(ctx).storage.session.set({portalId: target.id});
   // A fresh session skips login, so focus cannot be left to the login path.
@@ -181,7 +182,7 @@ async function ensureSession(tabId, ctx) {
 /** Recover unexpected first-page navigation, with logoff for stale transaction menus. Never retry a
  * submitted transaction: the broken-session redirect happens before any form fill. */
 async function initialSearchPage(tabId, url, reusedSession, ctx) {
-  const environment=environmentOf(ctx),LOGIN=environment.login,TRANSACTIONS=environment.member+'Transactions/TransactionList.aspx';
+  const environment=environmentOf(ctx),LOGIN=environment.login,TRANSACTIONS=memberPage(environment,'Transactions/TransactionList.aspx');
   // Wait for the completed redirect destination, not just the originally requested URL.
   const load = async () => {
     await navigateTab(tabId, url, ctx, 'opening the DMV search form');
@@ -222,21 +223,21 @@ const SEARCHES = {
 };
 /** Run a plate/license/customer/address transaction using the shared Page1/Page2 flow. */
 export async function search(kind, value, ctx) {
-  const environment=environmentOf(ctx),MEMBER=environment.member,LOGIN=environment.login;
+  const environment=environmentOf(ctx),LOGIN=environment.login;
   const tab = await portalTab(ctx); ctx.tabId = tab.id;
   const reusedSession = await ensureSession(tab.id, ctx);
   const [path, query, selector] = SEARCHES[kind];
-  const base = `${MEMBER}Transactions/${path}/`;
+  const page=name=>memberPage(environment,`Transactions/${path}/${name}.aspx`);
   ctx.status(`Submitting ${kind} search`);
-  const firstPage = await initialSearchPage(tab.id, `${base}Page1.aspx${query}`, reusedSession, ctx);
+  const firstPage = await initialSearchPage(tab.id, page('Page1')+query, reusedSession, ctx);
   // Sessions can expire early; do not rely solely on the ten-minute clock.
   if (samePage(firstPage.url, LOGIN)) {
-    await login(tab.id, ctx); await navigate(tab.id, `${base}Page1.aspx${query}`, ctx);
+    await login(tab.id, ctx); await navigate(tab.id, page('Page1')+query, ctx);
   }
-  await ready(tab.id, selector, ctx, `${base}Page1.aspx`);
+  await ready(tab.id, selector, ctx, page('Page1'));
   if (kind === 'plate') {
     await click(tab.id, '#ContentPlaceHolder1_rblReportType_0', ctx);
-    await delay(500, ctx); await ready(tab.id, selector, ctx, `${base}Page1.aspx`);
+    await delay(500, ctx); await ready(tab.id, selector, ctx, page('Page1'));
   }
   await ctx.beforeSubmit?.();
   await evaluate(tab.id, 'fill', {selector, value}, ctx);
@@ -246,11 +247,11 @@ export async function search(kind, value, ctx) {
     const t = await api(ctx).tabs.get(tab.id);
     if (t.status !== 'complete') return false;
     const s = await state(tab.id, undefined, ctx);
-    await checkPageErrors(s, [`${base}Page1.aspx`, `${base}Page2.aspx`], ctx);
+    await checkPageErrors(s, [page('Page1'), page('Page2')], ctx);
     if (samePage(t.url, LOGIN)) throw new Error('The DMV session expired during the search. Please run it again.');
-    return samePage(t.url, `${base}Page2.aspx`);
+    return samePage(t.url, page('Page2'));
   }, 'search results', 60000, ctx);
-  await ready(tab.id, '#downloadButton', ctx, `${base}Page2.aspx`);
+  await ready(tab.id, '#downloadButton', ctx, page('Page2'));
   const watcher = await (ctx.watchResults || watchResults)(tab.id, ctx);
   let result;
   try {
@@ -263,7 +264,7 @@ export async function search(kind, value, ctx) {
       const current = found?.tab || await api(ctx).tabs.get(tab.id);
       if (current.status !== 'complete' || isPdf(current.url,environment)) return false;
       if (found) { ctx.tabId = current.id; await focusTab(current.id, ctx); }
-      await checkPageErrors(await state(current.id, undefined, ctx), [`${base}Page1.aspx`, `${base}Page2.aspx`], ctx);
+      await checkPageErrors(await state(current.id, undefined, ctx), [page('Page1'), page('Page2')], ctx);
       if (samePage(current.url, LOGIN)) throw new Error('The DMV session expired while opening the report. Please run it again.');
       return false;
     }, 'the PDF results tab', 60000, ctx);
@@ -281,13 +282,13 @@ const SC_SEARCH = '#home button[ng-click="searchCitation()"]';
 /** Follow the portal handoff, retain the declared DMV-origin boundary, and wait
  * for the real form. Notify both fields after filling before clicking Search. */
 export async function scutties(identity, ctx) {
-  const environment=environmentOf(ctx),MEMBER=environment.member,ROOT=environment.origin;
+  const environment=environmentOf(ctx);
   const tab = await portalTab(ctx); ctx.tabId = tab.id;
   await ensureSession(tab.id, ctx);
-  await api(ctx).tabs.update(tab.id, {url: `${MEMBER}Transactions/TransactionList.aspx`});
-  await ready(tab.id, 'a[href="/SCTRNS/Member/Transactions/SCUTTIES/SCUTTIES.aspx"]', ctx);
+  await api(ctx).tabs.update(tab.id, {url: memberPage(environment,'Transactions/TransactionList.aspx')});
+  await ready(tab.id, `a[href="${environment.demo?new URL(memberPage(environment,'Transactions/SCUTTIES/SCUTTIES.aspx')).pathname:'/SCTRNS/Member/Transactions/SCUTTIES/SCUTTIES.aspx'}"]`, ctx);
   const previous = new Set((await api(ctx).tabs.query({})).map(t => t.id));
-  await click(tab.id, 'a[href="/SCTRNS/Member/Transactions/SCUTTIES/SCUTTIES.aspx"]', ctx);
+  await click(tab.id, `a[href="${environment.demo?new URL(memberPage(environment,'Transactions/SCUTTIES/SCUTTIES.aspx')).pathname:'/SCTRNS/Member/Transactions/SCUTTIES/SCUTTIES.aspx'}"]`, ctx);
   ctx.status('Waiting for SCUTTIES sign-in and search form');
   let destination, focusedDestination = tab.id;
   await until(async () => {
@@ -298,10 +299,10 @@ export async function scutties(identity, ctx) {
       if (t.id === candidates[0].id && t.id !== focusedDestination) {
         await focusTab(t.id, ctx); focusedDestination = t.id;
       }
-      if (t.status !== 'complete' || !/^https?:\/\//i.test(t.url || '')) continue;
+      if (t.status !== 'complete' || !['http:','https:','chrome-extension:'].includes(new URL(t.url||'about:blank').protocol)) continue;
       ctx.tabId = t.id;
-      // The transaction link establishes the session; automation remains inside the declared DMV origin.
-      if (new URL(t.url).origin !== ROOT) throw new Error('SCUTTIES opened a site outside the permitted DMV origin. Complete any external sign-in manually and return to the DMV site before trying again.');
+      // The transaction link establishes the session; automation stays inside the captured environment.
+      if (!sameAuthority(new URL(t.url),new URL(environment.root))) throw new Error('SCUTTIES opened a site outside the permitted DMV origin. Complete any external sign-in manually and return to the DMV site before trying again.');
       const s = await state(t.id, SC_NAME, ctx);
       await checkPageErrors(s, [], ctx);
       if (s.present) { destination = t; return true; }

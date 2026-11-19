@@ -3,12 +3,13 @@ import {normalize,ownerNumbers} from '/extension/core.js';
 import {extractDemoPdf} from './report-tools.js';
 import {setupScutties} from './scutties.js';
 import {setupScenarios,expireDemoSession,startDemoSearch,prepareDemoResult} from './scenarios.js';
+import {demoData,reportUrl,packaged} from './data-source.js';
 const page=document.body.dataset.demoPage,$=id=>document.getElementById(id),params=new URL(location.href).searchParams;
 const error=message=>{const target=$('demo-error');target.textContent=message;target.closest('[role="alert"]').hidden=false;};
 const reset=()=>{for(const key of Object.keys(sessionStorage))if(key.startsWith('scdmv-demo-'))sessionStorage.removeItem(key);};
 function queueState(){try {const q=JSON.parse(sessionStorage.getItem('scdmv-demo-queue'));return Array.isArray(q?.customers)&&Number.isInteger(q.index)?q:null;}catch{return null;}}
 async function setup(){
-  const [P,catalog]=await Promise.all(['/api/paths','/api/cases'].map(path=>fetch(path).then(response=>{if(!response.ok)throw new Error('Demo catalog unavailable.');return response.json();})));
+  const [P,catalog]=await Promise.all(['paths','cases'].map(demoData));
   $('reset-demo').addEventListener('click',reset);
   $('demo-logoff')?.addEventListener('click',reset);
   if(!['home','login'].includes(page)&&sessionStorage.getItem('scdmv-demo-auth')!=='true'){location.replace(P.login);return;}
@@ -80,9 +81,13 @@ async function setup(){
   if(failure)error('Demonstration PDF-service failure is enabled for this result. Open PDF or a preview to see the failure; return to search to retry normally.');
   const identity=$('demo-show-identity');
   if(identity){identity.checked=sessionStorage.getItem('scdmv-demo-show-identity')==='true';identity.onchange=()=>sessionStorage.setItem('scdmv-demo-show-identity',String(identity.checked));}
-  const pdf=()=>window.open(P.pdf+'?case='+record.id+failure,'scdmv-demo-report');
+  const pdf=()=>window.open(reportUrl(record.id,!!failure),'scdmv-demo-report');
   $('downloadButton').onclick=pdf;$('ContentPlaceHolder1_btnPrint').onclick=pdf;
-  for(const action of ['status','barcode'])if($('preview-'+action))$('preview-'+action).onclick=()=>window.open('/extension/'+(action==='status'?'panel':'barcode')+'.html?id=demo&demo='+record.id+failure+(action==='status'&&identity?.checked?'&identity=1':''),'scdmv-demo-'+action,'popup,width='+(action==='status'?650:1000)+',height=800');
+  for(const action of ['status','barcode'])if($('preview-'+action)){
+    if(packaged){$('preview-'+action).hidden=true;continue;}
+    $('preview-'+action).onclick=()=>window.open('/extension/'+(action==='status'?'panel':'barcode')+'.html?id=demo&demo='+record.id+failure+(action==='status'&&identity?.checked?'&identity=1':''),'scdmv-demo-'+action,'popup,width='+(action==='status'?650:1000)+',height=800');
+  }
+  if(packaged&&identity)identity.closest('label').hidden=true;
   if(type==='residence'){
     const collect=$('collect-customers');collect.disabled=true;
     if(failure)return;

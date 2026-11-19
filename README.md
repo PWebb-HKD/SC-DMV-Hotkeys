@@ -1,6 +1,6 @@
 # SC DMV Hotkeys
 
-A Chromium Manifest V3 extension for authorized SCDMV member searches, PDF follow-ups, status alerts, and PDF417 data-entry barcodes. Current version: **1.8.42**.
+A Chromium Manifest V3 extension for authorized SCDMV member searches, PDF follow-ups, status alerts, and PDF417 data-entry barcodes. Current version: **1.8.43**.
 
 ## Install and update
 
@@ -98,7 +98,7 @@ Additional voice settings appear only while **Voice status alerts** is enabled. 
 
 The theme uses layered important user-origin CSS and a coexistence marker to take priority over ordinary page styles and compatible theme extensions. It neutralizes inversion and blending filters. Other equally privileged user styles or extensions that replace page content can still conflict. Reload DMV tabs after disabling the native theme if another theme engine needs to reapply.
 
-**Toggle dark mode on or off for pdf results pages.** is the independent, opt-in PDF switch in the same Dark Mode group. It redirects new top-level attachment results to a local viewer in the same tab. Pages scroll continuously and render near the viewport. Neutral paper and ink are recolored outside embedded image regions so license photos retain their pixels. Unsupported image operations keep a page in original colors. Text selection remains available across pages even when distant canvases are released.
+**Toggle dark mode on or off for pdf results pages.** is the independent, opt-in PDF switch in the same Dark Mode group. New top-level attachment results always use the bundled viewer in the same tab; this switch chooses its light or dark colors. Pages scroll continuously and render near the viewport. Neutral paper and ink are recolored outside embedded image regions so license photos retain their pixels. Unsupported image operations keep a page in original colors. Text selection remains available across pages even when distant canvases are released.
 
 The viewer's Print button and Ctrl+P/Cmd+P open the exact loaded PDF in Chromium's native renderer for printing. Printing uses an immutable local copy, not a new request to the session-dependent attachment URL.
 
@@ -124,11 +124,13 @@ Persistent local storage contains the encrypted vault and non-sensitive appearan
 
 The vault uses PBKDF2-SHA-256 and AES-GCM, with a random salt and a fresh IV for every write. Unlocking keeps the derived key only in trusted session storage. Local and session storage access is restricted to extension contexts. Website theme scripts receive only an enabled flag, not private state.
 
-Permissions support storage, DMV tab automation, scripting, navigation tracking, optional PDF redirection, and local audio. Host access is limited to `https://www.scdmvonline.com/*`; the manifest declares no optional host permissions. There is no external audio service or native helper.
+Permissions support storage, DMV tab automation, scripting, navigation tracking, bundled PDF routing, and local audio. Host access is limited to `https://www.scdmvonline.com/*`; the manifest declares no optional host permissions. There is no external audio service or native helper.
 
 ## Development and validation
 
-The local synthetic practice portal is available with `npm run demo` at `http://127.0.0.1:4173`. Sign in with `demo` / `demo` and use the listed plate, DL, customer or same-residence scenarios. It includes real synthetic PDFs, previews using existing status/barcode rendering code, saved-owner customer follow-ups, a local residence queue and a SCUTTIES citation search/detail demonstration, optional synthetic driver-photo/no-photo previews and controlled session/search failure scenarios. Enable **Settings → Practice environment → Demo Mode** to run the extension’s normal commands against **http://127.0.0.1:4173** with fixed demo/demo credentials and separate history, queue, reports and demo blacklist. Demo Mode defaults off and requests optional local-host access. Turning it off restores live routing. Alert and appearance preferences are shared. Demo-only changes do not increment extension release versions. See [demo/README.md](demo/README.md) for sample numbers, scope, data isolation and checks.
+The synthetic practice portal is bundled with the extension. Enable **Settings → Practice environment → Demo Mode**, then select **Open practice portal** or **Reviewer & demo guide**. No Node installation, server, extra host permission or real account is needed. Normal extension commands use fixed demo/demo credentials, fictional selectable-text PDFs and separate demo history, queue, reports and session-only blacklist. Status/barcode/owner/residence/SCUTTIES workflows share the normal implementation; alert and appearance preferences remain shared. Turning Demo Mode off restores live routing. For manual website development only, `npm run demo` still serves the independent HTTP preview at `http://127.0.0.1:4173`. See [demo/README.md](demo/README.md) for cases and boundaries. Demo-only changes do not increment extension release versions.
+
+Build a runtime-only Web Store ZIP with `npm run package:webstore`. The build audits current permissions, checks generated demo assets and enforces a reviewed runtime-file allowlist. Reviewer instructions, native validation steps, permission rationale and privacy/listing drafts are in [reviewer/](reviewer/REVIEWER-NOTES.md). These drafts are preparation materials; no store submission or publication is performed.
 
 See [DEVELOPMENT.md](DEVELOPMENT.md) for module responsibilities, workflow/storage contracts, and review decisions. First-party files live in `extension/`, maintenance scripts in `tools/`, and synthetic regression cases in `tests/`. Third-party libraries and their licenses remain in `extension/vendor/`.
 

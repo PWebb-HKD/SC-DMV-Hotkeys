@@ -30,9 +30,10 @@
     <section id="settingsView" role="tabpanel" aria-labelledby="settingsTab" hidden>
       <section class="alerts-setting" aria-labelledby="demoModeTitle">
         <h2 id="demoModeTitle">Practice environment</h2>
-        <label class="alerts-toggle" for="demoModeToggle"><span>Demo Mode<small>Route searches to the local synthetic practice site at http://127.0.0.1:4173. Uses demo / demo; your live DMV login and blacklist are not used.</small></span><span class="switch-control"><input id="demoModeToggle" type="checkbox" role="switch"><span class="switch-track" aria-hidden="true"></span></span></label>
-        <p class="hint">Start the demo server first with node server.mjs from the demo folder. Switching environments stops current work. History, queues, reports and demo blacklist entries stay separate; alert and appearance preferences are shared.</p>
+        <label class="alerts-toggle" for="demoModeToggle"><span>Demo Mode<small>Use the synthetic practice site bundled with this extension. No server or additional access permission is needed. Your live DMV login and blacklist are separate.</small></span><span class="switch-control"><input id="demoModeToggle" type="checkbox" role="switch"><span class="switch-track" aria-hidden="true"></span></span></label>
+        <p class="hint">Open the practice portal below to start. Switching environments stops current work. History, queues, reports and demo blacklist entries stay separate; alert and appearance preferences are shared.</p>
         <button id="openDemo" class="secondary" type="button" hidden>Open practice portal</button>
+        <button id="openReviewerGuide" class="secondary" type="button">Reviewer &amp; demo guide</button>
       </section>
     <div class="alerts-setting">
       <label class="alerts-toggle" for="alertsToggle"><span>Plate & license status alerts<small>Enable for status popups displaying the status of a Driver's License or Licens Plate. Popups auto close after 90 seconds and 30 seconds if they are valid.</small></span><span class="switch-control"><input id="alertsToggle" type="checkbox" role="switch" aria-controls="statusAlertSettings"><span class="switch-track" aria-hidden="true"></span></span></label>
@@ -62,7 +63,7 @@
       <section id="appearanceSettings" class="alerts-setting appearance-settings" aria-labelledby="appearanceTitle">
         <h2 id="appearanceTitle">Dark Mode</h2>
         <label class="alerts-toggle" for="dmvDarkMode"><span>Darkmode for the DMV website<small>Toggle to enable or disable dark mode across the dmv website pages</small></span><span class="switch-control"><input id="dmvDarkMode" type="checkbox" role="switch"><span class="switch-track" aria-hidden="true"></span></span></label>
-        <label class="alerts-toggle" for="pdfDarkMode"><span>Toggle dark mode on or off for pdf results pages.<small>Applies to newly opened PDF results in the same results tab. Pages scroll continuously. Image-only portions retain their original colors.</small></span><span class="switch-control"><input id="pdfDarkMode" type="checkbox" role="switch"><span class="switch-track" aria-hidden="true"></span></span></label>
+        <label class="alerts-toggle" for="pdfDarkMode"><span>Toggle dark mode on or off for pdf results pages.<small>New PDF results always use the bundled viewer. Toggle its default light/dark colors. Photos retain their original colors; Print opens the original PDF.</small></span><span class="switch-control"><input id="pdfDarkMode" type="checkbox" role="switch"><span class="switch-track" aria-hidden="true"></span></span></label>
       </section>
       <section class="alerts-setting" aria-labelledby="shortcutMenuTitle">
         <h2 id="shortcutMenuTitle">Hotkey Menu</h2>

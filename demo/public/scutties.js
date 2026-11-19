@@ -1,10 +1,9 @@
 /** Local SCUTTIES simulation. Never submits names/DOBs, authenticates remotely or uses extension storage. */
 import {driverIdentity} from '/extension/core.js';
+import {demoData} from './data-source.js';
 const stateKey='scdmv-demo-scutties';
 export async function setupScutties(error){
-  const $=id=>document.getElementById(id),response=await fetch('/api/scutties');
-  if(!response.ok)throw new Error('Demo citations unavailable.');
-  const catalog=await response.json(),last=$('scutties-last'),dob=$('scutties-dob'),search=$('scutties-search');
+  const $=id=>document.getElementById(id),catalog=await demoData('scutties'),last=$('scutties-last'),dob=$('scutties-dob'),search=$('scutties-search');
   let selected=null,openedNumber=null;
   const clearError=()=>{$('demo-error').closest('[role="alert"]').hidden=true;};
   const save=entry=>sessionStorage.setItem(stateKey,JSON.stringify({caseId:selected.id,entry:entry||null}));

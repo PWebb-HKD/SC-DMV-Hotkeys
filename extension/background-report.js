@@ -2,8 +2,13 @@
 function pageOperation(op, args = {}) {
   // Dedicated background transports capture Download's window.open handoff without
   // allowing the website to focus a new browser window. No transaction is repeated.
-  const origin=args.demo===true?'http://127.0.0.1:4173':'https://www.scdmvonline.com';
-  if(location.origin!==origin)throw new Error('This page belongs to a different search environment.');
+  const demo=args.demo===true;
+  const demoRoot=demo?globalThis.chrome?.runtime?.getURL?.('demo/'):null;
+  if(demo){
+    if(!demoRoot||args.demoRoot!==demoRoot||!location.href.startsWith(demoRoot+'SCTRNS/'))throw new Error('This page belongs to a different search environment.');
+  }else if(location.origin!=='https://www.scdmvonline.com')throw new Error('This page belongs to a different search environment.');
+  const origin=location.origin,loginPath=demo?new URL('SCTRNS/Member/logon.html',demoRoot).pathname:'/SCTRNS/Member/logon.aspx';
+  const reportUrl=value=>{try{const u=new URL(value,location.href);return demo?u.href.startsWith(demoRoot+'reports/')&&/\/[A-Z0-9]+\.pdf$/.test(u.pathname):u.origin===origin&&/\/ViewAttachment\.aspx$/i.test(u.pathname);}catch{return false;}};
   const reportKey = '__scDmvBackgroundReport';
   if (op === 'startBackgroundReport') {
     window[reportKey]?.dispose();
@@ -12,7 +17,7 @@ function pageOperation(op, args = {}) {
     const capture = value => {
       if (!value || value === 'about:blank') return;
       const url = new URL(String(value), location.href);
-      if (url.origin !== origin || !/\/ViewAttachment\.aspx$/i.test(url.pathname)) {
+      if (!reportUrl(url.href)) {
         job.error = 'The DMV opened an unsupported report destination. Background search stopped; it was not resubmitted.';
         return;
       }
@@ -20,7 +25,7 @@ function pageOperation(op, args = {}) {
     };
     const link = event => {
       const anchor = event.target.closest?.('a[href]');
-      if (anchor && /\/ViewAttachment\.aspx(?:[?#]|$)/i.test(anchor.href)) {event.preventDefault();event.stopImmediatePropagation();capture(anchor.href);}
+      if (anchor && reportUrl(anchor.href)) {event.preventDefault();event.stopImmediatePropagation();capture(anchor.href);}
     };
     const replacement = value => {
       capture(value);
@@ -68,8 +73,8 @@ function pageOperation(op, args = {}) {
   }
   // Reassert extension-owned credentials before submit so browser autofill cannot switch accounts.
   if (op === 'extensionLogin') {
-    if (location.origin === origin && !/^\/SCTRNS\/Member\/logon\.aspx$/i.test(location.pathname)) return true;
-    if (location.origin !== origin || !/^\/SCTRNS\/Member\/logon\.aspx$/i.test(location.pathname)) {
+    if (location.origin === origin && location.pathname.toLowerCase()!==loginPath.toLowerCase()) return true;
+    if (location.origin !== origin || location.pathname.toLowerCase()!==loginPath.toLowerCase()) {
       throw new Error('Extension credentials may only be filled on the SCDMV login page.');
     }
     if(args.demo===true&&(args.credentials?.user!=='demo'||args.credentials?.password!=='demo'))throw new Error('Only the fixed demonstration credentials may be used on the local demo.');
@@ -114,7 +119,7 @@ function pageOperation(op, args = {}) {
   if (op === 'fetchPdf') return (async () => {
     if (location.origin !== origin) throw new Error('PDF fetch must use the DMV session.');
     const u = new URL(args.url);
-    if (u.origin !== location.origin || !/\/ViewAttachment\.aspx$/i.test(u.pathname)) throw new Error('Unexpected PDF URL.');
+    if (!reportUrl(u.href)) throw new Error('Unexpected PDF URL.');
     const response = await fetch(u.href, {credentials: 'include', cache: 'no-store', signal: AbortSignal.timeout(25000)});
     if (!response.ok) throw new Error(`PDF request failed (${response.status}).`);
     const bytes = new Uint8Array(await response.arrayBuffer());
@@ -128,4 +133,4 @@ function pageOperation(op, args = {}) {
 }
 
 // Only a query tab armed by the worker has this expiring marker.
-try {if(Number(sessionStorage.getItem('__scDmvBackgroundReport'))>Date.now())pageOperation('startBackgroundReport',{persistent:true,demo:location.origin==='http://127.0.0.1:4173'});}catch{}
+try {if(Number(sessionStorage.getItem('__scDmvBackgroundReport'))>Date.now())pageOperation('startBackgroundReport',{persistent:true});}catch{}

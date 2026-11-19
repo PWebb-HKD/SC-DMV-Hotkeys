@@ -4,12 +4,13 @@
 $ErrorActionPreference = 'Stop'
 $project = Split-Path $PSScriptRoot -Parent
 $sourceFiles = @(
-    foreach ($folder in @('extension','tools','demo')) {
+    foreach ($folder in @('extension','tools','demo','reviewer')) {
         Get-ChildItem -LiteralPath (Join-Path $project $folder) -Recurse -File
     }
     Get-ChildItem -LiteralPath (Join-Path $project 'tests') -File
     Get-ChildItem -LiteralPath (Join-Path $project 'tests/fixtures') -Recurse -File
-    foreach ($file in @('README.md','DEVELOPMENT.md','package.json','package-lock.json','.gitignore')) {
+    Get-ChildItem -LiteralPath (Join-Path $project 'tests/helpers') -Recurse -File
+    foreach ($file in @('README.md','DEVELOPMENT.md','package.json','package-lock.json','.gitignore','.gitattributes')) {
         Get-Item -LiteralPath (Join-Path $project $file)
     }
 )

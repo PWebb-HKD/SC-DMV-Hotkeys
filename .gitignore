@@ -12,3 +12,6 @@ node_modules/
 *.pdf
 *.pem
 *.key
+
+# Only generated fictional practice reports are packaged.
+!extension/demo/reports/*.pdf

@@ -5,7 +5,6 @@
  */
 import {COMMANDS} from './core.js';
 import {BLACKLIST_TYPES, blacklistEntry} from './blacklist.js';
-import {DEMO_PERMISSION} from './environment.js';
 const $ = id => document.getElementById(id);
 let refreshGeneration=0;
 const DESCRIPTIONS = {
@@ -199,13 +198,12 @@ $('stopAudio').onclick = () => send({type: 'stop-audio'}).catch(error => feedbac
 $('demoModeToggle').onchange=async()=>{
   const input=$('demoModeToggle'),enabled=input.checked;input.disabled=true;
   try{
-    // Request the narrow optional host permission directly in this user gesture.
-    if(enabled&&!await chrome.permissions.request({origins:[DEMO_PERMISSION]}))throw new Error('Local demo access was not granted. Demo Mode remains off.');
     await send({type:'demo-mode',enabled});await refresh();feedback('');
   }catch(error){feedback(error.message);await refresh();}
   finally{input.disabled=false;}
 };
 $('openDemo').onclick=()=>send({type:'open-demo'}).catch(error=>feedback(error.message));
+$('openReviewerGuide').onclick=()=>send({type:'reviewer-guide'}).catch(error=>feedback(error.message));
 $('driverIdentityToggle').onchange = async event => {
   const input = event.target, enabled = input.checked; input.disabled = true;
   try { await send({type:'driver-identity-settings',enabled}); feedback(''); }

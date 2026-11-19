@@ -610,7 +610,7 @@ test('redirected PDF captures in the DMV results tab, rejects other documents, s
   await wait(()=>session.status==='PDF dark view unavailable: Synthetic rendering failure');assert.equal(session[`pdf:${tab.id}`].text,driverReport);assert.equal(removedTabs.includes(tab.id),false);
   delete session[`pdf:${tab.id}`];delete session.pdfViewSources[tab.id];
   await send({type:'run',command:'barcode'});await wait(()=>panel('notice'));assert.match(session.status,/captured text.*no longer available/);assert.equal(nextId,next);
-  await send({type:'pdf-display-settings',enabled:false});assert.deepEqual(routingUpdates.at(-1).addRules,[]);
+  await send({type:'pdf-display-settings',enabled:false});assert.match(routingUpdates.at(-1).addRules[0].action.redirect.regexSubstitution,/dark=0&pdf=1/);
 });
 
 

@@ -6,6 +6,8 @@ import {fileURLToPath} from 'node:url';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const bridgeCheck=spawnSync(process.execPath,[join(root,'tools/build-background-report.mjs'),'--check'],{encoding:'utf8'});
 if(bridgeCheck.status)throw new Error(bridgeCheck.stderr);
+const demoCheck=spawnSync(process.execPath,[join(root,'tools/build-demo.mjs'),'--check'],{encoding:'utf8'});
+if(demoCheck.status)throw new Error(demoCheck.stderr);
 for(const path of ['background-search.js','background-report.js'])if(!existsSync(join(root,'extension',path)))throw new Error(`Missing query asset: ${path}`);
 const manifest = JSON.parse(readFileSync(join(root, 'extension/manifest.json'), 'utf8'));
 const project = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));

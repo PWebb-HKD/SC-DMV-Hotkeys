@@ -1,0 +1,23 @@
+# Reviewer access notes — SC DMV Hotkeys 1.8.43
+
+Suggested text for the Chrome Web Store review instructions:
+
+> The live service requires an authorized SCDMV account. We cannot provide an approved live test account. Please use the openly available, self-contained synthetic Demo Mode: open the extension toolbar → Settings → Practice environment → Demo Mode → Open practice portal. No server, local runtime, network permission prompt or real account is required. The packaged Reviewer & demo guide provides sample inputs and expected results. Enable status popups and driver photo/name display before the first search. Use the normal Recent searches buttons or assign Alt+H to Open Shortcut Menu. Start with DL 100000101 or plate DEMO005. The demo uses shared command dispatch, workflow, PDF parsing, alert, queue and barcode implementations, with packaged fictional pages/reports and a separate demo state namespace. It is disclosed and available to all users; it is not a hidden reviewer bypass. SCUTTIES has fictional search results and read-only citation details. Native printing deliberately opens the original PDF in Chrome's native viewer. Please request further information if live-service verification beyond this synthetic environment is needed.
+
+The runtime ZIP is the file ending in `-webstore.zip`, with manifest.json at its root. Reviewer notes, audit reports, media and privacy/listing drafts are separate attachments, not part of the runtime ZIP. No submission or publication is performed by the build tools.
+
+## What the demo represents
+
+The fixture preserves search selectors and transaction transitions without live credentials/tokens or private driver data. Shared automation uses an owned port for packaged pages, because injecting scripts into extension pages is not required. Live pages continue to use the scripting API. Synthetic report bytes are real selectable-text PDFs; photo extraction, placeholder suppression and barcode generation use the normal parsers/controllers. The same queue and cancellation rules apply. Demo sessions, queues, report caches and blacklist entries do not use the live vault.
+
+The normal website-preview adapter and Node development server are not included in the runtime. The generated portal and catalogs/PDFs are installed with the extension. Packaged service failures are explicit local simulations, including a deliberately incomplete synthetic PDF. There are no government graphics or real records in the practice pages; the extension retains its existing application branding.
+
+## Validation limits
+
+Automated cloud checks use real Chromium pages, the actual worker/controllers and bundled PDF.js with explicit Chrome API substitutes. The managed cloud browser blocks extension installation; its policy was not bypassed. A separate clean-profile native check is still required using NATIVE-VALIDATION.md before submission. The walkthrough video is labeled as an automated synthetic UI walkthrough and is not evidence of native OS focus/minimize behavior or Web Store approval.
+
+## Rebuild the attachments
+
+From the repository root, run `npm run package:webstore` for the runtime ZIP, permission audit and hashed file inventory. `npm run reviewer:walkthrough` additionally extracts that ZIP, runs the fresh-storage browser harness and composes a 60-second MP4 from actual synthetic UI captures with captions. Development playback requires Playwright/Chromium and FFmpeg; these tools are not reviewer installation requirements. The video is a captioned sequence of captured workflow states, not a native screen recording. Outputs stay under ignored output/reviewer/.
+
+Before submission, complete NATIVE-VALIDATION.md on a policy-permitted clean Chrome profile and replace the privacy draft's contact placeholder with a monitored publisher-controlled contact. Host that final policy at a public URL and reconcile the Store privacy form with actual data handling. The listing draft specifies intended unlisted distribution. Reviewer acceptance of the synthetic environment remains Google's decision.

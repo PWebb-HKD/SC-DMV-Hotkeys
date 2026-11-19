@@ -1,6 +1,6 @@
 {
   "name": "scdmv-hotkeys",
-  "version": "1.8.42",
+  "version": "1.8.43",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,7 +9,12 @@
     "test:dmv-theme": "node tests/dmv-theme-browser.mjs",
     "demo": "node demo/server.mjs",
     "test:demo": "node tests/demo-browser.mjs && node tests/demo-records-browser.mjs && node tests/demo-scutties-browser.mjs && node tests/demo-recovery-browser.mjs",
-    "test:demo-extension": "node tests/demo-extension-browser.mjs"
+    "test:demo-extension": "node tests/demo-extension-browser.mjs",
+    "test:reviewer-package": "node tests/reviewer-package-browser.mjs",
+    "reviewer:walkthrough": "node tests/reviewer-package-browser.mjs --video",
+    "build:demo": "node tools/build-demo.mjs",
+    "audit:permissions": "node tools/audit-permissions.mjs",
+    "package:webstore": "node tools/build-webstore.mjs"
   },
   "devDependencies": {
     "darkreader": "4.9.135"

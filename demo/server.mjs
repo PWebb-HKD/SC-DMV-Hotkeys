@@ -8,7 +8,7 @@ import {demoPage} from './pages.mjs';
 import {syntheticPdf} from './pdf.mjs';
 import {SCUTTIES_CASES} from './scutties-cases.mjs';
 const extensionRoot=fileURLToPath(new URL('../extension/',import.meta.url));
-const assets=new Map(['portal.js','scutties.js','scenarios.js','preview-bridge.js','report-tools.js','style.css'].map(name=>['/demo/'+name,new URL('./public/'+name,import.meta.url)]));
+const assets=new Map(['portal.js','scutties.js','scenarios.js','data-source.js','preview-bridge.js','report-tools.js','style.css'].map(name=>['/demo/'+name,new URL('./public/'+name,import.meta.url)]));
 assets.set('/demo/scenario-data.js',new URL('./scenarios.mjs',import.meta.url));
 const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.mjs':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.png':'image/png','.wasm':'application/wasm'};
 /** Wrap only this HTTP preview, keeping production extension files byte-for-byte unchanged. */
