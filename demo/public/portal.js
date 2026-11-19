@@ -61,6 +61,7 @@ async function setup(){
         startDemoSearch({P,record,destination,resultKey:key});
       } catch(problem){error(problem.message);}
     });
+    for(const control of document.querySelectorAll('[data-demo-ready]'))control.disabled=false;
   }
   if(!['result','driver-result','address-result'].includes(page))return;
   const type=page==='result'?'plate':page==='driver-result'?'license':'residence';

@@ -23,6 +23,19 @@ try {
     for(const id of ['ContentPlaceHolder1_userNameText','ContentPlaceHolder1_passwordText','ContentPlaceHolder1_loginButton'])assert.equal(await blank.locator('#'+id).isDisabled(),true);
     await noScript.close();
   });
+  await check('record inputs stay disabled until catalog loading installs the local submit handler',async()=>{
+    const waiting=await browser.newContext(),gate=Promise.withResolvers();
+    await waiting.addInitScript(()=>sessionStorage.setItem('scdmv-demo-auth','true'));
+    await waiting.route('**/api/cases',async route=>{await gate.promise;await route.continue();});
+    const delayed=await waiting.newPage();
+    try{
+      await delayed.goto(site.url+P.search,{waitUntil:'domcontentloaded'});
+      assert.equal(await delayed.locator('#ContentPlaceHolder1_txtPlateNbr').isDisabled(),true);assert.equal(await delayed.locator('#btnFooterNavNext').isDisabled(),true);
+      gate.resolve();await delayed.locator('#ContentPlaceHolder1_txtPlateNbr').fill('DEMO001');await delayed.locator('#btnFooterNavNext').click();
+      await delayed.waitForURL(url=>url.pathname===P.result&&url.searchParams.get('case')==='DEMO001');
+      assert.equal(new URL(delayed.url()).searchParams.has('ctl00$ContentPlaceHolder1$txtPlateNbr'),false);
+    }finally{gate.resolve();await waiting.close();}
+  });
   await check('demo starts at a clearly labeled landing page and protects direct search navigation',async()=>{
     await page.goto(site.url);assert.match(await page.locator('.demo-banner').textContent(),/SYNTHETIC DATA/);
     await page.screenshot({path:join(screenshots,'home.png'),fullPage:true});

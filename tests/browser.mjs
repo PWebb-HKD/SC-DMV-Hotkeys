@@ -38,7 +38,7 @@ try {
     else if (u.pathname.endsWith('/Disclaimer.aspx')) html = '<button id="accept">I Agree</button>';
     else if (u.pathname.endsWith('/TransactionList.aspx') && brokenTransactions) html = '<div id="ContentPlaceHolder1_menuContainer"><div><div><div><div class="panel-body"><ul><li><a id="logoff" href="#">Log off</a></li></ul></div></div></div></div></div>';
     else if (u.pathname.endsWith('/TransactionList.aspx')) html = '<a href="/SCTRNS/Member/Transactions/SCUTTIES/SCUTTIES.aspx">SCUTTIES</a>';
-    else if (u.pathname.includes('/SCUTTIES/')) html = '<div id="home"><input id="last"><input id="dob"><button id="go">Search</button></div>';
+    else if (u.pathname.includes('/SCUTTIES/')) html = '<div id="home"><input id="last" ng-model="searchData.violatorLastName"><input id="dob" ng-model="searchData.violatorBirthDate"><button id="go">Search</button></div>';
     else if (u.pathname.endsWith('/Page1.aspx')) html = `<input id="ContentPlaceHolder1_rblReportType_0" type="radio"><input id="ContentPlaceHolder1_txtPlateNbr"><input id="ContentPlaceHolder1_dlNumberTextBox"><input id="ContentPlaceHolder1_idNumberTextBox"><input id="ContentPlaceHolder1_txtDLNumber"><button id="btnFooterNavNext">Next</button>`;
     else if (u.pathname.endsWith('/Page2.aspx')) html = '<button id="downloadButton">Open PDF</button>';
     else html = 'Fixture PDF result';
@@ -141,7 +141,7 @@ try {
     if (update.active) { activated.push(id); for (const r of tabs.values()) r.tab.active = r.tab.id === id; }
     return {...record.tab};
   }
-  await context.route(`${MEMBER}Transactions/SCUTTIES/Search.aspx`, route => route.fulfill({contentType:'text/html',body:`<div id="home"><div><div class="col-xs-12 row"><div></div><div></div><div><div class="panel-body"><div><div><input id="last"></div><div><input id="dob"></div><div class="col-xs-8"><button>Other</button><button id="scSearch" disabled>Search</button></div></div></div></div></div></div></div><script>
+  await context.route(`${MEMBER}Transactions/SCUTTIES/Search.aspx`, route => route.fulfill({contentType:'text/html',body:`<div id="home"><div><div class="col-xs-12 row"><div></div><div></div><div><div class="panel-body"><div><div><input id="last" ng-model="searchData.violatorLastName"></div><div><input id="dob" ng-model="searchData.violatorBirthDate"></div><div class="col-xs-8"><button>Other</button><button id="scSearch" ng-click="searchCitation()" disabled>Search</button></div></div></div></div></div></div></div><script>
     window.events=[];window.formModel={};window.delegatedEvents=[];
     const last=document.querySelector('#last'),dob=document.querySelector('#dob'),search=document.querySelector('#scSearch');
     for(const type of ['input','change','keyup','blur'])document.querySelector('#home').addEventListener(type,event=>{
@@ -279,6 +279,7 @@ try {
       autofillMode='filled';session.lastQuery=0;await updateTab(session.portalId,{url:LOGIN});
       const before=loginClicks;
       const manual=new Promise((resolve,reject)=>setTimeout(()=>updateTab(session.portalId,{url:DISCLAIMER}).then(resolve,reject),delay));
+      manual.catch(()=>{}); // Observe navigation while automation runs; await below still reports failures.
       await search('customer','12345678',ctx);await manual;
       assert.equal(loginClicks,before);
     }

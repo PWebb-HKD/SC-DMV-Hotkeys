@@ -3,6 +3,7 @@
  * Parsing functions have no Chrome dependency and are exercised directly by unit tests.
  * COMMANDS.key is a preferred shortcut; it does not assign browser shortcuts.
  */
+import {LIVE} from './environment.js';
 export const ROOT = 'https://www.scdmvonline.com';
 export const MEMBER = `${ROOT}/SCTRNS/Member/`;
 export const PDF_URL = `${MEMBER}Transactions/ViewAttachment.aspx`;
@@ -23,38 +24,38 @@ export const COMMANDS = {
   help: {label: 'Open Shortcut Menu', key: 'Alt+H'}
 };
 /** Unwrap recognized Chromium PDF viewer URLs with bounded recursion; reject other origins. */
-export function attachmentUrl(url = '', depth = 0) {
+export function attachmentUrl(url = '', depth = 0, environment = LIVE) {
   if (!url || depth > 3) return null;
   try {
     const u = new URL(url);
-    if (u.origin === ROOT && u.pathname.toLowerCase() === new URL(PDF_URL).pathname.toLowerCase()) { u.hash = ''; return u.href; }
+    if (u.origin === environment.origin && u.pathname.toLowerCase() === new URL(environment.pdf).pathname.toLowerCase()) { u.hash = ''; return u.href; }
     if (['chrome-extension:', 'chrome:', 'edge:', 'chrome-untrusted:'].includes(u.protocol)) {
       if (u.pathname === '/reader.html' && u.searchParams.get('pdf') === '1' && u.hash) {
-        const source = attachmentUrl(u.hash.slice(1), depth + 1); if (source) return source;
+        const source = attachmentUrl(u.hash.slice(1), depth + 1, environment); if (source) return source;
       }
       for (const key of ['src', 'file', 'url', 'originalUrl', 'streamUrl']) {
         const inner = u.searchParams.get(key);
-        if (inner) { const source = attachmentUrl(inner, depth + 1); if (source) return source; }
+        if (inner) { const source = attachmentUrl(inner, depth + 1, environment); if (source) return source; }
       }
     }
   } catch { /* Not a supported viewer URL. */ }
   return null;
 }
 /** Recognize attachment URLs directly or through supported browser-viewer wrappers. */
-export function isPdf(url = '') { return !!attachmentUrl(url); }
+export function isPdf(url = '', environment = LIVE) { return !!attachmentUrl(url,0,environment); }
 /** Limit working tabs to the DMV HTTPS origin while excluding PDF attachment views. */
-export function isPortal(url = '') {
-  try { return new URL(url).origin === ROOT && !isPdf(url); } catch { return false; }
+export function isPortal(url = '', environment = LIVE) {
+  try { return new URL(url).origin === environment.origin && !isPdf(url,environment); } catch { return false; }
 }
 /** Compare origin and case-insensitive path, deliberately ignoring query strings and fragments. */
 export function samePage(a, b) {
   try { const x = new URL(a), y = new URL(b); return x.origin === y.origin && x.pathname.toLowerCase() === y.pathname.toLowerCase(); } catch { return false; }
 }
 /** Recognize the dedicated DMV failure endpoint, including query and path-case variations. */
-export function isPortalErrorPage(url = '') { return samePage(url, `${MEMBER}ErrorPage.aspx`); }
+export function isPortalErrorPage(url = '', environment = LIVE) { return samePage(url, `${environment.member}ErrorPage.aspx`); }
 /** Accept a same-origin redirect away from login only when it is not the dedicated error endpoint. */
-export function loginSucceeded(url = '') {
-  try { return new URL(url).origin === ROOT && !samePage(url, LOGIN) && !isPortalErrorPage(url); } catch { return false; }
+export function loginSucceeded(url = '', environment = LIVE) {
+  try { return new URL(url).origin === environment.origin && !samePage(url, environment.login) && !isPortalErrorPage(url,environment); } catch { return false; }
 }
 /** Remove spaces and numeric leading zeroes before enforcing DL/customer length limits. */
 export function normalize(kind, input) {

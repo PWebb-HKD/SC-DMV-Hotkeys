@@ -4,10 +4,10 @@
  * credentials requests, and message authorization; DOM work belongs to page.js.
  * See DEVELOPMENT.md for the lifecycle and storage/message contracts.
  */
-import {COMMANDS, ROOT, PDF_URL, attachmentUrl, isPdf, isPortal, normalize, ownerNumbers, isResidenceReport, driverLicense, driverIdentity, historySearch} from './core.js';
+import {COMMANDS, attachmentUrl, isPdf, isPortal, normalize, ownerNumbers, isResidenceReport, driverLicense, driverIdentity, historySearch} from './core.js';
 import {search, scutties, evaluate, focusTab, navigateTab, PortalSearchError} from './automation.js';
 import {saveCredentials, unlockCredentials, blacklistState, addBlacklistEntry, removeBlacklistEntry, forgetCredentials, replaceCredentials, clearSavedUserInfo} from './vault.js';
-import {checkBlacklist, driverIdentifiers, validateBlacklist, BlacklistedSearchError} from './blacklist.js';
+import {checkBlacklist, driverIdentifiers, validateBlacklist, blacklistEntry, BlacklistedSearchError} from './blacklist.js';
 import {SearchRun, guardedApi, isCancelled} from './run.js';
 import {safeDriverIdentity, driverName} from './driver-identity.js';
 import {recordStatus, unavailableAlert} from './status-alerts.js';
@@ -17,7 +17,13 @@ import {backgroundMethod, backgroundSearch, reusableBackgroundResult} from './ba
 import {configureDmvTheme, initDmvTheme, refreshDmvThemeTabs, isDmvThemePage} from './dmv-theme-settings.js';
 import {darkResultSource, setPdfRouting, isNativePrintUrl} from './pdf-routing.js';
 import {reportBarcode, reportBarcodeDraft, VehiclePartyError} from './barcode-data.js';
+import {LIVE,DEMO,DEMO_PERMISSION,environmentApi,environmentOf,reportEnvironment} from './environment.js';
 const audioAlerts = new AudioAlerts();
+let activeEnvironment=LIVE,changingEnvironment=null;
+let demoBlacklistWriting=Promise.resolve();
+const workApi=(run,environment=run?.environment||activeEnvironment)=>guardedApi(environmentApi(chrome,environment),run);
+const reportSource=(url,environment=activeEnvironment)=>attachmentUrl(url,0,environment);
+const checkEnvironment=environment=>{if(environment!==activeEnvironment||changingEnvironment)throw new DOMException('Search environment changed.','AbortError');};
 
 // In-memory Maps hold live callbacks. Session storage holds view/report data, not
 // resumable jobs. openingPanel and tracking serialize two independent mutation streams.
@@ -34,10 +40,56 @@ const boot = Promise.all([
   chrome.storage.local.remove('history'),
   // Retire the removed shortcut-pause preference on update or worker startup.
   chrome.storage.session.remove('shortcutsPaused'),
-  chrome.storage.local.get('pdfDarkMode').then(({pdfDarkMode}) => setPdfRouting(pdfDarkMode === true)),
+  chrome.storage.local.get(['demoMode','pdfDarkMode']).then(async({demoMode,pdfDarkMode})=>{
+    const granted=demoMode===true&&await chrome.permissions.contains({origins:[DEMO_PERMISSION]});
+    activeEnvironment=granted?DEMO:LIVE;await configureDemoHooks(granted);await setPdfRouting(pdfDarkMode===true,activeEnvironment);
+    if(demoMode===true&&!granted)await chrome.storage.local.set({demoMode:false});
+  }),
   initializeAlertPreferences(),
   configureDmvTheme().catch(error=>chrome.storage.session.set({status:`DMV website dark mode unavailable: ${error.message}`}))
 ]);
+/** Register the bundled postback hook only after the user grants narrow loopback access. */
+async function configureDemoHooks(enabled){
+  const id='demo-background-report',scripts=await chrome.scripting.getRegisteredContentScripts();
+  if(scripts.some(script=>script.id===id))await chrome.scripting.unregisterContentScripts({ids:[id]});
+  if(enabled)await chrome.scripting.registerContentScripts([{id,matches:['http://127.0.0.1/SCTRNS/*'],js:['background-report.js'],runAt:'document_start',allFrames:false,world:'MAIN',persistAcrossSessions:true}]);
+}
+/** Stop the current generation before switching routing; preserve each environment's separate session data. */
+function changeEnvironment(enabled){
+  const previous=changingEnvironment||Promise.resolve();
+  const task=previous.catch(()=>{}).then(async()=>{
+    if(enabled&&!await chrome.permissions.contains({origins:[DEMO_PERMISSION]}))throw new Error('Allow access to the local demo host before enabling Demo Mode.');
+    const target=enabled?DEMO:LIVE;
+    if(target===activeEnvironment)return target.demo;
+    const run=beginRun();await run.cleanup;await tracking;
+    // Running readers cannot acknowledge or publish after this boundary.
+    for(const reader of readers.values())reader.reject(new DOMException('Search environment changed.','AbortError'));
+    const {pdfDarkMode}=await chrome.storage.local.get('pdfDarkMode');
+    try{
+      await configureDemoHooks(enabled);await setPdfRouting(pdfDarkMode===true,target);
+      await chrome.storage.local.set({demoMode:target.demo});
+    }catch(error){
+      await configureDemoHooks(activeEnvironment.demo).catch(()=>{});await setPdfRouting(pdfDarkMode===true,activeEnvironment).catch(()=>{});throw error;
+    }
+    activeEnvironment=target;
+    await workApi().storage.session.set({status:target.demo?'DEMO MODE — synthetic local records only':'Live DMV mode — ready'});
+    run.cancel();return target.demo;
+  });
+  changingEnvironment=task;
+  task.finally(()=>{if(changingEnvironment===task)changingEnvironment=null;}).catch(()=>{});
+  return task;
+}
+/** Demo protection is session-only and never reads or edits the live encrypted vault. */
+async function currentBlacklist(environment=activeEnvironment){
+  if(!environment.demo)return blacklistState();
+  const {blacklist=[]}=await workApi(undefined,environment).storage.session.get('blacklist');
+  return {demo:true,hasVault:false,unlocked:true,entries:validateBlacklist(blacklist)};
+}
+/** Order demo edits without touching the separate live vault mutation queue. */
+function editDemoBlacklist(environment,change){
+  const task=demoBlacklistWriting.then(async()=>{const {entries}=await currentBlacklist(environment);await workApi(undefined,environment).storage.session.set({blacklist:validateBlacklist(change(entries))});return currentBlacklist(environment);});
+  demoBlacklistWriting=task.catch(()=>{});return task;
+}
 /** Replace the active command and cancel its readers, audio, and panels. Callers await
  * run.cleanup before opening new UI; late-created windows also check this run.
  * Search dispatch preserves pinned launchers; Stop and private-state reset close them. */
@@ -46,7 +98,7 @@ function beginRun({preservePinnedMenu = false} = {}) {
   audioAlerts.stop();
   activeRun?.cancel();
   for (const capture of captures.values()) capture.run.cancel();
-  const run = new SearchRun(); activeRun = run;
+  const run = new SearchRun(); run.environment=activeEnvironment; activeRun = run;
   const cleanup = [];
   for (const [id, entry] of panels) {
     if (preservePinnedMenu && entry.data.type === 'shortcut-menu' && entry.pinned === true) continue;
@@ -66,6 +118,7 @@ function track(fn) { const task = tracking.then(fn); tracking = task.catch(() =>
  * the asynchronous create. This closes the race with Stop or disabling alerts. */
 async function createPanel(data, callbacks = {}, run) {
   run?.check();
+  data={...data,environment:(run?.environment||activeEnvironment).id,demo:(run?.environment||activeEnvironment).demo};
   const id = crypto.randomUUID();
   const entry = {windowId: null, data, run, ...callbacks};
   panels.set(id, entry);
@@ -91,7 +144,7 @@ function openShortcutMenu() {
   openingShortcutMenu = (async()=>{
     const run = new SearchRun(); shortcutMenuRun = run;
     try {
-      await run.step(()=>boot);
+      await run.step(()=>boot);run.environment=activeEnvironment;
       const existing = [...panels.values()].find(entry=>entry.data.type === 'shortcut-menu');
       if (existing) {await run.step(()=>chrome.windows.update(existing.windowId,{focused:true,state:'normal'}));return;}
       const source = await run.step(()=>sourceTab());
@@ -120,7 +173,7 @@ async function report(error, tabId, run) {
   if (isCancelled(error) || run?.signal.aborted) return;
   const message = error?.message || String(error);
   try {
-    await guardedApi(chrome, run).storage.session.set({status: message});
+    await workApi(run).storage.session.set({status: message});
     if (tabId) await focusTab(tabId, {run});
     await notice(message, {}, run);
   } catch (e) { if (!isCancelled(e)) throw e; }
@@ -133,12 +186,19 @@ async function sourceTab() {
 /** Prefer the focused report; otherwise select the newest tracked results tab. */
 async function pdfTab(source, run) {
   run?.check();
-  const {pdfViewSources = {}} = await guardedApi(chrome, run).storage.session.get('pdfViewSources');
+  const environment=run?.environment||activeEnvironment;
+  const sourceEnvironment=reportEnvironment(source?.pendingUrl)||reportEnvironment(source?.url);
+  if(sourceEnvironment&&sourceEnvironment!==environment)throw new Error('This PDF belongs to a different environment. Switch Demo Mode before using this report.');
+  if(source){
+    const other=environment.demo?LIVE:DEMO,{pdfViewSources={}}=await workApi(run,other).storage.session.get('pdfViewSources');
+    if(typeof pdfViewSources[source.id]==='string'&&(isNativePrintUrl(source.url,pdfViewSources[source.id])||isNativePrintUrl(source.pendingUrl,pdfViewSources[source.id])))throw new Error('This printed PDF belongs to a different environment. Switch Demo Mode before using this report.');
+  }
+  const {pdfViewSources = {}} = await workApi(run).storage.session.get('pdfViewSources');
   const isView = tab => pdfViewSources[tab.id] === true ? tab.url?.startsWith(chrome.runtime.getURL('reader.html') + '?') : typeof pdfViewSources[tab.id] === 'string' && (isNativePrintUrl(tab.url,pdfViewSources[tab.id]) || isNativePrintUrl(tab.pendingUrl,pdfViewSources[tab.id]));
   if (source && isView(source)) return source;
-  if (source && (isPdf(source.url) || isPdf(source.pendingUrl))) return source;
-  const api = guardedApi(chrome, run);
-  const tabs = (await api.tabs.query({})).filter(t => isPdf(t.url) || isPdf(t.pendingUrl) || isView(t));
+  if (source && (isPdf(source.url,environment) || isPdf(source.pendingUrl,environment))) return source;
+  const api = workApi(run);
+  const tabs = (await api.tabs.query({})).filter(t => isPdf(t.url,environment) || isPdf(t.pendingUrl,environment) || isView(t));
   if (!tabs.length) throw new Error('No open SCDMV PDF results tab was found.');
   const {pdfCreated = {}} = await api.storage.session.get('pdfCreated');
   // Chromium tab IDs are used only as a fallback for tabs predating installation.
@@ -146,10 +206,11 @@ async function pdfTab(source, run) {
 }
 /** Capture one report snapshot per tab. The fixed attachment URL is session-dependent;
  * never refetch an untracked historical report and assume it is the same person. */
-async function capturePdf(tab, portalId, forceDirect = false) {
+async function capturePdf(tab, portalId, forceDirect = false, environment=activeEnvironment) {
+  checkEnvironment(environment);
   const existing = captures.get(tab.id);
   if (existing && !existing.run.signal.aborted) return existing.promise;
-  const run = new SearchRun(), api = guardedApi(chrome, run);
+  const run = new SearchRun();run.environment=environment;const api = workApi(run);
   let resolveReady, rejectReady;
   const ready = new Promise((resolve, reject) => {resolveReady = resolve; rejectReady = reject;});
   ready.catch(() => {}); // Temporary extraction readers do not need the direct-start handshake.
@@ -159,19 +220,19 @@ async function capturePdf(tab, portalId, forceDirect = false) {
     if ((await api.storage.session.get(cacheKey))[cacheKey]?.text) {resolveReady(null);return;}
     const {pdfDarkMode = false} = await api.storage.local.get('pdfDarkMode');
     const includeDriverIdentity = (await api.storage.session.get('showDriverIdentity')).showDriverIdentity === true;
-    capture.sameTab = forceDirect || !!darkResultSource(tab.pendingUrl || tab.url, chrome.runtime.getURL('reader.html')) || (pdfDarkMode && !!portalId);
+    capture.sameTab = forceDirect || !!darkResultSource(tab.pendingUrl || tab.url, chrome.runtime.getURL('reader.html'),environment) || (pdfDarkMode && !!portalId);
     const {pdfCreated = {}, pdfSources = {}} = await api.storage.session.get(['pdfCreated', 'pdfSources']);
     if (!pdfCreated[tab.id]) throw new Error('This PDF predates extension tracking. Run its search again so the extension can capture the correct report.');
     const portal = portalId ? await api.tabs.get(portalId).catch(() => null) : null;
-    const candidates = portal ? [portal] : (await api.tabs.query({url: `${ROOT}/*`})).filter(t => isPortal(t.url));
+    const candidates = portal ? [portal] : (await api.tabs.query({url: `${environment.origin}/*`})).filter(t => isPortal(t.url,environment));
     const parent = candidates.find(t => t.id === tab.openerTabId) || candidates[0];
     let base64 = null;
-    const sourceUrl = attachmentUrl(tab.pendingUrl) || attachmentUrl(tab.url) || pdfSources[tab.id] || PDF_URL;
+    const sourceUrl = reportSource(tab.pendingUrl,environment) || reportSource(tab.url,environment) || pdfSources[tab.id] || environment.pdf;
     if (parent) {
-      try { base64 = await evaluate(parent.id, 'fetchPdf', {url: sourceUrl}, {run}); } catch { run.check(); }
+      try { base64 = await evaluate(parent.id, 'fetchPdf', {url: sourceUrl}, {run,environment,browserApi:environmentApi(chrome,environment)}); } catch { run.check(); }
     }
     const id = crypto.randomUUID();
-    const promise = new Promise((resolve, reject) => {readers.set(id, {resolve, reject, base64, url: sourceUrl, pdfId: tab.id, includeDriverIdentity});});
+    const promise = new Promise((resolve, reject) => {readers.set(id, {resolve, reject, base64, url: sourceUrl, pdfId: tab.id, environment, run, includeDriverIdentity});});
     let readerTab, timer;
     try {
       run.check();
@@ -180,7 +241,7 @@ async function capturePdf(tab, portalId, forceDirect = false) {
       const cancelled = () => chrome.runtime.sendMessage({target:'pdf-reader',type:'reader-cancel',id}).catch(() => {});
       if(capture.sameTab)run.signal.addEventListener('abort',cancelled,{once:true});
       reader.cancelled = cancelled;
-      resolveReady({id, base64, url: sourceUrl, includeDriverIdentity, sameTab: capture.sameTab});
+      resolveReady({id, base64, url: sourceUrl, includeDriverIdentity, demo:environment.demo, sameTab: capture.sameTab});
       timer = setTimeout(() => reader.reject(new Error('PDF text extraction timed out.')), 45000);
       const text = await run.step(() => promise);
       if (!text.trim()) throw new Error('This PDF has no extractable text. Scanned PDFs require OCR; enter a number manually.');
@@ -203,11 +264,13 @@ async function capturePdf(tab, portalId, forceDirect = false) {
 }
 /** The redirected document joins its tab-bound capture; it never opens a second results tab. */
 async function attachPdfViewer(sender) {
-  const readerUrl = chrome.runtime.getURL('reader.html'), source = darkResultSource(sender.url, readerUrl);
+  const environment=activeEnvironment,api=workApi(undefined,environment);
+  const readerUrl = chrome.runtime.getURL('reader.html'), source = darkResultSource(sender.url, readerUrl,environment);
   if (!source || sender.tab?.id == null || sender.frameId !== 0 || new URL(sender.url).searchParams.has('id')) throw new Error('Unknown PDF results page. Run its search again.');
   const tab = await chrome.tabs.get(sender.tab.id);
-  if (darkResultSource(tab.url, readerUrl) !== source) throw new Error('The PDF results tab has changed.');
+  if (darkResultSource(tab.url, readerUrl,environment) !== source) throw new Error('The PDF results tab has changed.');
   await tracking;
+  checkEnvironment(environment);
   let capture = captures.get(tab.id), job;
   if (capture?.documentId && capture.documentId !== sender.documentId)capture.run.cancel();
   if (capture && !capture.run.signal.aborted && !capture.attached) {
@@ -216,14 +279,14 @@ async function attachPdfViewer(sender) {
   if (!job?.sameTab) {
     capture?.run.cancel();
     await track(async () => {
-      const {pdfCreated = {}, pdfSources = {}} = await chrome.storage.session.get(['pdfCreated','pdfSources']);
+      const {pdfCreated = {}, pdfSources = {}} = await api.storage.session.get(['pdfCreated','pdfSources']);
       pdfCreated[tab.id] = Date.now(); pdfSources[tab.id] = source;
-      await chrome.storage.session.set({pdfCreated, pdfSources});
-      await chrome.storage.session.remove(`pdf:${tab.id}`);
+      await api.storage.session.set({pdfCreated, pdfSources});
+      await api.storage.session.remove(`pdf:${tab.id}`);
     });
     // Completion is consumed by resultReady()/pdfText(), or recorded here for a manual DMV download.
-    capturePdf(tab, undefined, true).catch(error => {
-      if (!isCancelled(error)) chrome.storage.session.set({status: `PDF follow-ups unavailable: ${error.message}`}).catch(() => {});
+    capturePdf(tab, undefined, true,environment).catch(error => {
+      if (!isCancelled(error)) api.storage.session.set({status: `PDF follow-ups unavailable: ${error.message}`}).catch(() => {});
     });
     capture = captures.get(tab.id);capture.documentId = sender.documentId;job = await capture.ready;
   }
@@ -235,14 +298,17 @@ async function attachPdfViewer(sender) {
 /** A trusted reader owns the original Blob and its text; printing does not need
  * background capture jobs, mutable tab URLs, or webNavigation frame metadata. */
 async function openNativePrint(sender,url,reportText) {
+  const environment=activeEnvironment,api=workApi(undefined,environment);
   if(!sender.tab || !sender.url?.startsWith(chrome.runtime.getURL('reader.html')+'?') || sender.frameId!==0) throw new Error('Open the report in the PDF viewer before using Print.');
+  if(reportEnvironment(sender.url)!==activeEnvironment)throw new Error('Switch to the report’s environment before printing.');
   const prefix=`blob:${chrome.runtime.getURL('')}`;
   if(typeof url!=='string' || !url.startsWith(prefix) || !/^[a-f0-9-]{36}$/i.test(url.slice(prefix.length))) throw new Error('The original PDF file could not be prepared. Reopen the report and try Print again.');
   // The text comes from the same loaded document that created the immutable Blob.
   // Never borrow a different report's text from the shared tab/session cache.
   const text=typeof reportText==='string' && reportText.length<=1000000 ? reportText : '';
   return track(async()=>{
-    const {pdfCreated={},pdfViewSources={}}=await chrome.storage.session.get(['pdfCreated','pdfViewSources']);
+    checkEnvironment(environment);
+    const {pdfCreated={},pdfViewSources={}}=await api.storage.session.get(['pdfCreated','pdfViewSources']);
     for(const [id,knownUrl] of Object.entries(pdfViewSources)) {
       if(knownUrl!==url)continue;
       const tab=await chrome.tabs.get(+id).catch(()=>null);
@@ -251,14 +317,14 @@ async function openNativePrint(sender,url,reportText) {
     const tab=await chrome.tabs.create({url,active:true,openerTabId:sender.tab.id});
     try {
       pdfViewSources[tab.id]=url;pdfCreated[tab.id]=pdfCreated[sender.tab.id]||Date.now();
-      await chrome.storage.session.set({pdfViewSources,pdfCreated,[`pdf:${tab.id}`]:{text,capturedAt:Date.now()}});
+      await api.storage.session.set({pdfViewSources,pdfCreated,[`pdf:${tab.id}`]:{text,capturedAt:Date.now()}});
       await focusTab(tab.id);return true;
     } catch(error) {await chrome.tabs.remove(tab.id).catch(()=>{});throw error;}
   });
 }
 /** Return the selected report snapshot, capturing only when it is safe to refetch. */
 async function pdfText(source, run) {
-  const api = guardedApi(chrome, run);
+  const api = workApi(run);
   const tab = await pdfTab(source, run), cacheKey = `pdf:${tab.id}`;
   let cached = (await api.storage.session.get(cacheKey))[cacheKey];
   if (!cached && captures.has(tab.id) && !captures.get(tab.id).run.signal.aborted) {
@@ -267,25 +333,26 @@ async function pdfText(source, run) {
   }
   if (!cached) {
     const {pdfViewSources = {}} = await api.storage.session.get('pdfViewSources');
-    if (pdfViewSources[tab.id] || darkResultSource(tab.url, chrome.runtime.getURL('reader.html'))) throw new Error('The captured text for this PDF view is no longer available. Run its search again.');
+    if (pdfViewSources[tab.id] || darkResultSource(tab.url, chrome.runtime.getURL('reader.html'),environmentOf({run}))) throw new Error('The captured text for this PDF view is no longer available. Run its search again.');
     // If a newer report exists, re-fetching the fixed URL could silently select the wrong person.
     const {pdfCreated = {}} = await api.storage.session.get('pdfCreated');
     const newest = Math.max(...Object.values(pdfCreated), 0);
     if (!pdfCreated[tab.id] || pdfCreated[tab.id] < newest) throw new Error('The original text for this PDF is unavailable. Run its search again before using a PDF command.');
-    await run.step(() => capturePdf(tab));
+    await run.step(() => capturePdf(tab,undefined,false,environmentOf({run})));
     cached = (await api.storage.session.get(cacheKey))[cacheKey];
   }
   return cached.text;
 }
 /** Keep at most twenty search attempts in this session; identity supports replay. */
 async function addHistory(kind, value, run, details = {}) {
-  const api = guardedApi(chrome, run);
+  const api = workApi(run);
   const {history = []} = await api.storage.session.get('history');
   await api.storage.session.set({history: [{...details, id: crypto.randomUUID(), kind, value, at: Date.now()}, ...history].slice(0, 20)});
 }
 /** Use extension session credentials or ask to enter/unlock them; ignore browser autofill. */
 async function credentials(tabId, run) {
-  const api = guardedApi(chrome, run);
+  if(environmentOf({run}).demo)return {user:'demo',password:'demo'};
+  const api = workApi(run);
   const {credentials} = await api.storage.session.get('credentials');
   if (credentials?.user && credentials?.password) return credentials;
   const {vault} = await api.storage.local.get('vault');
@@ -294,13 +361,14 @@ async function credentials(tabId, run) {
 /** Supply workflow callbacks without coupling automation.js to panel/storage internals. */
 function context(run) {
   return {
-    run,
-    status: message => guardedApi(chrome, run).storage.session.set({status: message}).catch(() => {}),
+    run,environment:environmentOf({run}),browserApi:environmentApi(chrome,environmentOf({run})),
+    status: message => workApi(run).storage.session.set({status: message}).catch(() => {}),
     credentials: tabId => credentials(tabId, run)
   };
 }
 /** Never navigate to a search while a saved blacklist is still encrypted. */
 async function unlockedBlacklist(run) {
+  if(environmentOf({run}).demo)return (await workApi(run).storage.session.get('blacklist')).blacklist||[];
   let current = await run.step(() => blacklistState());
   if (current.hasVault && !current.unlocked) {
     const unlocked = await ask({type: 'credentials', hasVault: true, unlockOnly: true}, run);
@@ -318,7 +386,7 @@ async function authorizeIdentifiers(identifiers, run, requireIdentifiers = false
 }
 /** Display the mandatory blocking warning independently of optional status-alert preferences. */
 async function showBlacklistWarning(error, run) {
-  await guardedApi(chrome, run).storage.session.set({status: error.message});
+  await workApi(run).storage.session.set({status: error.message});
   await createPanel({type: 'record-alert', blacklist: true, tone: 'danger', autoCloseMs: 90000,
     subject: 'SEARCH BLOCKED: BLACKLIST', sections: [{title: error.message, lines: []}]}, {}, run);
 }
@@ -326,7 +394,7 @@ async function showBlacklistWarning(error, run) {
  * DMV errors are recorded as failed attempts; queued errors consume their position.
  * PDF extraction and optional status analysis continue without blocking the next command. */
 async function runSearch(kind, value, ctx, advance) {
-  const api = guardedApi(chrome, ctx.run);
+  const api = workApi(ctx.run);
   const identifier = {kind: kind === 'address' ? 'license' : kind, value};
   ctx.beforeSubmit = () => authorizeIdentifiers([identifier], ctx.run);
   let captured, advanced = false;
@@ -349,7 +417,7 @@ async function runSearch(kind, value, ctx, advance) {
     });
     const tab = await api.tabs.get(result.tabId);
     ctx.run.check();
-    captured = (result.capture || capturePdf(tab, result.portalId)).then(() => ({ok: true})).catch(async e => {
+    captured = (result.capture || capturePdf(tab, result.portalId,false,environmentOf(ctx))).then(() => ({ok: true})).catch(async e => {
       if (!isCancelled(e) && !ctx.run.signal.aborted) await ctx.status(`Results ready. PDF follow-ups unavailable: ${e.message}`);
       return {ok: false, error: e.message};
     });
@@ -380,21 +448,21 @@ async function runSearch(kind, value, ctx, advance) {
 /** Reuse an owned results viewer without changing selection, or create an inactive
  * tab. Every publication owns fresh immutable bytes and a new reader job. */
 async function publishBackgroundReport({bytes,report,windowId},ctx) {
-  const api=guardedApi(chrome,ctx.run),id=crypto.randomUUID();
+  const api=workApi(ctx.run),id=crypto.randomUUID();
   // Read preferences before creating a tab so cancellation during storage access
   // cannot strand a blank results tab without a registered capture/cleanup path.
   const [settings,{pdfDarkMode},tabs]=await Promise.all([api.storage.session.get(['showDriverIdentity','pdfCreated','pdfSources']),api.storage.local.get('pdfDarkMode'),api.tabs.query({windowId})]);
   const readerUrl=chrome.runtime.getURL('reader.html');
-  let tab=reusableBackgroundResult(tabs,windowId,readerUrl,settings,ctx.sourceId),created=false;
+  let tab=reusableBackgroundResult(tabs,windowId,readerUrl,settings,ctx.sourceId,environmentOf(ctx)),created=false;
   if(tab) {
     // Recheck after selection in case the user closed, moved or navigated this tab.
     const current=await api.tabs.get(tab.id).catch(()=>null);ctx.run.check();
-    tab=current&&reusableBackgroundResult([current],windowId,readerUrl,settings,ctx.sourceId);
+    tab=current&&reusableBackgroundResult([current],windowId,readerUrl,settings,ctx.sourceId,environmentOf(ctx));
   }
   if(tab) {
     captures.get(tab.id)?.run.cancel();
     // Serialize invalidation behind any old snapshot write before starting a new job.
-    await ctx.run.step(()=>track(async()=>{ctx.run.check();await chrome.storage.session.remove(`pdf:${tab.id}`);ctx.run.check();}));
+    await ctx.run.step(()=>track(async()=>{ctx.run.check();await environmentApi(chrome,environmentOf(ctx)).storage.session.remove(`pdf:${tab.id}`);ctx.run.check();}));
   } else await ctx.run.step(async()=>{
     tab=await chrome.tabs.create({windowId,active:false,url:'about:blank'});created=true;
     if(ctx.run.signal.aborted)await chrome.tabs.remove(tab.id).catch(()=>{});
@@ -402,9 +470,9 @@ async function publishBackgroundReport({bytes,report,windowId},ctx) {
   const expectedUrl=chrome.runtime.getURL(`reader.html?pdf=1&query=1&id=${id}&dark=${pdfDarkMode===true?'1':'0'}#${report.sourceUrl}`);
   const done=Promise.withResolvers();done.promise.catch(()=>{});
   const includeDriverIdentity=settings.showDriverIdentity===true;
-  const reader={...done,base64:bytes,url:report.sourceUrl,tabId:tab.id,pdfId:tab.id,includeDriverIdentity,oneShot:true,expectedUrl};
+  const reader={...done,base64:bytes,url:report.sourceUrl,tabId:tab.id,pdfId:tab.id,includeDriverIdentity,environment:environmentOf(ctx),run:ctx.run,oneShot:true,expectedUrl};
   readers.set(id,reader);
-  const capture={run:new SearchRun(),sameTab:true};
+  const capture={run:new SearchRun(),sameTab:true};capture.run.environment=environmentOf(ctx);
   capture.run.signal.addEventListener('abort',()=>chrome.runtime.sendMessage({target:'pdf-reader',type:'reader-cancel',id}).catch(()=>{}),{once:true});
   const abort=()=>capture.run.cancel();ctx.run.signal.addEventListener('abort',abort,{once:true});
   const timer=setTimeout(()=>done.reject(new Error('Background PDF extraction timed out.')),45000);
@@ -414,10 +482,10 @@ async function publishBackgroundReport({bytes,report,windowId},ctx) {
       if(!text.trim())throw new Error('This PDF has no extractable text.');
       await capture.run.step(()=>track(async()=>{
         capture.run.check();
-        await chrome.storage.session.set({[`pdf:${tab.id}`]:{text,...(reader.driverIdentity?{driverIdentity:reader.driverIdentity}:{}),capturedAt:Date.now(),documentId:reader.documentId}});
+        await environmentApi(chrome,environmentOf(ctx)).storage.session.set({[`pdf:${tab.id}`]:{text,...(reader.driverIdentity?{driverIdentity:reader.driverIdentity}:{}),capturedAt:Date.now(),documentId:reader.documentId}});
         capture.run.check();
       }));
-      if(reader.viewerError)await guardedApi(chrome,capture.run).storage.session.set({status:`PDF view unavailable: ${reader.viewerError}`});
+      if(reader.viewerError)await workApi(capture.run).storage.session.set({status:`PDF view unavailable: ${reader.viewerError}`});
     } finally {clearTimeout(timer);ctx.run.signal.removeEventListener('abort',abort);readers.delete(id);if(captures.get(tab.id)===capture)captures.delete(tab.id);}
   })();
   capture.promise.catch(()=>{});captures.set(tab.id,capture);
@@ -428,7 +496,7 @@ async function publishBackgroundReport({bytes,report,windowId},ctx) {
 }
 /** Recheck settings after extraction so an alert disabled during parsing stays disabled. */
 async function showRecordStatus(kind, value, tabId, captured, ctx) {
-  const api = guardedApi(chrome, ctx.run);
+  const api = workApi(ctx.run);
   const enabled = settings => settings.alertsEnabled || settings.speechEnabled || settings.suspendedClipEnabled;
   if (!enabled(await api.storage.session.get(['alertsEnabled', 'speechEnabled', 'suspendedClipEnabled']))) return;
   const capture = await ctx.run.step(() => captured);
@@ -460,12 +528,12 @@ async function collectQueue(source, run, skipResidenceFirst = false) {
   const residence = isResidenceReport(text);
   const index = skipResidenceFirst && residence && values.length > 1 ? 1 : 0;
   const queue = {values, index, sourceTabId: origin.id};
-  await guardedApi(chrome, run).storage.session.set({queue});
+  await workApi(run).storage.session.set({queue});
   return queue;
 }
 /** Route a validated command. Queue progress commits on results or a visible DMV search error. */
 async function execute(command, value, source, options, run) {
-  const ctx = context(run), api = guardedApi(chrome, run);
+  const ctx = context(run), api = workApi(run);
   ctx.sourceId=source?.id;
   try {
     run.check(); await api.storage.session.set({status: 'Starting search'});
@@ -540,10 +608,11 @@ async function execute(command, value, source, options, run) {
 async function dispatch(command, options = {}) {
   if (!COMMANDS[command]) throw new Error('Unknown command.');
   if (resettingUserInfo) await resettingUserInfo;
+  if(changingEnvironment)await changingEnvironment;
   if (command === 'help') return openShortcutMenu();
   const run = beginRun({preservePinnedMenu:true});
   try {
-    await run.step(() => boot); await run.step(() => run.cleanup);
+    await run.step(() => boot); run.environment=activeEnvironment; await run.step(() => run.cleanup);
     const source = await run.step(() => options.sourceId != null ? chrome.tabs.get(options.sourceId).catch(()=>null) : sourceTab());
     if (['plate', 'license', 'customer'].includes(command) && !options.replay) {
       openingPanel = openingPanel.catch(() => {}).then(async () => {
@@ -573,63 +642,60 @@ chrome.windows.onRemoved.addListener(async windowId => {
 // after creation, or reuse a results tab for a different report at the same URL.
 chrome.tabs.onCreated.addListener(async tab => {
   await boot;
-  // Creation timestamp is recorded before the attachment URL is populated.
-  await track(async () => {
-    const {tabCreated = {}} = await chrome.storage.session.get('tabCreated');
-    tabCreated[tab.id] = Date.now(); await chrome.storage.session.set({tabCreated});
+  await track(async()=>{
+    for(const environment of [LIVE,DEMO]){const api=workApi(undefined,environment),{tabCreated={}}=await api.storage.session.get('tabCreated');tabCreated[tab.id]=Date.now();await api.storage.session.set({tabCreated});}
   });
 });
-chrome.tabs.onUpdated.addListener(async (id, change, tab) => {
-  const sourceUrl = attachmentUrl(tab.pendingUrl) || attachmentUrl(tab.url);
-  if (!sourceUrl) return;
-  await boot;
-  await track(async () => {
-    const {pdfCreated = {}, tabCreated = {}, pdfSources = {}} = await chrome.storage.session.get(['pdfCreated', 'tabCreated', 'pdfSources']);
-    if (!pdfCreated[id] && tabCreated[id]) { pdfCreated[id] = tabCreated[id]; await chrome.storage.session.set({pdfCreated}); }
-    pdfSources[id] = sourceUrl; await chrome.storage.session.set({pdfSources});
-    if (change.status === 'loading') {
-      const capture = captures.get(id), cached = (await chrome.storage.session.get(`pdf:${id}`))[`pdf:${id}`];
-      // A reader can report loading after history.replaceState. Only committed
-      // document identity may invalidate/cancel a same-tab reader snapshot.
-      const darkDocument = capture?.sameTab || cached?.documentId || darkResultSource(tab.pendingUrl, chrome.runtime.getURL('reader.html')) || darkResultSource(tab.url, chrome.runtime.getURL('reader.html'));
-      if (!darkDocument) await chrome.storage.session.remove(`pdf:${id}`);
+chrome.tabs.onUpdated.addListener(async(id,change,tab)=>{
+  const environment=reportEnvironment(tab.pendingUrl)||reportEnvironment(tab.url);
+  if(!environment)return;
+  const sourceUrl=reportSource(tab.pendingUrl,environment)||reportSource(tab.url,environment),api=workApi(undefined,environment);
+  if(!sourceUrl)return;await boot;
+  await track(async()=>{
+    const {pdfCreated={},tabCreated={},pdfSources={}}=await api.storage.session.get(['pdfCreated','tabCreated','pdfSources']);
+    if(!pdfCreated[id]&&tabCreated[id]){pdfCreated[id]=tabCreated[id];await api.storage.session.set({pdfCreated});}
+    pdfSources[id]=sourceUrl;await api.storage.session.set({pdfSources});
+    if(change.status==='loading'){
+      const capture=captures.get(id),cached=(await api.storage.session.get(`pdf:${id}`))[`pdf:${id}`];
+      const direct=capture?.sameTab||cached?.documentId||darkResultSource(tab.pendingUrl,chrome.runtime.getURL('reader.html'),environment)||darkResultSource(tab.url,chrome.runtime.getURL('reader.html'),environment);
+      if(!direct)await api.storage.session.remove(`pdf:${id}`);
     }
   });
-  const {pdfCreated = {}} = await chrome.storage.session.get('pdfCreated');
-  if (change.status === 'complete' && pdfCreated[id] && !darkResultSource(tab.url, chrome.runtime.getURL('reader.html'))) await capturePdf(tab).catch(() => {});
+  const {pdfCreated={}}=await api.storage.session.get('pdfCreated');
+  if(environment===activeEnvironment&&!changingEnvironment&&change.status==='complete'&&pdfCreated[id]&&!darkResultSource(tab.url,chrome.runtime.getURL('reader.html'),environment))await capturePdf(tab,undefined,false,environment).catch(()=>{});
 });
-// tabs.onUpdated has no document ID: a loading notification can belong to the
-// current reader, not a replacement. Invalidate direct snapshots only when a
-// different top-level document actually commits. Check the current frame too,
-// because a delayed event from an older navigation must not cancel a newer reader.
-chrome.webNavigation.onCommitted.addListener(async details => {
-  if (details.frameId !== 0) return;
-  await boot;
-  await track(async () => {
-    const id = details.tabId, key = `pdf:${id}`, capture = captures.get(id);
-    const cached = (await chrome.storage.session.get(key))[key];
-    const direct = darkResultSource(details.url, chrome.runtime.getURL('reader.html'));
-    if (!capture?.sameTab && !cached?.documentId && !direct) return;
-    if (capture?.documentId === details.documentId || cached?.documentId === details.documentId) return;
-    const frame = await chrome.webNavigation.getFrame({tabId:id,frameId:0}).catch(() => null);
-    if (!frame || frame.documentId !== details.documentId) return;
-    if (capture?.sameTab && capture.documentId) capture.run.cancel();
-    await chrome.storage.session.remove(key);
+// Document IDs, rather than delayed loading events, invalidate a direct reader snapshot.
+chrome.webNavigation.onCommitted.addListener(async details=>{
+  if(details.frameId!==0)return;await boot;
+  await track(async()=>{
+    for(const environment of [LIVE,DEMO]){
+      const api=workApi(undefined,environment),id=details.tabId,key=`pdf:${id}`,capture=captures.get(id);
+      const cached=(await api.storage.session.get(key))[key],direct=darkResultSource(details.url,chrome.runtime.getURL('reader.html'),environment);
+      if(!capture?.sameTab&&!cached?.documentId&&!direct)continue;
+      if(capture?.documentId===details.documentId||cached?.documentId===details.documentId)continue;
+      const frame=await chrome.webNavigation.getFrame({tabId:id,frameId:0}).catch(()=>null);
+      if(!frame||frame.documentId!==details.documentId)continue;
+      if(capture?.sameTab&&capture.documentId)capture.run.cancel();
+      await api.storage.session.remove(key);
+    }
   });
 });
-// Remove closed-tab snapshots and ownership metadata after cancelling any in-flight capture.
-chrome.tabs.onRemoved.addListener(async id => {
+chrome.tabs.onRemoved.addListener(async id=>{
   captures.get(id)?.run.cancel();
-  await track(async () => {
-    const {pdfCreated = {}, tabCreated = {}, pdfSources = {}, pdfViewSources = {}} = await chrome.storage.session.get(['pdfCreated', 'tabCreated', 'pdfSources', 'pdfViewSources']);
-    delete pdfViewSources[id];
-    delete pdfCreated[id]; delete tabCreated[id]; delete pdfSources[id];
-    await chrome.storage.session.set({pdfCreated, tabCreated, pdfSources, pdfViewSources});
-    await chrome.storage.session.remove(`pdf:${id}`);
+  await track(async()=>{
+    for(const environment of [LIVE,DEMO]){
+      const api=workApi(undefined,environment),{pdfCreated={},tabCreated={},pdfSources={},pdfViewSources={}}=await api.storage.session.get(['pdfCreated','tabCreated','pdfSources','pdfViewSources']);
+      delete pdfViewSources[id];delete pdfCreated[id];delete tabCreated[id];delete pdfSources[id];
+      await api.storage.session.set({pdfCreated,tabCreated,pdfSources,pdfViewSources});await api.storage.session.remove(`pdf:${id}`);
+    }
   });
 });
 // Restore saved preferences without replaying any previous alert or query.
 chrome.runtime.onStartup.addListener(async () => { audioAlerts.stop(); await boot; await restoreAlertPreferences(); });
+chrome.permissions?.onRemoved?.addListener(async permissions=>{
+  await boot;
+  if(activeEnvironment.demo&&permissions.origins?.includes(DEMO_PERMISSION))await changeEnvironment(false).catch(()=>{});
+});
 /** Reuse the guide window when possible; installation is the only automatic trigger. */
 async function openShortcutSetup() {
   const url = chrome.runtime.getURL('shortcut-setup.html');
@@ -656,10 +722,13 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
   if (sender.id !== chrome.runtime.id || !sender.url?.startsWith(chrome.runtime.getURL(''))) return false;
   (async () => {
     await boot;
+    const environment=activeEnvironment,api=workApi(undefined,environment);
+    if(environment.demo&&['blacklist-setup','blacklist-unlock','clear-saved-user-info','forget-credentials'].includes(message.type))throw new Error('Switch off Demo Mode to manage the live vault.');
     switch (message.type) {
       // Reader requests are bound to the extraction job and its tab/document identity.
       case 'reader-start': {
         const reader = readers.get(message.id);
+        if(reader?.environment!==environment||reader?.run?.signal.aborted)throw new Error('Unknown PDF reader or expired search environment.');
         if (!reader || reader.tabId != null && sender.tab?.id !== reader.tabId
           || reader.documentId && reader.documentId !== sender.documentId
           || reader.expectedUrl && sender.url !== reader.expectedUrl) throw new Error('Unknown PDF reader.');
@@ -670,12 +739,13 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
           reader.started=true;reader.documentId=sender.documentId;
           const capture=captures.get(sender.tab.id);if(capture)capture.documentId=sender.documentId;
         }
-        return {base64: reader.base64, url: reader.url, includeDriverIdentity: reader.includeDriverIdentity === true};
+        return {base64: reader.base64, url: reader.url, includeDriverIdentity: reader.includeDriverIdentity === true,demo:environment.demo};
       }
       case 'reader-direct-start': return attachPdfViewer(sender);
       case 'pdf-native-print': return openNativePrint(sender,message.url,message.text);
       case 'reader-result': {
         const reader = readers.get(message.id);
+        if(reader?.environment!==environment||reader?.run?.signal.aborted)throw new Error('Unknown PDF reader or expired search environment.');
         if (!reader || sender.tab?.id !== reader.tabId
           || reader.documentId && reader.documentId !== sender.documentId
           || reader.expectedUrl && sender.url !== reader.expectedUrl
@@ -698,7 +768,9 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
       }
       // Panel replies are normalized and authorized again before they can continue a workflow.
       case 'panel-data': {
-        return (await chrome.storage.session.get(`panel:${message.id}`))[`panel:${message.id}`];
+        const data=(await chrome.storage.session.get(`panel:${message.id}`))[`panel:${message.id}`];
+        if(data?.environment&&data.environment!==environment.id)throw new Error('This panel belongs to a previous environment.');
+        return data;
       }
       case 'panel-submit': {
         const entry = panels.get(message.id);
@@ -708,6 +780,7 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
         let result = message.value;
         if (data.type === 'input') result = normalize(data.command, message.value);
         if (data.type === 'credentials') {
+          if(environment.demo)throw new Error('Demo Mode uses fixed demo credentials.');
           if (data.encryptedRequired && (message.unlock || !message.save)) throw new Error('Save the encrypted vault to set up the blacklist.');
           if (data.unlockOnly && !message.unlock) await unlockCredentials(message.blacklistPassphrase || '');
           if (message.unlock) result = await unlockCredentials(message.passphrase || '');
@@ -752,7 +825,7 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
         return true;
       }
       case 'rerun': {
-        const {history = []} = await chrome.storage.session.get('history');
+        const {history = []} = await api.storage.session.get('history');
         const requested = message.search;
         const entry = requested && history.find(item => requested.id
           ? item.id === requested.id
@@ -763,7 +836,7 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
         return true;
       }
       // These snapshots are restricted to extension-owned pages by the router above.
-      case 'state': return {blacklist: await blacklistState(), ...await chrome.storage.local.get(['vault','pdfDarkMode','dmvDarkMode','shortcutMenuNoTimeout','shortcutMenuAlwaysOnTop']), ...await chrome.storage.session.get(['history', 'queue', 'status', 'alertsEnabled', 'backgroundStatusSearch', 'showDriverIdentity', 'speechEnabled', 'repeatSpeech', 'suspendedClipEnabled', 'voiceSource', 'voiceGender', 'voiceName']), voices: await availableVoices().catch(() => []), commands: await chrome.commands.getAll(), extensionId: chrome.runtime.id};
+      case 'state': return {demoMode:environment.demo,demoOrigin:DEMO.origin,blacklist: await currentBlacklist(environment), ...await chrome.storage.local.get(environment.demo?['pdfDarkMode','dmvDarkMode','shortcutMenuNoTimeout','shortcutMenuAlwaysOnTop']:['vault','pdfDarkMode','dmvDarkMode','shortcutMenuNoTimeout','shortcutMenuAlwaysOnTop']), ...await api.storage.session.get(['history', 'queue', 'status', 'alertsEnabled', 'backgroundStatusSearch', 'showDriverIdentity', 'speechEnabled', 'repeatSpeech', 'suspendedClipEnabled', 'voiceSource', 'voiceGender', 'voiceName']), voices: await availableVoices().catch(() => []), commands: await chrome.commands.getAll(), extensionId: chrome.runtime.id};
       // Appearance updates persist independently of credentials and query state.
       case 'dmv-display-settings': {
         await chrome.storage.local.set({dmvDarkMode:message.enabled===true});await configureDmvTheme();await refreshDmvThemeTabs();return message.enabled===true;
@@ -780,7 +853,9 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
         savingShortcutMenuSettings = task.catch(()=>{});
         return task;
       }
-      case 'pdf-display-settings': await setPdfRouting(message.enabled === true); await chrome.storage.local.set({pdfDarkMode: message.enabled === true}); return message.enabled === true;
+      case 'demo-mode': return changeEnvironment(message.enabled===true);
+      case 'open-demo': {if(!environment.demo)throw new Error('Enable Demo Mode first.');await chrome.tabs.create({url:DEMO.origin+'/',active:true});return true;}
+      case 'pdf-display-settings': await setPdfRouting(message.enabled === true,environment); await chrome.storage.local.set({pdfDarkMode: message.enabled === true}); return message.enabled === true;
       // Reset cancels workflows and drains metadata writes before deleting private session state.
       case 'clear-saved-user-info': {
         if (message.confirmed !== true) throw new Error('Confirm deletion of saved user information and the vault.');
@@ -796,12 +871,19 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
         return blacklistState();
       }
       case 'blacklist-unlock': await unlockCredentials(message.passphrase || ''); return blacklistState();
-      case 'blacklist-add': return addBlacklistEntry(message.kind, message.value);
-      case 'blacklist-remove': return removeBlacklistEntry(message.kind, message.value, message.confirmed);
+      case 'blacklist-add': {
+        if(!environment.demo)return addBlacklistEntry(message.kind,message.value);
+        const entry=blacklistEntry(message.kind,message.value);return editDemoBlacklist(environment,entries=>[...entries,entry]);
+      }
+      case 'blacklist-remove': {
+        if(!environment.demo)return removeBlacklistEntry(message.kind,message.value,message.confirmed);
+        if(message.confirmed!==true)throw new Error('Confirm removal of the demo blacklist entry.');
+        const entry=blacklistEntry(message.kind,message.value);return editDemoBlacklist(environment,entries=>entries.filter(e=>e.kind!==entry.kind||e.value!==entry.value));
+      }
       case 'stop-audio': audioAlerts.stop(); return true;
       case 'stop': {
         const run = beginRun();
-        try { await run.step(() => run.cleanup); await guardedApi(chrome, run).storage.session.set({status: 'Stopped'}); }
+        try { await run.step(() => run.cleanup); await workApi(run).storage.session.set({status: 'Stopped'}); }
         catch (error) { if (!isCancelled(error)) throw error; }
         return true;
       }
@@ -833,8 +915,8 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
         }
         return enabled;
       }
-      case 'clear-history': await chrome.storage.session.remove('history'); return true;
-      case 'clear-queue': await chrome.storage.session.remove('queue'); return true;
+      case 'clear-history': await api.storage.session.remove('history'); return true;
+      case 'clear-queue': await api.storage.session.remove('queue'); return true;
       case 'forget-credentials': await forgetCredentials(); return true;
       default: throw new Error('Unknown extension request.');
     }

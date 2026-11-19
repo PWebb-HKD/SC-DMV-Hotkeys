@@ -4,7 +4,23 @@ Run `npm run demo` from the repository root, or `node server.mjs` from this demo
 
 To update a running copy, stop it with **Ctrl+C**, replace its demo folder with the latest demo folder from the test branch, then run `node server.mjs` again and refresh Chrome. Demo-only work does not increment the extension release version. There is no extension reload required for this standalone site update.
 
-The server binds only to 127.0.0.1, makes no outbound requests, accepts no POST credentials, and logs no request data. Login controls stay disabled until the local handler is ready. Demo credentials are compared only in the browser; the password field is cleared. Only a demo authentication flag, predefined selected records and an optional fictional customer queue enter this site's own sessionStorage. Reset demo clears keys in the scdmv-demo- namespace. It cannot read an installed extension's vault, blacklist or preferences.
+The server binds only to 127.0.0.1, makes no outbound requests, accepts no POST credentials, and logs no request data. Login controls stay disabled until the local handler is ready. Demo credentials are compared only in the browser; the password field is cleared. Demo selections and controls enter this site's own scdmv-demo- sessionStorage namespace. Reset demo clears that namespace. The site cannot read an installed extension's vault, blacklist or preferences.
+
+## Use the installed extension in Demo Mode
+
+Extension version **1.8.42** adds an explicit Demo Mode, off by default. For this update, replace/reload the extension folder as well as updating the demo folder; demo-only updates still do not require an extension reload or version bump.
+
+1. Start the server and keep its terminal open. Use **http://127.0.0.1:4173** for extension integration. Other ports and the localhost alias remain available for manual site use but are not extension automation destinations.
+2. Reload the unpacked extension at **chrome://extensions**, then open its **Settings → Practice environment**.
+3. Enable **Demo Mode** and accept Chrome's optional local-host access request. The existing live DMV permission remains unchanged; the demo grant covers 127.0.0.1, while runtime routing/credential checks require port 4173 exactly.
+4. Use **Open practice portal**, normal quick actions, shortcut menu or assigned hotkeys. Run plate DEMO001 or DL 100000101 first. The extension signs in automatically with the fixed demo/demo account; it never asks to unlock the live vault for demo searches.
+5. Enable the extension's normal status, photo/name and voice settings to test automatic alerts. Its background-search setting also applies: record searches use the minimized query window; SCUTTIES stays in the foreground. Manual site Preview buttons remain separate standalone tools and are not required for automatic extension alerts.
+
+The extension labels demo input/status/barcode/menu/viewer surfaces. Its demo history, queue, portal hint, report caches/tracking and session-only blacklist use separate demo: storage keys. Live credentials and the encrypted live blacklist are not used or changed; demo blacklist entries can be edited without a vault. Alert/appearance/shortcut preferences remain shared. Switching modes cancels active work, readers, panels and audio, then changes routing without replaying a search. History replay, owner searches, report follow-ups and results-tab reuse remain confined to the selected environment. A focused PDF from the other environment is rejected.
+
+To return to the real service, switch **Demo Mode off**. The separate live history/queue and vault remain available. Previously completed tabs can remain open; their presence does not authorize cross-environment follow-ups. Removing the optional demo permission disables Demo Mode. This setting does not publish anything or contact the live DMV while demo searches run.
+
+For controlled failures, turn the extension's background-search setting off and choose **Demo test controls** in its existing demo portal tab before running the next hotkey search. Those fault selections are per website tab; a new hidden query window has its own session and does not inherit another tab's chosen fault. The extension applies its normal queue/error rules; standalone demo queue buttons use the site's separate queue.
 
 ## Vehicle records
 
@@ -79,7 +95,7 @@ Open PDF serves a genuine, selectable-text PDF at ViewAttachment.aspx. Chrome pr
 
 Status and barcode previews use bundled production PDF.js to extract the generated PDF, followed by existing production parsers and panel/barcode controllers. An HTTP-only adapter supplies mock worker messages to those views. Barcode editing and popup timers work. Residence reports have no license-status or barcode preview. The adapter lives outside extension/ and is never loaded by the installed extension.
 
-This prototype does not demonstrate installed-extension permissions, global hotkeys, native background-window behavior, vault/blacklist storage or remote DMV connectivity. Audio is outside this iteration. The installed extension continues to permit automation only on SCDMV; connecting a separate, clearly labeled demo environment with isolated state remains a later integration step. Reviewers should eventually receive a launcher that does not require setting up a local server.
+Standalone previews do not exercise installed-extension permissions, global hotkeys, native background-window behavior, audio or vault storage. The extension's explicit Demo Mode exercises its real command/controller pipeline against the local site, using separate demo state. Cloud browser automation uses explicit Chrome API substitutes because enterprise policy blocks installation, so native Windows hotkey/focus/minimize behavior still requires user testing. Reviewers should eventually receive a launcher that does not require setting up a local server.
 
 Raw HTML captures remain outside Git. [DOM-CONTRACT.md](DOM-CONTRACT.md) records the retained selector interface and exclusions. New samples supplied for driver/customer and residence pages were used as reference data only; their scripts, identifiers, hidden tokens and private display values are not served or committed.
 
@@ -97,7 +113,7 @@ Click **Search**, then **View** beside a citation. The read-only display contain
 
 Surname/DOB comparisons happen only in the browser; searches never put those values in a request or URL. Only known catalog/citation IDs enter scdmv-demo- session state. Unknown identities return no results, malformed dates show validation, and invalid saved selections cannot borrow an earlier record. The no-results wording and the brief sign-in transition are demo-defined because those live states were not supplied. Citation editing, saved drafts, data entry, reports and account administration are not implemented.
 
-The captured search puts Search first and Show SAVED Citations second. The current installed extension's positional SC_SEARCH selector targets the second button, so it would select the saved-citation action on this captured layout. The demo preserves the supplied order; correcting that production selector is deferred to the versioned extension/demo integration work. No extension code or host permission changes are included here.
+The captured search puts Search first and Show SAVED Citations second. Version 1.8.42 fixes the extension to target button[ng-click="searchCitation()"] directly and locates the surname/DOB inputs by their specific model attributes. Button order and the duplicate hidden home container no longer determine which action is selected. The demo preserves the captured action order.
 
 ## Checks
 
@@ -105,5 +121,6 @@ The captured search puts Search first and Show SAVED Citations second. The curre
 - `CHROME_PATH=/usr/bin/chromium npm run test:demo`: all four Chromium suites, including vehicle/driver PDFs, production status/barcode views, shared input validation, owner follow-ups, the residence queue, SCUTTIES, photo/placeholder extraction and recovery scenarios.
 - `CHROME_PATH=/usr/bin/chromium node tests/demo-scutties-browser.mjs`: focused SCUTTIES handoff, calendar validation, citations/details, restoration, mobile layout and local-only request checks.
 - `CHROME_PATH=/usr/bin/chromium node tests/demo-recovery-browser.mjs`: focused real photo/placeholder PDF extraction, optional identity rendering, session expiration, pending/cancelled/timed-out searches, HTTP failures and successful retries.
+- `CHROME_PATH=/usr/bin/chromium npm run test:demo-extension`: real worker/automation/PDF.js/controllers against this server, using explicit Chrome API substitutes. Native installation/focus/permission-dialog behavior is not established by this harness.
 
 Browser checks require the same development Playwright/Chromium setup as the existing project tests. The server itself needs only Node. Screenshots and synthetic barcode payloads stay in ignored test-results/demo, test-results/demo-records, test-results/demo-scutties and test-results/demo-recovery directories.

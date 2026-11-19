@@ -6,6 +6,7 @@
 import {COMMANDS, normalize} from './core.js';
 import {safeDriverIdentity} from './driver-identity.js';
 import {fitRecordAlert} from './record-alert-layout.js';
+import {markDemo} from './demo-label.js';
 const $ = id => document.getElementById(id), id = new URL(location.href).searchParams.get('id');
 let data, unlocking = false, submitted = false, barcodeChoice;
 const port = chrome.runtime.connect({name: 'panel'});
@@ -31,6 +32,7 @@ $('useNew').onclick = () => { unlocking = false; $('unlockArea').hidden = !data.
 // Render the worker-selected panel type; report messages always enter the DOM as text.
 try {
   data = await send({type: 'panel-data', id});
+  markDemo(data?.demo);
   if (!data) { window.close(); } else {
     if (data.type === 'input') {
       $('title').textContent = COMMANDS[data.command].prompt; $('inputArea').hidden = false;
@@ -45,7 +47,7 @@ try {
       let refreshAlertTimeout = () => {}, allowAlertScrolling = () => {};
       document.body.classList.add('status-panel', `status-${data.tone}`);
       if (data.blacklist) document.body.classList.add('blacklist-panel');
-      document.title = `${data.sections?.[0]?.title || 'Record status'} · SC DMV Hotkeys`;
+      document.title = `${data.demo?'DEMO · ':''}${data.sections?.[0]?.title || 'Record status'} · SC DMV Hotkeys`;
       $('title').hidden = true; $('banner').textContent = data.subject || 'SCDMV RECORD STATUS';
       $('recordAlert').hidden = false;
       for (const section of data.sections || []) {

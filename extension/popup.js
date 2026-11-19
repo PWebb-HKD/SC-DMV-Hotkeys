@@ -5,7 +5,9 @@
  */
 import {COMMANDS} from './core.js';
 import {BLACKLIST_TYPES, blacklistEntry} from './blacklist.js';
+import {DEMO_PERMISSION} from './environment.js';
 const $ = id => document.getElementById(id);
+let refreshGeneration=0;
 const DESCRIPTIONS = {
   plate: 'Enter a license plate number to search for its vehicle record.',
   license: "Enter a driver's license number to search for a driving record.",
@@ -62,13 +64,14 @@ function renderShortcuts(commands = []) {
 /** Render only unlocked entries and require explicit confirmation before requesting their removal. */
 function renderBlacklist(current = {}) {
   const unlocked = current.unlocked === true;
-  $('blacklistState').textContent = !current.hasVault
+  $('blacklistState').textContent = current.demo?'Demo blacklist — session-only fictional test entries. The live encrypted vault is untouched.':!current.hasVault
     ? 'Create an encrypted vault to save the blacklist alongside your DMV login. No DMV search is needed.'
     : unlocked ? 'Vault unlocked. Blacklisted numbers are blocked before searches.' : 'Vault locked. Unlock it to view entries and enable searches.';
   $('blacklistEntries').replaceChildren();
   $('blacklistTable').hidden = !unlocked;
   $('blacklistEmpty').hidden = !unlocked || !!current.entries?.length;
-  $('blacklistSetup').hidden = !!current.hasVault;
+  $('blacklistSetup').hidden = !!current.hasVault||current.demo===true;
+  $('blacklistUnlock').hidden=current.demo===true;
   $('blacklistAdd').disabled = !unlocked; $('blacklistUnlock').disabled = !current.hasVault || unlocked;
   $('blacklistPassphrase').disabled = !current.hasVault;
   $('blacklistUnlockFields').hidden = !current.hasVault || unlocked;
@@ -116,7 +119,10 @@ $('blacklistUnlock').onclick = async () => {
 };
 /** Render a fresh worker snapshot; history replay sends an ID, not arbitrary form values. */
 async function refresh() {
+  const generation=++refreshGeneration;
   const data = await send({type: 'state'});
+  if(generation!==refreshGeneration)return;
+  $('demoModeToggle').checked=data.demoMode===true;$('demoBanner').hidden=data.demoMode!==true;$('openDemo').hidden=data.demoMode!==true;
   renderBlacklist(data.blacklist);
   $('dmvDarkMode').checked = data.dmvDarkMode !== false;
   $('pdfDarkMode').checked = data.pdfDarkMode === true;
@@ -190,6 +196,16 @@ for (const [id, key] of [['speechToggle', 'speechEnabled'], ['repeatSpeechToggle
   };
 }
 $('stopAudio').onclick = () => send({type: 'stop-audio'}).catch(error => feedback(error.message));
+$('demoModeToggle').onchange=async()=>{
+  const input=$('demoModeToggle'),enabled=input.checked;input.disabled=true;
+  try{
+    // Request the narrow optional host permission directly in this user gesture.
+    if(enabled&&!await chrome.permissions.request({origins:[DEMO_PERMISSION]}))throw new Error('Local demo access was not granted. Demo Mode remains off.');
+    await send({type:'demo-mode',enabled});await refresh();feedback('');
+  }catch(error){feedback(error.message);await refresh();}
+  finally{input.disabled=false;}
+};
+$('openDemo').onclick=()=>send({type:'open-demo'}).catch(error=>feedback(error.message));
 $('driverIdentityToggle').onchange = async event => {
   const input = event.target, enabled = input.checked; input.disabled = true;
   try { await send({type:'driver-identity-settings',enabled}); feedback(''); }
@@ -228,9 +244,13 @@ for (const [id, type] of [['clearHistory', 'clear-history'], ['clearQueue', 'cle
 }
 // Update session controls while this short-lived popup remains open.
 chrome.storage.onChanged.addListener((changes, area) => {
+  // A storage event is newer than any outstanding state response, including
+  // responses started before a toggle changed while demo metadata was loading.
+  refreshGeneration++;
+  if(area==='local'&&changes.demoMode||area==='session'&&Object.keys(changes).some(key=>key.startsWith('demo:')))refresh().catch(error=>feedback(error.message));
   if (area === 'local' && (changes.vault || changes.pdfDarkMode || changes.dmvDarkMode || changes.shortcutMenuNoTimeout || changes.shortcutMenuAlwaysOnTop) || area === 'session' && (changes.blacklist || changes.unlockedVault)) refresh().catch(error => feedback(error.message));
   if (area === 'session' && changes.history) refresh().catch(error => feedback(error.message));
-  if (area === 'session' && changes.status) $('status').textContent = changes.status.newValue;
+  if (area === 'session' && changes.status && !$('demoModeToggle').checked) $('status').textContent = changes.status.newValue;
   if (area === 'session' && changes.showDriverIdentity) $('driverIdentityToggle').checked = changes.showDriverIdentity.newValue === true;
   if(area==='session'&&changes.backgroundStatusSearch)$('backgroundSearchToggle').checked=changes.backgroundStatusSearch.newValue===true;
   if (area === 'session' && changes.alertsEnabled) $('alertsToggle').checked = changes.alertsEnabled.newValue === true;

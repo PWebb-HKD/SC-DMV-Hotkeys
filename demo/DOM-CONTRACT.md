@@ -46,10 +46,14 @@ Three additional private captures show the post-login search, populated results 
 
 The search destination Search.aspx is a local fixture route, not a URL established by the supplied DOM. Handoff timing/wording and no-results wording are also demo-defined; no real sign-in exchange is simulated at the token/network level. Results use an accessible HTML table in a horizontally scrollable region instead of shipping the third-party Angular grid. Binding attributes are inert compatibility markers, not executed expressions.
 
-Known production mismatch: extension/automation.js SC_SEARCH selects button:nth-child(2), whereas the captures place searchCitation() first and searchCitationSaved() second. The demo intentionally retains the capture's action order. Correcting production selection belongs to the subsequent versioned extension work; origin boundaries and installed-extension behavior are unchanged here.
+The original positional SC_SEARCH mismatch is fixed in extension 1.8.42: it selects button[ng-click="searchCitation()"] and the specific last-name/DOB model inputs. The demo retains Search first and Show SAVED Citations second, so the integrated flow verifies action identity independently of position.
 
 ## Synthetic image and recovery fixtures
 
 Photo/no-photo raster fixtures are procedural, not taken from the private captures or uploaded PDFs. A first-page Image XObject supplies a fictional portrait or the standard placeholder's non-personal text-mask layout. Production PDF.js, extractDriverIdentity and isNoPhotoPlaceholder process the actual PDF; no fabricated identity payload bypasses the extractor. The mask fixture deliberately exercises the existing known signature and is not independent evidence about detection of other graphics. The demo identity checkbox is extra local UI, with its own session preference and no installed-extension storage access.
 
 Session-expiration, delayed/timed-out search and service-error controls are additional demo UI. Their timing, messages and behavior are defined here, not captured from the live site. The ErrorPage.aspx fixture returns HTTP 503 with ContentPlaceHolder1_errorMessagePublicText; failed PDF requests return HTTP 503 text rather than a valid document. Ready controls remain hidden during pending/failed searches, and result/queue state is committed only after successful completion. These states do not authorize changes to production retry behavior or origin recognition.
+
+## Extension integration boundary
+
+The explicit Demo Mode is limited to http://127.0.0.1:4173. Live URL helpers still reject loopback by default; only a captured demo workflow environment enables it. The serialized page adapter independently checks that exact origin and accepts only demo/demo for local credential fill. Optional loopback host permission is requested from the Settings gesture; no broad HTTP/HTTPS permission or page-controlled origin is accepted. Website scripts and preview adapters never become extension code.

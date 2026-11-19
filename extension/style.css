@@ -63,3 +63,5 @@
 .record-driver-identity{text-align:center;margin:16px 0}
 .record-driver-photo{display:block;width:160px;height:160px;object-fit:contain;margin:0 auto 10px;background:white}
 .record-driver-name{font-size:20px;font-weight:600;overflow-wrap:anywhere;margin:0}
+
+.demo-mode-banner{padding:10px 16px;margin:0;background:#fff0bf;color:#513a00;font:700 12px/1.5 system-ui;text-align:center;white-space:normal}

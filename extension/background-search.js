@@ -1,16 +1,17 @@
 /** Unfocused query windows reuse the guarded workflow and blacklist callbacks.
  * Navigation leaves existing windows alone; completed same-address results are revealed. */
-import {LOGIN, ROOT, attachmentUrl, isPortal, samePage} from './core.js';
+import {attachmentUrl, isPortal, samePage} from './core.js';
 import {search, evaluate, focusTab, delay} from './automation.js';
 import {guardedApi} from './run.js';
 import {darkResultSource} from './pdf-routing.js';
+import {LIVE,environmentOf} from './environment.js';
 
 /** Reuse only tracked query viewers in this destination window. A user-navigated
  * tab, native print tab or different window must never be replaced or moved. */
-export function reusableBackgroundResult(tabs,windowId,readerUrl,{pdfCreated={},pdfSources={}}={},sourceId) {
+export function reusableBackgroundResult(tabs,windowId,readerUrl,{pdfCreated={},pdfSources={}}={},sourceId,environment=LIVE) {
   return tabs.filter(tab=>{
     if(tab.windowId!==windowId||tab.pendingUrl&&tab.pendingUrl!==tab.url)return false;
-    const source=darkResultSource(tab.url,readerUrl);
+    const source=darkResultSource(tab.url,readerUrl,environment);
     if(!source||source!==pdfSources[tab.id]||!Number.isFinite(pdfCreated[tab.id]))return false;
     const params=new URL(tab.url).searchParams;
     return params.get('query')==='1'&&/^[a-f0-9-]{36}$/i.test(params.get('id')||'');
@@ -33,7 +34,7 @@ export async function watchBackgroundReport(tabId, ctx) {
       const result = await evaluate(tabId,'backgroundReport',{},ctx);
       if(result.error)throw new Error(result.error);
       if(!result.url)return null;
-      const sourceUrl = attachmentUrl(result.url);
+      const sourceUrl = attachmentUrl(result.url,0,environmentOf(ctx));
       if(!sourceUrl)throw new Error('The background report destination was not a DMV PDF.');
       return {tab:{id:tabId}, sourceUrl, reused:false, startedAt};
     },
@@ -55,22 +56,24 @@ export async function resultWindow(api, sourceId) {
 }
 
 /** Clean only the owned portal tab; retain moved tabs and unrelated user pages. */
-async function closeHelper(api, windowId, tabId) {
+async function closeHelper(api, windowId, tabId, ctx) {
+  const ROOT=environmentOf(ctx).origin;
   const tab=await api.tabs.get(tabId).catch(()=>null);
   const url=tab?.pendingUrl||tab?.url;
-  if(url?.startsWith(`${ROOT}/SCTRNS/`))await evaluate(tabId,'stopBackgroundReport',{},{browserApi:api}).catch(()=>{});
+  if(url?.startsWith(`${ROOT}/SCTRNS/`))await evaluate(tabId,'stopBackgroundReport',{},{browserApi:api,environment:environmentOf(ctx)}).catch(()=>{});
   if(tab?.windowId===windowId&&(url==='about:blank'||url?.startsWith(`${ROOT}/SCTRNS/`)))await api.tabs.remove(tabId).catch(()=>{});
 }
 
 /** Serialize the new blank document and the initial login load. tabs.update
  * returns before its URL commits; shared login must not start a competing load. */
 async function openHelperLogin(api, windowId, tabId, ctx) {
+  const environment=environmentOf(ctx),LOGIN=environment.login;
   const waitForPage = async login => {
     const deadline=Date.now()+(login?60000:10000);
     while(Date.now()<deadline) {
       const tab=await api.tabs.get(tabId),target=tab.pendingUrl||tab.url;
-      if(tab.windowId!==windowId||target&&target!=='about:blank'&&(!login||!isPortal(target)))throw new Error('The hidden query tab was moved or navigated elsewhere. Search stopped.');
-      if(tab.status==='complete'&&!tab.pendingUrl&&(login?isPortal(tab.url):tab.url==='about:blank'))return tab;
+      if(tab.windowId!==windowId||target&&target!=='about:blank'&&(!login||!isPortal(target,environment)))throw new Error('The hidden query tab was moved or navigated elsewhere. Search stopped.');
+      if(tab.status==='complete'&&!tab.pendingUrl&&(login?isPortal(tab.url,environment):tab.url==='about:blank'))return tab;
       await delay(100,ctx);
     }
     throw new Error(`Timed out ${login?'loading the hidden query login page':'preparing the hidden query window'}. Run the search again.`);
@@ -99,7 +102,7 @@ async function openHelperLogin(api, windowId, tabId, ctx) {
   await waitForPage(true);
 }
 
-export async function backgroundSearch(kind, value, ctx, {publish, sourceId, api = chrome}) {
+export async function backgroundSearch(kind, value, ctx, {publish, sourceId, api = ctx.browserApi||chrome}) {
   const guarded = guardedApi(api,ctx.run);
   // Resolve the destination before creating a helper (which must not become it).
   const windowId = await resultWindow(guarded,sourceId);
@@ -124,7 +127,7 @@ export async function backgroundSearch(kind, value, ctx, {publish, sourceId, api
       // Use a regular browser window for the minimized startup path.
       // Chrome forbids width/height together with a minimized initial state.
       helper = await api.windows.create({url:'about:blank',type:'normal',focused:false,state:'minimized'});
-      if(ctx.run.signal.aborted)await closeHelper(api,helper.id,helper.tabs?.[0]?.id);
+      if(ctx.run.signal.aborted)await closeHelper(api,helper.id,helper.tabs?.[0]?.id,ctx);
     });
     const tab = helper.tabs?.[0] || (await guarded.tabs.query({windowId:helper.id}))[0];
     if(!tab)throw new Error('The background query window could not be created.');
@@ -139,7 +142,7 @@ export async function backgroundSearch(kind, value, ctx, {publish, sourceId, api
     if(initial.state!=='minimized')throw new Error('Chrome could not minimize the query window. No DMV page was opened.');
     await openHelperLogin(guarded,helper.id,tab.id,ctx);
     captured = await perform({tabId:tab.id,browserApi:api});
-  } finally {if(helper)await closeHelper(api,helper.id,helper.tabId ?? helper.tabs?.[0]?.id);}
+  } finally {if(helper)await closeHelper(api,helper.id,helper.tabId ?? helper.tabs?.[0]?.id,ctx);}
   ctx.run.check();
   const result = await publish({...captured,windowId},ctx);
   await ctx.resultReady(result);

@@ -222,3 +222,35 @@ test('Stop during unexpected-page login navigation prevents login and retry',asy
   await assert.rejects(search('customer','12345678',{...ctx,run}),error=>error.name==='AbortError');
   assert.equal(counts.logins,0);assert.equal(counts.loads,1);assert.deepEqual(counts.fills,[]);
 });
+test('a read-only state check racing result navigation is polled again without resubmitting',async()=>{
+  const {counts,ctx}=recoveryFixture({redirects:0}),execute=chrome.scripting.executeScript;
+  let unloaded=false,submitted=false;
+  chrome.scripting.executeScript=async request=>{
+    const [op,args]=request.args;
+    if(op==='state'&&submitted&&!unloaded){unloaded=true;throw new Error('Document was unloaded.');}
+    const result=await execute(request);
+    if(op==='click'&&args.selector==='#btnFooterNavNext')submitted=true;
+    return result;
+  };
+  await search('customer','12345678',ctx);assert.equal(unloaded,true);assert.deepEqual(counts.fills,['12345678']);assert.equal(counts.loads,1);
+});
+test('a visible but disabled query input is not filled until the form enables it',async()=>{
+  const {counts,ctx}=recoveryFixture({redirects:0}),execute=chrome.scripting.executeScript;let states=0;
+  chrome.scripting.executeScript=async request=>{
+    const [op,args]=request.args,result=await execute(request);
+    if(op==='state'&&args.selector?.includes('idNumberTextBox'))result[0].result.enabled=++states>=3;
+    if(op==='fill')assert.ok(states>=3);
+    return result;
+  };
+  await search('customer','12345678',ctx);assert.deepEqual(counts.fills,['12345678']);
+});
+test('an in-flight manual login redirect finishes without a second login submission',async()=>{
+  const {counts,ctx}=recoveryFixture({redirects:0,fresh:true}),execute=chrome.scripting.executeScript,get=chrome.tabs.get;let filled=false,reads=0;
+  chrome.scripting.executeScript=async request=>{const result=await execute(request);if(request.args[0]==='extensionLogin'&&!request.args[1].submit)filled=true;return result;};
+  chrome.tabs.get=async id=>{
+    const tab=await get(id);
+    if(id===1&&filled){if(++reads<4)return {...tab,status:'loading',pendingUrl:DISCLAIMER};filled=false;await chrome.tabs.update(id,{url:DISCLAIMER});return get(id);}
+    return tab;
+  };
+  await search('customer','12345678',ctx);assert.equal(counts.logins,0);assert.deepEqual(counts.fills,['12345678']);
+});

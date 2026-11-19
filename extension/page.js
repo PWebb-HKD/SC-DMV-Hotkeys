@@ -7,6 +7,8 @@
 export function pageOperation(op, args = {}) {
   // Dedicated background transports capture Download's window.open handoff without
   // allowing the website to focus a new browser window. No transaction is repeated.
+  const origin=args.demo===true?'http://127.0.0.1:4173':'https://www.scdmvonline.com';
+  if(location.origin!==origin)throw new Error('This page belongs to a different search environment.');
   const reportKey = '__scDmvBackgroundReport';
   if (op === 'startBackgroundReport') {
     window[reportKey]?.dispose();
@@ -15,7 +17,7 @@ export function pageOperation(op, args = {}) {
     const capture = value => {
       if (!value || value === 'about:blank') return;
       const url = new URL(String(value), location.href);
-      if (url.origin !== 'https://www.scdmvonline.com' || !/\/ViewAttachment\.aspx$/i.test(url.pathname)) {
+      if (url.origin !== origin || !/\/ViewAttachment\.aspx$/i.test(url.pathname)) {
         job.error = 'The DMV opened an unsupported report destination. Background search stopped; it was not resubmitted.';
         return;
       }
@@ -50,10 +52,11 @@ export function pageOperation(op, args = {}) {
     return {
       url: location.href,
       errors: [...new Set([...document.querySelectorAll(args.errorSelector || '.iFormsValidationSummary li span, #ContentPlaceHolder1_errorMessagePublicText')].filter(visible).map(x => x.textContent.trim()).filter(Boolean))],
-      portalError: location.origin === 'https://www.scdmvonline.com' && !!visible(document.querySelector('#ContentPlaceHolder1_errorMessagePublicText')),
-      present: !!control,
-      enabled: !!control && !control.disabled,
-      presentSelectors: args.selectors ? args.selectors.map(selector => !!document.querySelector(selector)) : []
+      portalError: location.origin === origin && !!visible(document.querySelector('#ContentPlaceHolder1_errorMessagePublicText')),
+      demoTimeout: args.demo===true&&document.body.dataset.demoTimeout==='true',
+      present: !!visible(control),
+      enabled: !!visible(control) && !control.disabled,
+      presentSelectors: args.selectors ? args.selectors.map(selector => {const el=document.querySelector(selector);return !!visible(el)&&!el.disabled;}) : []
     };
   }
   if (op === 'notifyInputs') {
@@ -70,10 +73,11 @@ export function pageOperation(op, args = {}) {
   }
   // Reassert extension-owned credentials before submit so browser autofill cannot switch accounts.
   if (op === 'extensionLogin') {
-    if (location.origin === 'https://www.scdmvonline.com' && !/^\/SCTRNS\/Member\/logon\.aspx$/i.test(location.pathname)) return true;
-    if (location.origin !== 'https://www.scdmvonline.com' || !/^\/SCTRNS\/Member\/logon\.aspx$/i.test(location.pathname)) {
+    if (location.origin === origin && !/^\/SCTRNS\/Member\/logon\.aspx$/i.test(location.pathname)) return true;
+    if (location.origin !== origin || !/^\/SCTRNS\/Member\/logon\.aspx$/i.test(location.pathname)) {
       throw new Error('Extension credentials may only be filled on the SCDMV login page.');
     }
+    if(args.demo===true&&(args.credentials?.user!=='demo'||args.credentials?.password!=='demo'))throw new Error('Only the fixed demonstration credentials may be used on the local demo.');
     const values = [args.credentials?.user, args.credentials?.password];
     if (!values.every(value => typeof value === 'string' && value.length > 0)) throw new Error('Extension User ID and password are required.');
     const inputs = args.selectors.map(find);
@@ -113,7 +117,7 @@ export function pageOperation(op, args = {}) {
   if (op === 'click') { const el = find(args.selector); if (!visible(el) || el.disabled) throw new Error('The website control is not ready.'); el.click(); return true; }
   // Fetch only same-origin attachment bytes and reject HTML/login responses before decoding.
   if (op === 'fetchPdf') return (async () => {
-    if (location.origin !== 'https://www.scdmvonline.com') throw new Error('PDF fetch must use the DMV session.');
+    if (location.origin !== origin) throw new Error('PDF fetch must use the DMV session.');
     const u = new URL(args.url);
     if (u.origin !== location.origin || !/\/ViewAttachment\.aspx$/i.test(u.pathname)) throw new Error('Unexpected PDF URL.');
     const response = await fetch(u.href, {credentials: 'include', cache: 'no-store', signal: AbortSignal.timeout(25000)});

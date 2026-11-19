@@ -28,6 +28,7 @@ export async function prepareDemoResult({P,scenario,previous,error}){
   await new Promise(resolve=>setTimeout(resolve,scenario==='slow'?SLOW_MS:scenario==='timeout'?TIMEOUT_MS:350));
   if(scenario==='expire-results'){expireDemoSession(P);return false;}
   if(scenario==='timeout'){
+    document.body.dataset.demoTimeout='true';
     document.querySelector('h2').textContent='The demonstration search timed out.';message.textContent='No record was completed. Return to the search form and submit again; the next search defaults to Normal.';error('Demonstration search timed out. No PDF or status alert was generated.');return false;
   }
   pending.hidden=true;document.querySelector('h2').textContent='Your demonstration record is ready.';return true;

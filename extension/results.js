@@ -6,11 +6,13 @@
  */
 import {attachmentUrl, isPortalErrorPage} from './core.js';
 import {guardedApi} from './run.js';
+import {environmentOf} from './environment.js';
 
 // Listen before clicking Download: PDF viewers may never report 'complete',
 // and named windows may reuse a pre-existing results tab.
 export async function watchResults(portalId, ctx = {}) {
-  const api = guardedApi(chrome, ctx.run);
+  const api = guardedApi(ctx.browserApi||chrome, ctx.run);
+  const environment=environmentOf(ctx);
   const before = new Map((await api.tabs.query({})).map(tab => [tab.id, {...tab}]));
   const changed = new Map();
   let armed = false, sequence = 0;
@@ -35,9 +37,9 @@ export async function watchResults(portalId, ctx = {}) {
       const candidates = [];
       for (const current of tabs) {
         const event = changed.get(current.id), tab = {...event?.tab, ...current};
-        const sourceUrl = attachmentUrl(tab.pendingUrl) || attachmentUrl(tab.url);
+        const sourceUrl = attachmentUrl(tab.pendingUrl,0,environment) || attachmentUrl(tab.url,0,environment);
         const old = before.get(tab.id);
-        const errorPage = !sourceUrl && (isPortalErrorPage(tab.pendingUrl) || isPortalErrorPage(tab.url));
+        const errorPage = !sourceUrl && (isPortalErrorPage(tab.pendingUrl,environment) || isPortalErrorPage(tab.url,environment));
         if (!sourceUrl && !errorPage) continue;
         // Error pages must belong to this transaction, never an unrelated window.
         if (errorPage && tab.id !== portalId && tab.openerTabId !== portalId && old?.openerTabId !== portalId) continue;

@@ -24,7 +24,7 @@ export function darkenPaper(context, coordinates) {
 }
 /** Continuous scroll, rendering only nearby pages and never exposing a white render-in-progress. */
 export async function openDarkViewer(doc, signal, initialDark = true) {
-  document.title = 'DMV PDF results';
+  document.title = (document.body.dataset.demoMode==='true'?'DEMO · ':'')+'DMV PDF results';
   document.getElementById('reading').hidden = true;
   document.getElementById('pdfViewer').hidden = false;
   const pages = document.getElementById('pdfPages'), toggle = document.getElementById('pdfColors');

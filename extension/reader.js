@@ -7,6 +7,7 @@ import {extractDriverIdentity} from './driver-photo.js';
 import {installNativePrint} from './pdf-print.js';
 import {openDarkViewer} from './pdf-dark-view.js';
 import {getDocument, GlobalWorkerOptions} from './vendor/pdf.mjs';
+import {markDemo} from './demo-label.js';
 GlobalWorkerOptions.workerSrc = chrome.runtime.getURL('vendor/pdf.worker.mjs');
 const params = new URL(location.href).searchParams;
 let id = params.get('id'), loadingTask, resultSent = false;
@@ -33,6 +34,7 @@ try {
   const response = await chrome.runtime.sendMessage({type: direct ? 'reader-direct-start' : 'reader-start', id});
   if (!response?.ok) throw new Error(response?.error || 'PDF request expired.');
   let {base64, url, includeDriverIdentity = false} = response.value;
+  markDemo(response.value.demo===true);
   if(direct) {
     id=response.value.id;
     const locationUrl=new URL(location.href);locationUrl.searchParams.set('id',id);history.replaceState(null,'',locationUrl);

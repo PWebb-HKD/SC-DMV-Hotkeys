@@ -2,6 +2,7 @@
  * normal cancellation, queue behavior, and blacklist checks remain authoritative. */
 import {COMMANDS} from './core.js';
 import {shortcutMenuBounds} from './shortcut-menu-layout.js';
+import {markDemo} from './demo-label.js';
 let menuDocument = document, floatingWindow = null, closing = false, pinning = false, pinEnabled = false;
 const $ = id => menuDocument.getElementById(id);
 const id = new URL(location.href).searchParams.get('id');
@@ -134,6 +135,7 @@ window.addEventListener('pagehide',cleanup);
 configureExpiry(false);
 try {
   const data = await send({type:'panel-data',id});
+  markDemo(data?.demo);
   if (data?.type !== 'shortcut-menu') throw new Error('This shortcut menu has expired. Open it again.');
   if (!timeoutSettingsChanged) noTimeoutEnabled = data.noTimeout === true;
   if (!pinSettingsChanged) pinEnabled = data.alwaysOnTop === true;

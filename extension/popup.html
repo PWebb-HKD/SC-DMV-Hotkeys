@@ -16,6 +16,7 @@
     <button id="aboutTab" role="tab" aria-selected="false" aria-controls="aboutView">About</button>
   </nav>
   <main>
+    <p id="demoBanner" class="demo-mode-banner" hidden>DEMO MODE — fictional local records. Live DMV data and credentials are separate.</p>
     <div id="status" class="status" role="status">Ready</div>
     <button id="stopFunction" class="secondary stop-function">Stop current function</button>
     <section id="historyView" role="tabpanel" aria-labelledby="historyTab">
@@ -27,6 +28,12 @@
       <button id="clearQueue" class="secondary" hidden>Clear queued and saved customer numbers</button>
     </section>
     <section id="settingsView" role="tabpanel" aria-labelledby="settingsTab" hidden>
+      <section class="alerts-setting" aria-labelledby="demoModeTitle">
+        <h2 id="demoModeTitle">Practice environment</h2>
+        <label class="alerts-toggle" for="demoModeToggle"><span>Demo Mode<small>Route searches to the local synthetic practice site at http://127.0.0.1:4173. Uses demo / demo; your live DMV login and blacklist are not used.</small></span><span class="switch-control"><input id="demoModeToggle" type="checkbox" role="switch"><span class="switch-track" aria-hidden="true"></span></span></label>
+        <p class="hint">Start the demo server first with node server.mjs from the demo folder. Switching environments stops current work. History, queues, reports and demo blacklist entries stay separate; alert and appearance preferences are shared.</p>
+        <button id="openDemo" class="secondary" type="button" hidden>Open practice portal</button>
+      </section>
     <div class="alerts-setting">
       <label class="alerts-toggle" for="alertsToggle"><span>Plate & license status alerts<small>Enable for status popups displaying the status of a Driver's License or Licens Plate. Popups auto close after 90 seconds and 30 seconds if they are valid.</small></span><span class="switch-control"><input id="alertsToggle" type="checkbox" role="switch" aria-controls="statusAlertSettings"><span class="switch-track" aria-hidden="true"></span></span></label>
       <div id="statusAlertSettings" class="voice-settings status-alert-settings" hidden>

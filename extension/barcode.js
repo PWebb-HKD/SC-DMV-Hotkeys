@@ -1,6 +1,7 @@
 /** Barcode popup controller. Show parsed data read-only, unlock it on request, and
  * redraw valid corrections locally. White quiet space keeps the canvas scannable. */
 import {barcodeEditorModel, editedBarcode} from './barcode-editor.js';
+import {markDemo} from './demo-label.js';
 const $ = id => document.getElementById(id);
 const id = new URL(location.href).searchParams.get('id');
 const port = chrome.runtime.connect({name:'panel'});
@@ -74,6 +75,7 @@ try {
   const response = await chrome.runtime.sendMessage({type:'panel-data',id});
   if (!response?.ok || response.value?.type !== 'barcode') throw new Error(response?.error || 'This barcode request has expired. Press Alt+B again.');
   data = response.value; model = barcodeEditorModel(data); payload = data.payload;
+  markDemo(data.demo);
   $('title').textContent = data.title; $('summary').textContent = data.summary; $('profile').textContent = data.profile;
   const notes = [...(data.parseError ? [data.parseError] : []),...(data.warnings || [])];
   $('notes').hidden = !notes.length;

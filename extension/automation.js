@@ -3,12 +3,12 @@
  * discover its results. ctx carries cancellation plus UI callbacks owned by the
  * service worker. All asynchronous browser operations must remain run-guarded.
  */
-import {ROOT, MEMBER, LOGIN, ERROR_SELECTOR, samePage, isPortal, isPdf, isPortalErrorPage, loginSucceeded} from './core.js';
+import {ERROR_SELECTOR, samePage, isPortal, isPdf, isPortalErrorPage, loginSucceeded} from './core.js';
 import {pageOperation} from './page.js';
 import {guardedApi} from './run.js';
 import {watchResults} from './results.js';
+import {environmentOf} from './environment.js';
 
-const TRANSACTIONS = `${MEMBER}Transactions/TransactionList.aspx`;
 const LOGOFF = '#ContentPlaceHolder1_menuContainer > div > div:nth-child(1) > div:nth-child(1) > div.panel-body > ul > li:nth-child(1) > a';
 const USER = '#ContentPlaceHolder1_userNameText', PASS = '#ContentPlaceHolder1_passwordText';
 const api = ctx => guardedApi(ctx?.browserApi || chrome, ctx?.run);
@@ -16,7 +16,7 @@ const api = ctx => guardedApi(ctx?.browserApi || chrome, ctx?.run);
 export const delay = (ms, ctx) => ctx?.run ? ctx.run.step(() => new Promise(resolve => setTimeout(resolve, ms))) : new Promise(resolve => setTimeout(resolve, ms));
 /** Run one self-contained DOM operation in the page MAIN world and return its result. */
 export async function evaluate(tabId, op, args = {}, ctx) {
-  const results = await api(ctx).scripting.executeScript({target: {tabId}, world: 'MAIN', func: pageOperation, args: [op, args]});
+  const results = await api(ctx).scripting.executeScript({target: {tabId}, world: 'MAIN', func: pageOperation, args: [op, {...args,demo:environmentOf(ctx).demo}]});
   if (!results.length) throw new Error('The page could not be accessed.');
   return results[0].result;
 }
@@ -27,7 +27,8 @@ export class PortalSearchError extends Error {
 }
 /** Surface visible portal failures, invalidate stale session hints, and distinguish completed search failures from login errors. */
 async function checkPageErrors(page, searchPages = [], ctx) {
-  const fatal = page.portalError || isPortalErrorPage(page.url);
+  if(page.demoTimeout)throw new Error('The demonstration search timed out. No report was generated. Run the search again.');
+  const fatal = page.portalError || isPortalErrorPage(page.url,environmentOf(ctx));
   if (!page.errors.length && !fatal) return;
   // A server failure invalidates the warm-session hint, but must not resubmit
   // a transaction that may already have reached the DMV.
@@ -36,7 +37,16 @@ async function checkPageErrors(page, searchPages = [], ctx) {
   throw new ErrorType(page.errors.join('\n') || 'The DMV returned an unexpected error page.');
 }
 /** Read controls and visible errors through the shared, self-contained DOM adapter. */
-async function state(tabId, selector, ctx) { return evaluate(tabId, 'state', {selector, errorSelector: ERROR_SELECTOR}, ctx); }
+async function state(tabId, selector, ctx) {
+  try{return await evaluate(tabId, 'state', {selector, errorSelector: ERROR_SELECTOR}, ctx);}
+  catch(error){
+    ctx?.run?.check();
+    // A read can race a committed redirect even after tabs.get reports complete.
+    // Poll again without replaying the click, credentials or query submission.
+    if(!/frame.*removed|context.*invalidated|document.*unloaded|execution context.*destroyed/i.test(error.message))throw error;
+    return {url:'',errors:[],present:false,enabled:false,presentSelectors:[]};
+  }
+}
 /** Activate a page control; tolerate only the frame-unload race caused by navigation. */
 async function click(tabId, selector, ctx) {
   try { await evaluate(tabId, 'click', {selector}, ctx); }
@@ -50,13 +60,14 @@ async function until(fn, description, ms = 60000, ctx) {
 }
 /** Wait for a completed page with controls, surfacing visible website errors. */
 async function ready(tabId, selector, ctx, searchPage) {
+  const environment=environmentOf(ctx),LOGIN=environment.login;
   return until(async () => {
     const tab = await api(ctx).tabs.get(tabId);
     if (tab.status !== 'complete') return false;
     let s; try { s = await state(tabId, selector, ctx); } catch { ctx?.run?.check(); return false; }
     await checkPageErrors(s, searchPage ? [searchPage] : [], ctx);
     if (samePage(s.url, LOGIN)) throw new Error('Your DMV session has expired. Run the command again to sign in.');
-    return s.present && s;
+    return s.present && s.enabled!==false && s;
   }, 'the search page controls', 60000, ctx);
 }
 /** Keep Chrome's generic navigation rejection attributable to a workflow stage.
@@ -90,9 +101,10 @@ export async function focusTab(tabId, ctx) {
 }
 /** Reuse a portal tab but exclude PDF results, preserving those reports for follow-ups. */
 export async function portalTab(ctx) {
+  const environment=environmentOf(ctx),ROOT=environment.origin,LOGIN=environment.login;
   if (ctx?.queryTask) return api(ctx).tabs.get(ctx.queryTask.tabId);
   const {portalId} = await api(ctx).storage.session.get('portalId');
-  const tabs = (await api(ctx).tabs.query({url: `${ROOT}/*`})).filter(t => isPortal(t.url));
+  const tabs = (await api(ctx).tabs.query({url: `${ROOT}/*`})).filter(t => isPortal(t.url,environment));
   const target = tabs.find(t => t.id === portalId) || tabs.find(t => t.active) || tabs.sort((a,b) => (b.lastAccessed || 0) - (a.lastAccessed || 0))[0] || await api(ctx).tabs.create({url: LOGIN, active: false});
   await api(ctx).storage.session.set({portalId: target.id});
   // A fresh session skips login, so focus cannot be left to the login path.
@@ -102,6 +114,7 @@ export async function portalTab(ctx) {
 /** Use extension credentials exclusively, notify form handlers, and allow synchronization
  * before submission. A completed non-error same-origin redirect away from logon verifies success. */
 async function login(tabId, ctx) {
+  const environment=environmentOf(ctx),LOGIN=environment.login;
   ctx.status('Checking DMV login');
   const current = await api(ctx).tabs.get(tabId);
   // Reuse the login page, but never use its existing fields as credentials.
@@ -109,7 +122,7 @@ async function login(tabId, ctx) {
   await focusTab(tabId, ctx);
   await until(async () => {
     const t = await api(ctx).tabs.get(tabId); if (t.status !== 'complete' || t.pendingUrl) return false;
-    if (loginSucceeded(t.url)) return true;
+    if (loginSucceeded(t.url,environment)) return true;
     let form;
     try { form = await evaluate(tabId, 'state', {selectors: [USER, PASS] }, ctx); }
     catch { ctx.run?.check(); return false; }
@@ -122,15 +135,19 @@ async function login(tabId, ctx) {
     if (!saved) throw new Error('Login cancelled.');
     const credentials = {user: String(saved.user || '').trim(), password: String(saved.password || '')};
     if (!credentials.user || !credentials.password) throw new Error('User ID and password are required.');
-    if (loginSucceeded((await api(ctx).tabs.get(tabId)).url)) return;
+    if (loginSucceeded((await api(ctx).tabs.get(tabId)).url,environment)) return;
     await focusTab(tabId, ctx);
     const fields = {selectors: [USER, PASS], credentials, button: '#ContentPlaceHolder1_loginButton'};
     await evaluate(tabId, 'extensionLogin', fields, ctx);
     // Allow form handlers to synchronize after extension autofill.
     await delay(1000, ctx);
     const destination = await api(ctx).tabs.get(tabId);
-    if (loginSucceeded(destination.url) && destination.status === 'complete') return;
+    if (loginSucceeded(destination.url,environment) && destination.status === 'complete') return;
     await delay(100, ctx);
+    // A manual/automatic sign-in can begin during the delay. Wait for that
+    // navigation to finish instead of clicking into its departing document.
+    await until(async()=>{const tab=await api(ctx).tabs.get(tabId);return tab.status==='complete'&&!tab.pendingUrl;},'the login navigation to finish',30000,ctx);
+    if(loginSucceeded((await api(ctx).tabs.get(tabId)).url,environment))return;
     await focusTab(tabId, ctx);
     // Reassert extension values and click in one page operation, preventing a
     // late browser autofill from selecting a different account for submission.
@@ -143,7 +160,7 @@ async function login(tabId, ctx) {
     await until(async () => {
       const t = await api(ctx).tabs.get(tabId);
       if (t.status !== 'complete') return false;
-      if (loginSucceeded(t.url)) return true;
+      if (loginSucceeded(t.url,environment)) return true;
       const s = await state(tabId, undefined, ctx);
       await checkPageErrors(s, [], ctx);
       if (!samePage(t.url, LOGIN)) throw new Error('The website requires an additional login step or password update. Complete it in the browser, then run the command again.');
@@ -154,6 +171,7 @@ async function login(tabId, ctx) {
 }
 /** Use the ten-minute activity hint, with login redirects checked again by search(). */
 async function ensureSession(tabId, ctx) {
+  const LOGIN=environmentOf(ctx).login;
   const {lastQuery = 0} = await api(ctx).storage.session.get('lastQuery');
   const t = await api(ctx).tabs.get(tabId);
   const reused = Date.now() - lastQuery < 600000 && !samePage(t.url, LOGIN);
@@ -163,6 +181,7 @@ async function ensureSession(tabId, ctx) {
 /** Recover unexpected first-page navigation, with logoff for stale transaction menus. Never retry a
  * submitted transaction: the broken-session redirect happens before any form fill. */
 async function initialSearchPage(tabId, url, reusedSession, ctx) {
+  const environment=environmentOf(ctx),LOGIN=environment.login,TRANSACTIONS=environment.member+'Transactions/TransactionList.aspx';
   // Wait for the completed redirect destination, not just the originally requested URL.
   const load = async () => {
     await navigateTab(tabId, url, ctx, 'opening the DMV search form');
@@ -203,6 +222,7 @@ const SEARCHES = {
 };
 /** Run a plate/license/customer/address transaction using the shared Page1/Page2 flow. */
 export async function search(kind, value, ctx) {
+  const environment=environmentOf(ctx),MEMBER=environment.member,LOGIN=environment.login;
   const tab = await portalTab(ctx); ctx.tabId = tab.id;
   const reusedSession = await ensureSession(tab.id, ctx);
   const [path, query, selector] = SEARCHES[kind];
@@ -241,7 +261,7 @@ export async function search(kind, value, ctx) {
       if (found && !found.errorPage) return found;
       // Download can fail in this tab or in its new/reused results window.
       const current = found?.tab || await api(ctx).tabs.get(tab.id);
-      if (current.status !== 'complete' || isPdf(current.url)) return false;
+      if (current.status !== 'complete' || isPdf(current.url,environment)) return false;
       if (found) { ctx.tabId = current.id; await focusTab(current.id, ctx); }
       await checkPageErrors(await state(current.id, undefined, ctx), [`${base}Page1.aspx`, `${base}Page2.aspx`], ctx);
       if (samePage(current.url, LOGIN)) throw new Error('The DMV session expired while opening the report. Please run it again.');
@@ -255,12 +275,13 @@ export async function search(kind, value, ctx) {
   ctx.status('Results ready');
   return readyResult;
 }
-const SC_NAME = '#home > div > div.col-xs-12.row > div:nth-child(3) > div.panel-body > div:nth-child(1) > div:nth-child(1) > input';
-const SC_DOB = '#home > div > div.col-xs-12.row > div:nth-child(3) > div.panel-body > div:nth-child(1) > div:nth-child(2) > input';
-const SC_SEARCH = '#home > div > div.col-xs-12.row > div:nth-child(3) > div.panel-body > div:nth-child(1) > div.col-xs-8 > button:nth-child(2)';
+const SC_NAME = '#home input[ng-model="searchData.violatorLastName"]';
+const SC_DOB = '#home input[ng-model="searchData.violatorBirthDate"]';
+const SC_SEARCH = '#home button[ng-click="searchCitation()"]';
 /** Follow the portal handoff, retain the declared DMV-origin boundary, and wait
  * for the real form. Notify both fields after filling before clicking Search. */
 export async function scutties(identity, ctx) {
+  const environment=environmentOf(ctx),MEMBER=environment.member,ROOT=environment.origin;
   const tab = await portalTab(ctx); ctx.tabId = tab.id;
   await ensureSession(tab.id, ctx);
   await api(ctx).tabs.update(tab.id, {url: `${MEMBER}Transactions/TransactionList.aspx`});
