@@ -34,7 +34,7 @@ try {
     assert.equal(await page.locator('#ContentPlaceHolder1_passwordText').inputValue(),'');
     await page.locator('#ContentPlaceHolder1_passwordText').fill('demo');await page.locator('#ContentPlaceHolder1_loginButton').click();
     await page.waitForURL(site.url+P.disclaimer);await page.locator('#ContentPlaceHolder1_submitButton').click();await page.waitForURL(site.url+P.menu);
-    assert.equal(await page.locator('#ContentPlaceHolder1_menuContainer a').count(),4);
+    assert.equal(await page.locator('#ContentPlaceHolder1_menuContainer a').count(),5);
   });
   await check('unknown plates show the production-compatible validation area without a result',async()=>{
     await page.goto(site.url+P.search);await page.locator('#ContentPlaceHolder1_txtPlateNbr').fill('DEMO404');await page.locator('#btnFooterNavNext').click();

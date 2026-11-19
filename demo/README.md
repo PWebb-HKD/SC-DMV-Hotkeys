@@ -52,13 +52,30 @@ Open PDF serves a genuine, selectable-text PDF at ViewAttachment.aspx. Chrome pr
 
 Status and barcode previews use bundled production PDF.js to extract the generated PDF, followed by existing production parsers and panel/barcode controllers. An HTTP-only adapter supplies mock worker messages to those views. Barcode editing and popup timers work. Residence reports have no license-status or barcode preview. The adapter lives outside extension/ and is never loaded by the installed extension.
 
-This prototype does not demonstrate installed-extension permissions, global hotkeys, native background-window behavior, vault/blacklist storage or remote DMV connectivity. Photos, audio and SCUTTIES are outside this iteration. The installed extension continues to permit automation only on SCDMV; connecting a separate, clearly labeled demo environment with isolated state remains a later integration step. Reviewers should eventually receive a launcher that does not require setting up a local server.
+This prototype does not demonstrate installed-extension permissions, global hotkeys, native background-window behavior, vault/blacklist storage or remote DMV connectivity. Photos and audio are outside this iteration. The installed extension continues to permit automation only on SCDMV; connecting a separate, clearly labeled demo environment with isolated state remains a later integration step. Reviewers should eventually receive a launcher that does not require setting up a local server.
 
 Raw HTML captures remain outside Git. [DOM-CONTRACT.md](DOM-CONTRACT.md) records the retained selector interface and exclusions. New samples supplied for driver/customer and residence pages were used as reference data only; their scripts, identifiers, hidden tokens and private display values are not served or committed.
+
+## SCUTTIES citations
+
+After signing into the practice portal, select **SCUTTIES** from Transactions. A separate foreground tab simulates automatic sign-in, then opens the citation search. No second account is needed; no credentials or tokens are exchanged. The catalog also provides buttons to fill these sample searches:
+
+| Last name | Date of birth | Result |
+| --- | --- | --- |
+| EXAMPLE | 01/02/2000 | Three citations: two for Avery and one for Morgan |
+| DE LA CRUZ | 02/29/2000 | One citation; compound surname and leap-day DOB |
+| DEMO-NOMATCH | 01/02/2000 | No citations found |
+
+Click **Search**, then **View** beside a citation. The read-only display contains that occurrence's identity, address, offense, disposition, vehicle, court, officer and location. **Back to results** retains the search and focuses the corresponding View button. Reloading restores the selected known demo search/citation in that tab. **Print fictional citation** prints the demo detail page with its synthetic-data label. **Clear** removes the search and result selection.
+
+Surname/DOB comparisons happen only in the browser; searches never put those values in a request or URL. Only known catalog/citation IDs enter scdmv-demo- session state. Unknown identities return no results, malformed dates show validation, and invalid saved selections cannot borrow an earlier record. The no-results wording and the brief sign-in transition are demo-defined because those live states were not supplied. Citation editing, saved drafts, data entry, reports and account administration are not implemented.
+
+The captured search puts Search first and Show SAVED Citations second. The current installed extension's positional SC_SEARCH selector targets the second button, so it would select the saved-citation action on this captured layout. The demo preserves the supplied order; correcting that production selector is deferred to the versioned extension/demo integration work. No extension code or host permission changes are included here.
 
 ## Checks
 
 - `node --test tests/demo-portal.test.js`: local serving, scenario parsing and request/file boundaries.
-- `CHROME_PATH=/usr/bin/chromium npm run test:demo`: both Chromium suites, including all vehicle/driver PDFs, production status/barcode views, shared input validation, owner follow-ups and the residence queue.
+- `CHROME_PATH=/usr/bin/chromium npm run test:demo`: all three Chromium suites, including vehicle/driver PDFs, production status/barcode views, shared input validation, owner follow-ups, the residence queue and SCUTTIES.
+- `CHROME_PATH=/usr/bin/chromium node tests/demo-scutties-browser.mjs`: focused SCUTTIES handoff, calendar validation, citations/details, restoration, mobile layout and local-only request checks.
 
-Browser checks require the same development Playwright/Chromium setup as the existing project tests. The server itself needs only Node. Screenshots and synthetic barcode payloads stay in ignored test-results/demo and test-results/demo-records directories.
+Browser checks require the same development Playwright/Chromium setup as the existing project tests. The server itself needs only Node. Screenshots and synthetic barcode payloads stay in ignored test-results/demo, test-results/demo-records and test-results/demo-scutties directories.

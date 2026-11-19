@@ -31,3 +31,19 @@ Four additional captures supplied the shared driver/customer Page 1, shared Page
 | Same residence Page 2 | Shared download/print/display controls; local queue controls are explicitly additional demo UI |
 
 No new production radio mode or separate customer-results route is invented. Unsupported name search is disabled. Form field names and selectors are recreated in fresh markup; captures' account/reference/date/time/amount display values and ASP.NET state are omitted. Catalog records and all displayed identifiers are newly invented. Report-title-first PDF extraction preserves production residence classification ahead of repeated driver headers.
+
+## SCUTTIES search, results and citation display
+
+Three additional private captures show the post-login search, populated results and a selected citation display. These are Angular view states in one document, including inactive data-entry/help-desk/admin forms. The demo uses fresh local markup/handlers rather than executing the captured Angular app, scripts or service endpoints. It omits inactive workflows, live code tables, account/agency/officer data, dynamic uiGrid IDs and all captured person/citation values. Only one home ID is emitted; the source also contains a hidden help-desk container with that duplicate ID.
+
+| View | Retained interface |
+| --- | --- |
+| Menu handoff | /SCTRNS/Member/Transactions/SCUTTIES/SCUTTIES.aspx, opened in a named child tab |
+| Search | #home and its nested third panel; searchData.violatorLastName and searchData.violatorBirthDate inputs; dobSearchDTM name |
+| Actions | searchCitation(), searchCitationSaved(), clearSearch() binding attributes; Search first, disabled Show SAVED Citations second, Clear third |
+| Results | Citation Number, Violator Name, Birth Date, DL Number, State, Violation Date, Statute, Disp; View uses grid.appScope.gridRowView(row.entity.CitationNumber) as a compatibility attribute |
+| Detail | #display, showHome() and printCitationDisplay() attributes; read-only, fictional citation/violator/vehicle/court/officer/location sections |
+
+The search destination Search.aspx is a local fixture route, not a URL established by the supplied DOM. Handoff timing/wording and no-results wording are also demo-defined; no real sign-in exchange is simulated at the token/network level. Results use an accessible HTML table in a horizontally scrollable region instead of shipping the third-party Angular grid. Binding attributes are inert compatibility markers, not executed expressions.
+
+Known production mismatch: extension/automation.js SC_SEARCH selects button:nth-child(2), whereas the captures place searchCitation() first and searchCitationSaved() second. The demo intentionally retains the capture's action order. Correcting production selection belongs to the subsequent versioned extension work; origin boundaries and installed-extension behavior are unchanged here.

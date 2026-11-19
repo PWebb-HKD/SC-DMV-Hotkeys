@@ -7,7 +7,8 @@ export const DEMO_PATHS=Object.freeze({
   result:'/SCTRNS/Member/Transactions/VehRec/Page2.aspx',
   pdf:'/SCTRNS/Member/Transactions/ViewAttachment.aspx',
   driverSearch:'/SCTRNS/Member/Transactions/DrvRec/Page1.aspx',driverResult:'/SCTRNS/Member/Transactions/DrvRec/Page2.aspx',
-  addressSearch:'/SCTRNS/Member/Transactions/DrvSameRes/Page1.aspx',addressResult:'/SCTRNS/Member/Transactions/DrvSameRes/Page2.aspx'
+  addressSearch:'/SCTRNS/Member/Transactions/DrvSameRes/Page1.aspx',addressResult:'/SCTRNS/Member/Transactions/DrvSameRes/Page2.aspx',
+  scuttiesHandoff:'/SCTRNS/Member/Transactions/SCUTTIES/SCUTTIES.aspx',scuttiesSearch:'/SCTRNS/Member/Transactions/SCUTTIES/Search.aspx'
 });
 const definitions=[
   ['DEMO001','Valid plate','One registered owner.','valid'],

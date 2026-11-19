@@ -1,6 +1,7 @@
 /** Client-only synthetic state. No production credentials, vault or query endpoint is used. */
 import {normalize,ownerNumbers} from '/extension/core.js';
 import {extractDemoPdf} from './report-tools.js';
+import {setupScutties} from './scutties.js';
 const page=document.body.dataset.demoPage,$=id=>document.getElementById(id),params=new URL(location.href).searchParams;
 const error=message=>{const target=$('demo-error');target.textContent=message;target.closest('[role="alert"]').hidden=false;};
 const reset=()=>{for(const key of Object.keys(sessionStorage))if(key.startsWith('scdmv-demo-'))sessionStorage.removeItem(key);};
@@ -10,6 +11,12 @@ async function setup(){
   $('reset-demo').addEventListener('click',reset);
   $('demo-logoff')?.addEventListener('click',reset);
   if(!['home','login'].includes(page)&&sessionStorage.getItem('scdmv-demo-auth')!=='true'){location.replace(P.login);return;}
+  if(page==='scutties-handoff'){
+    const sample=params.get('sample');
+    // Simulated transition only: no actual sign-in, tokens or credentials are exchanged.
+    setTimeout(()=>location.replace(P.scuttiesSearch+(sample?'?sample='+encodeURIComponent(sample):'')),350);return;
+  }
+  if(page==='scutties'){await setupScutties(error);return;}
   const customer=number=>catalog.find(c=>c.recordType==='license'&&c.customer===number);
   const openCustomer=(number,queued=false)=>{
     const record=customer(number);if(!record)throw new Error('No fictional driver profile is defined for this customer yet.');

@@ -4,6 +4,7 @@ import {request} from 'node:http';
 import {startDemoServer} from '../demo/server.mjs';
 import {DEMO_CASES,ADDRESS_CASES,ALL_DEMO_CASES,DEMO_PATHS,vehicleText,recordText} from '../demo/cases.mjs';
 import {DRIVER_CASES,driverText} from '../demo/driver-cases.mjs';
+import {SCUTTIES_CASES} from '../demo/scutties-cases.mjs';
 import {plateStatus,licenseStatus} from '../extension/status-alerts.js';
 import {reportBarcode} from '../extension/barcode-data.js';
 import {isPortal,attachmentUrl,ownerNumbers,isResidenceReport} from '../extension/core.js';
@@ -88,4 +89,17 @@ test('catalog and PDF endpoints allow only the defined synthetic records',async(
   for(const record of ALL_DEMO_CASES){const response=await fetch(site.url+DEMO_PATHS.pdf+'?case='+record.id);assert.equal(response.status,200);assert.equal(response.headers.get('content-type'),'application/pdf');}
   assert.equal((await fetch(site.url+'/extension/panel.html?demo=ADDRESS001')).status,400);
   assert.equal((await fetch(site.url+'/extension/barcode.html?demo=UNDEFINED')).status,400);
+});
+test('SCUTTIES serves only local fictional citations and fresh search/display interfaces',async()=>{
+  const response=await fetch(site.url+'/api/scutties');assert.deepEqual(await response.json(),SCUTTIES_CASES);
+  assert.equal(SCUTTIES_CASES[0].citations.length,3);assert.equal(SCUTTIES_CASES[2].citations.length,0);
+  assert.equal(new Set(SCUTTIES_CASES.flatMap(c=>c.citations.map(entry=>entry.number))).size,4);
+  const handoff=await (await fetch(site.url+DEMO_PATHS.scuttiesHandoff)).text();assert.match(handoff,/SIMULATED HANDOFF/);
+  const html=await (await fetch(site.url+DEMO_PATHS.scuttiesSearch)).text();
+  for(const control of ['id="home"','id="display"','name="dobSearchDTM"','searchData.violatorLastName','searchData.violatorBirthDate','searchCitation()','searchCitationSaved()','clearSearch()','showHome()','printCitationDisplay()'])assert.ok(html.includes(control));
+  assert.ok(html.indexOf('ng-click="searchCitation()"')<html.indexOf('ng-click="searchCitationSaved()"'));
+  assert.doesNotMatch(html,/ng-app|angular\.js|__VIEWSTATE|__EVENTVALIDATION|uiGrid-|<script[^>]+src="https?:/i);
+  assert.equal((await fetch(site.url+DEMO_PATHS.pdf+'?case=SCUTTIES001')).status,404);
+  assert.equal((await fetch(site.url+'/extension/panel.html?demo=SCUTTIES001')).status,400);
+  assert.equal((await fetch(site.url+'/api/scutties',{headers:{Origin:'https://example.test'}})).status,403);
 });
